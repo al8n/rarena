@@ -1,13 +1,13 @@
 [package]
-name = "template-rs"
-version = "0.1.6"
+name = "rarena"
+version = "0.0.0"
 edition = "2021"
-repository = "https://github.com/al8n/template-rs"
-homepage = "https://github.com/al8n/template-rs"
-documentation = "https://docs.rs/template-rs"
-description = "A template for creating Rust open-source repo on GitHub"
+repository = "https://github.com/al8n/rarena"
+homepage = "https://github.com/al8n/rarena"
+documentation = "https://docs.rs/rarena"
+description = "lock-free data structures based on ARENA."
 license = "MIT/Apache-2.0"
-rust-version = "1.73"
+rust-version = "1.56"
 
 [[bench]]
 path = "benches/foo.rs"
@@ -18,8 +18,16 @@ harness = false
 default = ["std"]
 alloc = []
 std = []
+memmap = ["memmap2", "fs4", "std"]
 
 [dependencies]
+crossbeam-utils = { version = "0.8", default-features = false }
+paste = "1"
+
+fs4 = { version = "0.8", optional = true }
+memmap2 = { version = "0.9", optional = true }
+
+loom = { version = "0.7", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

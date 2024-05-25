@@ -1,29 +1,54 @@
-//! A template for creating Rust open-source repo on GitHub
+#![doc = include_str!("../README.md")]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
 #![deny(missing_docs)]
 
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
+#[cfg(not(any(feature = "std", feature = "alloc")))]
+compile_error!("`rarena` requires either the 'std' or 'alloc' feature to be enabled");
+
+#[cfg(not(feature = "std"))]
 extern crate alloc as std;
 
-#[cfg(all(feature = "std", not(feature = "alloc")))]
+#[cfg(feature = "std")]
 extern crate std;
 
-#[cfg(all(feature = "std", feature = "alloc"))]
-extern crate std;
+/// ARENA allocator
+pub mod alloc;
 
-/// template
-pub fn it_works() -> usize {
-  4
-}
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+mod options;
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+pub use options::{MmapOptions, OpenOptions};
 
-#[cfg(test)]
-mod tests {
-  use super::*;
+mod common {
+  #[cfg(not(loom))]
+  pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};
 
-  #[test]
-  fn test_works() {
-    assert_eq!(it_works(), 4);
+  #[cfg(loom)]
+  pub(crate) use loom::alloc::{alloc_zeroed, dealloc, Layout};
+
+  #[cfg(not(feature = "loom"))]
+  pub(crate) use core::sync::atomic::*;
+
+  #[cfg(feature = "loom")]
+  pub(crate) use loom::sync::atomic::*;
+
+  #[cfg(not(feature = "loom"))]
+  pub(crate) trait AtomicMut<T> {
+    fn with_mut<F, R>(&mut self, f: F) -> R
+    where
+      F: FnOnce(&mut *mut T) -> R;
+  }
+
+  #[cfg(not(feature = "loom"))]
+  impl<T> AtomicMut<T> for AtomicPtr<T> {
+    fn with_mut<F, R>(&mut self, f: F) -> R
+    where
+      F: FnOnce(&mut *mut T) -> R,
+    {
+      f(self.get_mut())
+    }
   }
 }
