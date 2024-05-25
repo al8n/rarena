@@ -1,29 +1,29 @@
-[package]
-name = "template-rs"
-version = "0.1.6"
+[workspace]
+members = [
+  "rarena",
+  "rarena-skiplist",
+  "rarena-allocator",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
 edition = "2021"
-repository = "https://github.com/al8n/template-rs"
-homepage = "https://github.com/al8n/template-rs"
-documentation = "https://docs.rs/template-rs"
-description = "A template for creating Rust open-source repo on GitHub"
-license = "MIT/Apache-2.0"
-rust-version = "1.73"
+rust-version = "1.56.0"
+repository = "https://github.com/al8n/rarena"
+homepage = "https://github.com/al8n/rarena"
+license = "MIT OR Apache-2.0"
 
-[[bench]]
-path = "benches/foo.rs"
-name = "foo"
-harness = false
+[workspace.dependencies]
 
-[features]
-default = ["std"]
-alloc = []
-std = []
+crossbeam-utils = { version = "0.8", default-features = false }
+loom = "0.7"
+rarena-allocator = { version = "0.0.1", path = "./rarena-allocator", default-features = false }
+rarena-skiplist = { version = "0.0.0", path = "./rarena-skiplist", default-features = false }
 
-[dependencies]
-
-[dev-dependencies]
-criterion = "0.5"
-tempfile = "3"
+[workspace.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [profile.bench]
 opt-level = 3
@@ -34,7 +34,3 @@ incremental = false
 debug-assertions = false
 overflow-checks = false
 rpath = false
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
