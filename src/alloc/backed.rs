@@ -1,5 +1,3 @@
-use mem::ManuallyDrop;
-
 #[cfg(not(feature = "std"))]
 use std::vec::Vec;
 

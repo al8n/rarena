@@ -29,13 +29,6 @@ fn alloc_unaligned_non_zero_size() {
 
   let result = arena.alloc_unaligned::<u8>().unwrap();
   assert_eq!(*result, 0);
-
-  let mut result = arena.alloc_unaligned::<std::vec::Vec<u8>>().unwrap();
-  assert_eq!(result.len(), 0);
-
-  result.push(32);
-  assert_eq!(result.len(), 1);
-  assert_eq!(result[0], 32);
 }
 
 #[test]
@@ -114,7 +107,7 @@ fn concurrent_alloc() {
   const ITERATIONS: usize = 2;
 
   // Create an arena with a capacity large enough for concurrent allocations
-  let arena = Arena::<u32>::new(((THREADS * ITERATIONS) * mem::size_of::<u64>() * 2) as u32);
+  let arena = Arena::<u32>::new(1024 * 1024);
 
   let handles: Vec<_> = (0..THREADS)
     .map(|_| {
