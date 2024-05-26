@@ -132,13 +132,12 @@ impl<S: Size> Shared<S> {
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
-      // 0 is used for null pointer
-      let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header<S>>());
+      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header<S>>());
       let mut this = Self {
         cap,
         refs: AtomicUsize::new(1),
         ptr,
-        header_ptr: ptr.add(header_ptr_offset + 1) as _,
+        header_ptr: ptr.add(header_ptr_offset) as _,
         backend: SharedBackend::Vec(vec),
         data_offset: 0,
       };

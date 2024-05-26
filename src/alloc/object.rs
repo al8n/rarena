@@ -5,7 +5,7 @@ use super::*;
 /// An owned object in the ARENA.
 pub struct Owned<T, S: Size> {
   arena: Arena<S>,
-  ptr: *mut T,
+  ptr: NonNull<T>,
   arena_offset: usize,
   detach: bool,
   size: usize,
@@ -18,7 +18,7 @@ impl<T, S: Size> ops::Deref for Owned<T, S> {
   #[inline]
   fn deref(&self) -> &Self::Target {
     // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { &*self.ptr }
+    unsafe { self.ptr.as_ref() }
   }
 }
 
@@ -26,7 +26,7 @@ impl<T, S: Size> ops::DerefMut for Owned<T, S> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { &mut *self.ptr }
+    unsafe { self.ptr.as_mut() }
   }
 }
 
@@ -67,7 +67,7 @@ impl<T, S: Size> Drop for Owned<T, S> {
 /// A reference to an object in the ARENA.
 pub struct RefMut<'a, T, S: Size> {
   arena: &'a Arena<S>,
-  ptr: *mut T,
+  ptr: NonNull<T>,
   arena_offset: usize,
   /// the size of allocated buffer
   size: usize,
@@ -81,7 +81,7 @@ impl<'a, T, S: Size> ops::Deref for RefMut<'a, T, S> {
   #[inline]
   fn deref(&self) -> &Self::Target {
     // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { &*self.ptr }
+    unsafe { self.ptr.as_ref() }
   }
 }
 
@@ -89,7 +89,7 @@ impl<'a, T, S: Size> ops::DerefMut for RefMut<'a, T, S> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { &mut *self.ptr }
+    unsafe { self.ptr.as_mut() }
   }
 }
 
@@ -116,7 +116,12 @@ impl<'a, T, S: Size> RefMut<'a, T, S> {
   }
 
   #[inline]
-  pub(super) fn new(arena: &'a Arena<S>, ptr: *mut T, arena_offset: usize, size: usize) -> Self {
+  pub(super) fn new(
+    arena: &'a Arena<S>,
+    ptr: NonNull<T>,
+    arena_offset: usize,
+    size: usize,
+  ) -> Self {
     Self {
       arena,
       ptr,
@@ -132,7 +137,7 @@ impl<'a, T, S: Size> RefMut<'a, T, S> {
   pub(super) unsafe fn null(arena: &'a Arena<S>) -> Self {
     Self {
       arena,
-      ptr: arena.ptr.cast(),
+      ptr: NonNull::dangling(),
       arena_offset: 0,
       detach: false,
       size: 0,

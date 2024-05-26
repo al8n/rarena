@@ -336,7 +336,7 @@ impl<S: Size> Arena<S> {
           let ptr_offset = allocated & !(mem::align_of::<T>() - 1);
           return Ok(RefMut::new(
             self,
-            unsafe { self.ptr.add(ptr_offset).cast() },
+            unsafe { NonNull::new_unchecked(self.ptr.add(ptr_offset).cast()) },
             current,
             padded,
           ));
@@ -378,7 +378,7 @@ impl<S: Size> Arena<S> {
 
     Ok(RefMut::new(
       self,
-      ptr.cast(),
+      unsafe { NonNull::new_unchecked(ptr.cast()) },
       bytes_ref.offset,
       bytes_ref.cap,
     ))
