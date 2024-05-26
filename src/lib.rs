@@ -13,8 +13,10 @@ extern crate alloc as std;
 #[cfg(feature = "std")]
 extern crate std;
 
-/// ARENA allocator
-pub mod alloc;
+/// Lock-free, thread-safe, ARENA based data structures and allocator.
+pub mod sync;
+
+mod utils;
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 mod options;

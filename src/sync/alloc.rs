@@ -6,6 +6,8 @@ use core::{
 
 use crate::common::*;
 
+use super::sealed::{Atomic, Sealed};
+
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
 
@@ -18,16 +20,16 @@ use std::boxed::Box;
 mod backed;
 use backed::*;
 
-mod sealed;
-use sealed::Atomic;
-
 mod bytes;
 pub use bytes::*;
 
 mod object;
 pub use object::*;
 
-// mod segment;
+mod pointer;
+use pointer::*;
+
+mod segment;
 // use segment::*;
 
 #[cfg(test)]
@@ -35,7 +37,7 @@ mod tests;
 
 #[doc(hidden)]
 pub trait Size:
-  sealed::Sealed
+  Sealed
   + ops::Add<Output = Self>
   + ops::Sub<Output = Self>
   + ops::Rem<Output = Self>
@@ -52,8 +54,10 @@ pub trait Size:
 {
   const ZERO: Self;
   const ONE: Self;
+  const SIZE: usize;
+  const ALIGN: usize;
 
-  type Atomic: sealed::Atomic<Self>;
+  type Atomic: Atomic<Self>;
 
   fn to_usize(self) -> usize;
 
@@ -65,6 +69,8 @@ pub trait Size:
 impl Size for u32 {
   const ONE: Self = 1;
   const ZERO: Self = 0;
+  const SIZE: usize = mem::size_of::<Self>();
+  const ALIGN: usize = mem::align_of::<Self>();
 
   type Atomic = AtomicU32;
 
@@ -87,6 +93,8 @@ impl Size for u32 {
 impl Size for u64 {
   const ONE: Self = 1;
   const ZERO: Self = 0;
+  const SIZE: usize = mem::size_of::<Self>();
+  const ALIGN: usize = mem::align_of::<Self>();
 
   type Atomic = AtomicU64;
 
@@ -110,6 +118,7 @@ impl Size for u64 {
 #[repr(C)]
 pub(super) struct Header<S: Size = u32> {
   allocated: S::Atomic,
+  next_segment: S::Atomic,
 }
 
 impl<S: Size> Header<S> {
@@ -117,6 +126,7 @@ impl<S: Size> Header<S> {
   fn new(size: S) -> Self {
     Self {
       allocated: <S::Atomic as Atomic<S>>::new(size),
+      next_segment: <S::Atomic as Atomic<S>>::new(S::ZERO),
     }
   }
 }
@@ -165,10 +175,10 @@ impl<S: Size> core::fmt::Debug for Arena<S> {
 impl<S: Size> Clone for Arena<S> {
   fn clone(&self) -> Self {
     unsafe {
-      let shared: *mut Shared = self.inner.load(Ordering::Relaxed).cast();
+      let memory: *mut Memory = self.inner.load(Ordering::Relaxed).cast();
 
-      let old_size = (*shared).refs.fetch_add(1, Ordering::Release);
-      if old_size > usize::MAX >> 1 {
+      let old_size = (*memory).header().refs.fetch_add(1, Ordering::Release);
+      if old_size.to_usize() > usize::MAX >> 1 {
         abort();
       }
 
@@ -181,7 +191,7 @@ impl<S: Size> Clone for Arena<S> {
         header_ptr: self.header_ptr,
         ptr: self.ptr,
         data_offset: self.data_offset,
-        inner: AtomicPtr::new(shared as _),
+        inner: AtomicPtr::new(memory as _),
         cap: self.cap,
       }
     }
@@ -211,20 +221,20 @@ impl<S: Size> Arena<S> {
   #[inline]
   pub fn refs(&self) -> usize {
     unsafe {
-      let shared: *mut Shared = self.inner.load(Ordering::Relaxed).cast();
+      let memory: *mut Memory = self.inner.load(Ordering::Relaxed).cast();
 
-      (*shared).refs.load(Ordering::Acquire)
+      (*memory).header().refs.load(Ordering::Acquire).to_usize()
     }
   }
 
-  /// Clears the ARENA.
-  #[inline]
-  pub fn clear(&self) {
-    let header = self.header();
-    header
-      .allocated
-      .store(S::from_usize(self.data_offset), Ordering::Release);
-  }
+  // /// Clears the ARENA.
+  // #[inline]
+  // pub fn clear(&self) {
+  //   let header = self.header();
+  //   header
+  //     .allocated
+  //     .store(S::from_usize(self.data_offset), Ordering::Release);
+  // }
 
   #[inline]
   pub(super) const fn header(&self) -> &Header<S> {
@@ -241,7 +251,7 @@ impl<S: Size> Arena<S> {
   /// Creates a new ARENA with the given capacity,
   #[inline]
   pub fn new(cap: S) -> Self {
-    Self::new_in(Shared::new_vec(cap))
+    Self::new_in(Memory::new_vec(cap))
   }
 
   /// Allocates an owned slice of memory in the ARENA.
@@ -374,7 +384,6 @@ impl<S: Size> Arena<S> {
 
     // Calculate the aligned pointer within the allocated bytes.
     let ptr = bytes_ref.as_mut_ptr();
-    let ptr_offset = ptr as usize - self.write_data_ptr.as_ptr() as usize;
 
     Ok(RefMut::new(
       self,
@@ -400,7 +409,7 @@ impl<S: Size> Arena<S> {
   //   alignment: usize,
   // ) -> std::io::Result<Self> {
   //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::mmap_mut(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
+  //   Memory::mmap_mut(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
   // }
 
   // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -413,7 +422,7 @@ impl<S: Size> Arena<S> {
   //   alignment: usize,
   // ) -> std::io::Result<Self> {
   //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::mmap(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
+  //   Memory::mmap(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
   // }
 
   // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -424,50 +433,50 @@ impl<S: Size> Arena<S> {
   //   alignment: usize,
   // ) -> std::io::Result<Self> {
   //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::new_mmaped_anon(mmap_options, min_cap, alignment).map(Self::new_in)
+  //   Memory::new_mmaped_anon(mmap_options, min_cap, alignment).map(Self::new_in)
   // }
 
   #[inline]
-  fn new_in(mut shared: Shared<S>) -> Self {
+  fn new_in(mut memory: Memory<S>) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
     // And this ptr is only deallocated when the arena is dropped.
-    let read_data_ptr = shared.as_ptr();
-    let header_ptr = shared.header_ptr();
-    let ptr = shared.null_mut();
-    let write_data_ptr = shared
+    let read_data_ptr = memory.as_ptr();
+    let header_ptr = memory.header_ptr();
+    let ptr = memory.null_mut();
+    let write_data_ptr = memory
       .as_mut_ptr()
       .map(|p| unsafe { NonNull::new_unchecked(p) })
       .unwrap_or_else(NonNull::dangling);
 
     Self {
-      cap: shared.cap(),
+      cap: memory.cap(),
       write_data_ptr,
       read_data_ptr,
       header_ptr,
       ptr,
-      data_offset: shared.data_offset,
-      inner: AtomicPtr::new(Box::into_raw(Box::new(shared)) as _),
+      data_offset: memory.data_offset,
+      inner: AtomicPtr::new(Box::into_raw(Box::new(memory)) as _),
     }
   }
 
   /// Flushes the memory-mapped file to disk.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub fn flush(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
+    let memory = self.inner.load(Ordering::Acquire);
     {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush() }
+      let memory: *mut Memory = memory.cast();
+      unsafe { (*memory).flush() }
     }
   }
 
   /// Flushes the memory-mapped file to disk asynchronously.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub fn flush_async(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
+    let memory = self.inner.load(Ordering::Acquire);
     {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush_async() }
+      let memory: *mut Memory = memory.cast();
+      unsafe { (*memory).flush_async() }
     }
   }
 
@@ -663,10 +672,10 @@ impl<S: Size> Arena<S> {
 impl<S: Size> Drop for Arena<S> {
   fn drop(&mut self) {
     unsafe {
-      self.inner.with_mut(|shared| {
-        let shared: *mut Shared = shared.cast();
-        // `Shared` storage... follow the drop steps from Arc.
-        if (*shared).refs.fetch_sub(1, Ordering::Release) != 1 {
+      self.inner.with_mut(|memory| {
+        let memory: *mut Memory = memory.cast();
+        // `Memory` storage... follow the drop steps from Arc.
+        if (*memory).header().refs.fetch_sub(1, Ordering::Release) != 1 {
           return;
         }
 
@@ -690,13 +699,13 @@ impl<S: Size> Drop for Arena<S> {
         //
         // Thread sanitizer does not support atomic fences. Use an atomic load
         // instead.
-        (*shared).refs.load(Ordering::Acquire);
+        (*memory).header().refs.load(Ordering::Acquire);
         // Drop the data
-        let mut shared = Box::from_raw(shared);
+        let mut memory = Box::from_raw(memory);
 
         // Relaxed is enough here as we're in a drop, no one else can
         // access this memory anymore.
-        shared.unmount();
+        memory.unmount();
       });
     }
   }

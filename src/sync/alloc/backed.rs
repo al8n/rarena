@@ -66,7 +66,13 @@ impl AlignedVec {
   }
 }
 
-enum SharedBackend {
+struct Segment {
+  ptr: *mut u8,
+  cap: usize,
+}
+
+enum MemoryKind {
+  Segment(Segment),
   Vec(AlignedVec),
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   MmapMut {
@@ -116,29 +122,29 @@ impl core::fmt::Display for TooSmall {
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 impl std::error::Error for TooSmall {}
 
-pub(super) struct Shared<S: Size = u32> {
-  pub(super) refs: AtomicUsize,
+pub(super) struct Memory<S: Size = u32> {
   cap: S,
   pub(super) data_offset: usize,
+  refs: *mut S::Atomic,
   header_ptr: *mut Header<S>,
   ptr: *mut u8,
-  backend: SharedBackend,
+  backend: MemoryKind,
 }
 
-impl<S: Size> Shared<S> {
+impl<S: Size> Memory<S> {
   pub(super) fn new_vec(cap: S) -> Self {
     let vec = AlignedVec::new(cap.to_usize(), 8);
 
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
-      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header<S>>());
+      let header_ptr_offset = ptr.add(S::SIZE).align_offset(mem::align_of::<Header<S>>());
       let mut this = Self {
+        refs: ptr as _,
         cap,
-        refs: AtomicUsize::new(1),
         ptr,
-        header_ptr: ptr.add(header_ptr_offset) as _,
-        backend: SharedBackend::Vec(vec),
+        header_ptr: ptr.add(header_ptr_offset + S::SIZE) as _,
+        backend: MemoryKind::Vec(vec),
         data_offset: 0,
       };
       let data_offset = header_ptr_offset + mem::size_of::<Header<S>>();
@@ -148,6 +154,42 @@ impl<S: Size> Shared<S> {
       this.data_offset = data_offset;
 
       this
+    }
+  }
+
+  pub(super) fn new_segment(ptr: *mut u8, cap: S) -> Self {
+    // Safety: we have add the overhead for the header
+    unsafe {
+      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header<S>>());
+      let mut this = Self {
+        cap,
+        ptr,
+        header_ptr: ptr.add(header_ptr_offset) as _,
+        backend: MemoryKind::Segment(Segment { ptr, cap: cap.to_usize() }),
+        data_offset: 0,
+      };
+      let data_offset = header_ptr_offset + mem::size_of::<Header<S>>();
+      this
+        .header_ptr
+        .write(Header::<S>::new(S::from_usize(data_offset)));
+      this.data_offset = data_offset;
+
+      this
+    }
+  }
+
+  pub(super) fn read_segment(ptr: *mut u8, cap: S) -> Self {
+    // Safety: we have add the overhead for the header
+    unsafe {
+      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header<S>>());
+      let data_offset = header_ptr_offset + mem::size_of::<Header<S>>();
+      Self {
+        cap,
+        ptr,
+        header_ptr: ptr.add(header_ptr_offset) as _,
+        backend: MemoryKind::Segment(Segment { ptr, cap: cap.to_usize() }),
+        data_offset,
+      }
     }
   }
 
@@ -176,7 +218,7 @@ impl<S: Size> Shared<S> {
   //       let data_offset = data_offset::<S>();
   //       let this = Self {
   //         cap: S::from_usize(cap),
-  //         backend: SharedBackend::MmapMut {
+  //         backend: MemoryKind::MmapMut {
   //           buf: Box::into_raw(Box::new(mmap)),
   //           file,
   //           lock: open_options.is_lock(),
@@ -221,7 +263,7 @@ impl<S: Size> Shared<S> {
 
   //       Ok(Self {
   //         cap: S::from_usize(len),
-  //         backend: SharedBackend::Mmap {
+  //         backend: MemoryKind::Mmap {
   //           buf: Box::into_raw(Box::new(mmap)),
   //           file,
   //           lock: open_options.is_lock(),
@@ -248,7 +290,7 @@ impl<S: Size> Shared<S> {
   //     let data_offset = data_offset::<S>();
   //     let this = Self {
   //       cap: S::from_usize(mmap.len()),
-  //       backend: SharedBackend::AnonymousMmap(mmap),
+  //       backend: MemoryKind::AnonymousMmap(mmap),
   //       refs: AtomicUsize::new(1),
   //       data_offset,
   //     };
@@ -267,7 +309,7 @@ impl<S: Size> Shared<S> {
   pub(super) fn flush(&self) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      SharedBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush() },
+      MemoryKind::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush() },
       _ => Ok(()),
     }
   }
@@ -276,7 +318,7 @@ impl<S: Size> Shared<S> {
   pub(super) fn flush_async(&self) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      SharedBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_async() },
+      MemoryKind::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_async() },
       _ => Ok(()),
     }
   }
@@ -295,13 +337,14 @@ impl<S: Size> Shared<S> {
   pub(super) fn as_mut_ptr(&mut self) -> Option<*mut u8> {
     unsafe {
       Some(match &mut self.backend {
-        SharedBackend::Vec(vec) => vec.as_mut_ptr().add(self.data_offset),
+        MemoryKind::Segment(segment) => segment.ptr.add(self.data_offset),
+        MemoryKind::Vec(vec) => vec.as_mut_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { buf: mmap, .. } => (**mmap).as_mut_ptr().add(self.data_offset),
+        MemoryKind::MmapMut { buf: mmap, .. } => (**mmap).as_mut_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::Mmap { .. } => return None,
+        MemoryKind::Mmap { .. } => return None,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap(mmap) => mmap.as_mut_ptr().add(self.data_offset),
+        MemoryKind::AnonymousMmap(mmap) => mmap.as_mut_ptr().add(self.data_offset),
       })
     }
   }
@@ -310,13 +353,14 @@ impl<S: Size> Shared<S> {
   pub(super) fn as_ptr(&self) -> *const u8 {
     unsafe {
       match &self.backend {
-        SharedBackend::Vec(vec) => vec.as_ptr().add(self.data_offset),
+        MemoryKind::Segment(segment) => segment.ptr.add(self.data_offset),
+        MemoryKind::Vec(vec) => vec.as_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
+        MemoryKind::MmapMut { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::Mmap { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
+        MemoryKind::Mmap { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap(mmap) => mmap.as_ptr().add(self.data_offset),
+        MemoryKind::AnonymousMmap(mmap) => mmap.as_ptr().add(self.data_offset),
       }
     }
   }
@@ -332,6 +376,11 @@ impl<S: Size> Shared<S> {
   }
 
   #[inline]
+  pub(super) fn header(&self) -> &Header<S> {
+    unsafe { &*self.header_ptr }
+  }
+
+  #[inline]
   pub(super) const fn cap(&self) -> S {
     self.cap
   }
@@ -343,7 +392,7 @@ impl<S: Size> Shared<S> {
   pub(super) unsafe fn unmount(&mut self) {
     #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
     match &self.backend {
-      SharedBackend::MmapMut {
+      MemoryKind::MmapMut {
         buf,
         file,
         lock,
@@ -375,7 +424,7 @@ impl<S: Size> Shared<S> {
           let _ = file.unlock();
         }
       }
-      SharedBackend::Mmap {
+      MemoryKind::Mmap {
         lock,
         file,
         shrink_on_drop,
