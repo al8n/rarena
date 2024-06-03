@@ -24,11 +24,13 @@ impl Drop for AlignedVec {
 impl AlignedVec {
   #[inline]
   fn new(capacity: usize, align: usize) -> Self {
+    let align = align.max(mem::align_of::<Header>());
     assert!(
       capacity <= Self::max_capacity(align),
       "`capacity` cannot exceed isize::MAX - {}",
       align - 1
     );
+
     let ptr = unsafe {
       let layout = Layout::from_size_align_unchecked(capacity, align);
       let ptr = alloc_zeroed(layout);
@@ -73,6 +75,7 @@ enum SharedBackend {
     buf: *mut memmap2::MmapMut,
     file: std::fs::File,
     lock: bool,
+    data_ptr: *mut u8,
     shrink_on_drop: bool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -80,11 +83,16 @@ enum SharedBackend {
     buf: *mut memmap2::Mmap,
     file: std::fs::File,
     lock: bool,
+    data_ptr: *const u8,
     #[allow(dead_code)]
     shrink_on_drop: bool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  AnonymousMmap(memmap2::MmapMut),
+  AnonymousMmap {
+    #[allow(dead_code)]
+    buf: memmap2::MmapMut,
+    data_ptr: *mut u8,
+  },
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -116,152 +124,177 @@ impl core::fmt::Display for TooSmall {
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 impl std::error::Error for TooSmall {}
 
-pub(super) struct Shared<S: Size = u32> {
+pub(super) struct Shared {
   pub(super) refs: AtomicUsize,
-  cap: S,
+  cap: u32,
   pub(super) data_offset: usize,
-  header_ptr: *mut Header<S>,
+  header_ptr: *mut u8,
   ptr: *mut u8,
   backend: SharedBackend,
 }
 
-impl<S: Size> Shared<S> {
-  pub(super) fn new_vec(cap: S) -> Self {
-    let vec = AlignedVec::new(cap.to_usize(), 8);
-
+impl Shared {
+  pub(super) fn new_vec(cap: u32, alignment: usize) -> Self {
+    let vec = AlignedVec::new(cap as usize, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
-      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header<S>>());
+      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
+
       let mut this = Self {
         cap,
         refs: AtomicUsize::new(1),
         ptr,
-        header_ptr: ptr.add(header_ptr_offset) as _,
+        header_ptr: ptr.add(header_ptr_offset),
         backend: SharedBackend::Vec(vec),
         data_offset: 0,
       };
-      let data_offset = header_ptr_offset + mem::size_of::<Header<S>>();
-      this
-        .header_ptr
-        .write(Header::<S>::new(S::from_usize(data_offset)));
+      let data_offset = header_ptr_offset + mem::size_of::<Header>();
+      this.header_mut_ptr().write(Header::new(data_offset as u32));
       this.data_offset = data_offset;
 
       this
     }
   }
 
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // pub(super) fn mmap_mut<P: AsRef<std::path::Path>>(
-  //   path: P,
-  //   open_options: OpenOptions,
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   let (create_new, file) = open_options.open(path.as_ref())?;
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub(super) fn map_mut<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    alignment: usize,
+  ) -> std::io::Result<Self> {
+    let (create_new, file) = open_options.open(path.as_ref())?;
 
-  //   unsafe {
-  //     mmap_options.map_mut(&file).and_then(|mut mmap| {
-  //       let cap = mmap.len();
-  //       if cap < min_cap {
-  //         return Err(invalid_data(TooSmall::new(cap, min_cap)));
-  //       }
+    unsafe {
+      mmap_options.map_mut(&file).and_then(|mut mmap| {
+        let cap = mmap.len();
+        if cap < OVERHEAD {
+          return Err(invalid_data(TooSmall::new(cap, OVERHEAD)));
+        }
 
-  //       if create_new {
-  //         // initialize the memory with 0
-  //         ptr::write_bytes(mmap.as_mut_ptr(), 0, cap);
-  //       }
+        if create_new {
+          // initialize the memory with 0
+          ptr::write_bytes(mmap.as_mut_ptr(), 0, cap);
+        }
 
-  //       let data_offset = data_offset::<S>();
-  //       let this = Self {
-  //         cap: S::from_usize(cap),
-  //         backend: SharedBackend::MmapMut {
-  //           buf: Box::into_raw(Box::new(mmap)),
-  //           file,
-  //           lock: open_options.is_lock(),
-  //           shrink_on_drop: open_options.is_shrink_on_drop(),
-  //         },
-  //         refs: AtomicUsize::new(1),
-  //         data_offset,
-  //       };
-  //       // Safety: we have add the overhead for the header
-  //       this
-  //         .header_mut_ptr()
-  //         .write(Header::<S>::new(S::from_usize(data_offset)));
+        // TODO:  should we align the memory?
+        let _alignment = alignment.max(mem::align_of::<Header>());
 
-  //       Ok(this)
-  //     })
-  //   }
-  // }
+        let ptr = mmap.as_mut_ptr();
+        let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
+        let data_offset = header_ptr_offset + mem::size_of::<Header>();
 
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // pub(super) fn mmap<P: AsRef<std::path::Path>>(
-  //   path: P,
-  //   open_options: OpenOptions,
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   if !path.as_ref().exists() {
-  //     return Err(std::io::Error::new(
-  //       std::io::ErrorKind::NotFound,
-  //       "file not found",
-  //     ));
-  //   }
+        let this = Self {
+          cap: cap as u32,
+          backend: SharedBackend::MmapMut {
+            buf: Box::into_raw(Box::new(mmap)),
+            file,
+            lock: open_options.is_lock(),
+            data_ptr: ptr.add(data_offset),
+            shrink_on_drop: open_options.is_shrink_on_drop(),
+          },
+          header_ptr: ptr.add(header_ptr_offset) as _,
+          ptr,
+          refs: AtomicUsize::new(1),
+          data_offset,
+        };
 
-  //   let (_, file) = open_options.open(path.as_ref())?;
+        // Safety: we have add the overhead for the header
+        this.header_mut_ptr().write(Header::new(data_offset as u32));
 
-  //   unsafe {
-  //     mmap_options.map(&file).and_then(|mmap| {
-  //       let len = mmap.len();
-  //       if len < min_cap {
-  //         return Err(invalid_data(TooSmall::new(len, min_cap)));
-  //       }
+        Ok(this)
+      })
+    }
+  }
 
-  //       Ok(Self {
-  //         cap: S::from_usize(len),
-  //         backend: SharedBackend::Mmap {
-  //           buf: Box::into_raw(Box::new(mmap)),
-  //           file,
-  //           lock: open_options.is_lock(),
-  //           shrink_on_drop: open_options.is_shrink_on_drop(),
-  //         },
-  //         refs: AtomicUsize::new(1),
-  //         data_offset: data_offset::<S>(),
-  //       })
-  //     })
-  //   }
-  // }
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub(super) fn map<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    alignment: usize,
+  ) -> std::io::Result<Self> {
+    if !path.as_ref().exists() {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "file not found",
+      ));
+    }
 
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // pub(super) fn new_mmaped_anon(
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   mmap_options.map_anon().and_then(|mmap| {
-  //     if mmap.len() < min_cap {
-  //       return Err(invalid_data(TooSmall::new(mmap.len(), min_cap)));
-  //     }
+    let (_, file) = open_options.open(path.as_ref())?;
 
-  //     let data_offset = data_offset::<S>();
-  //     let this = Self {
-  //       cap: S::from_usize(mmap.len()),
-  //       backend: SharedBackend::AnonymousMmap(mmap),
-  //       refs: AtomicUsize::new(1),
-  //       data_offset,
-  //     };
+    unsafe {
+      mmap_options.map(&file).and_then(|mmap| {
+        let len = mmap.len();
+        if len < OVERHEAD {
+          return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
+        }
 
-  //     // Safety: we have add the overhead for the header
-  //     unsafe {
-  //       this
-  //         .header_mut_ptr()
-  //         .write(Header::<S>::new(S::from_usize(data_offset)));
-  //     }
-  //     Ok(this)
-  //   })
-  // }
+        // TODO:  should we align the memory?
+        let _alignment = alignment.max(mem::align_of::<Header>());
+        let ptr = mmap.as_ptr();
+        let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
+        let data_offset = header_ptr_offset + mem::size_of::<Header>();
+
+        Ok(Self {
+          cap: len as u32,
+          backend: SharedBackend::Mmap {
+            buf: Box::into_raw(Box::new(mmap)),
+            file,
+            lock: open_options.is_lock(),
+            data_ptr: ptr.add(data_offset),
+            shrink_on_drop: open_options.is_shrink_on_drop(),
+          },
+          header_ptr: ptr.add(header_ptr_offset) as _,
+          ptr: ptr as _,
+          refs: AtomicUsize::new(1),
+          data_offset,
+        })
+      })
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub(super) fn map_anon(mmap_options: MmapOptions, alignment: usize) -> std::io::Result<Self> {
+    mmap_options.map_anon().and_then(|mut mmap| {
+      if mmap.len() < OVERHEAD {
+        return Err(invalid_data(TooSmall::new(mmap.len(), OVERHEAD)));
+      }
+
+      // TODO:  should we align the memory?
+      let _alignment = alignment.max(mem::align_of::<Header>());
+      let ptr = mmap.as_mut_ptr();
+      let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
+      let data_offset = header_ptr_offset + mem::size_of::<Header>();
+
+      // Safety: we have add the overhead for the header
+      unsafe {
+        let this = Self {
+          cap: mmap.len() as u32,
+          backend: SharedBackend::AnonymousMmap {
+            buf: mmap,
+            data_ptr: ptr.add(data_offset),
+          },
+          refs: AtomicUsize::new(1),
+          data_offset,
+          header_ptr: ptr.add(header_ptr_offset) as _,
+          ptr,
+        };
+
+        // Ensure that the header_ptr is correctly aligned
+        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
+          return Err(invalid_data(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Header pointer is not aligned",
+          )));
+        }
+
+        this.header_mut_ptr().write(Header::new(data_offset as u32));
+        Ok(this)
+      }
+    })
+  }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(super) fn flush(&self) -> std::io::Result<()> {
@@ -281,6 +314,7 @@ impl<S: Size> Shared<S> {
     }
   }
 
+  #[allow(dead_code)]
   #[inline]
   pub(super) const fn null(&self) -> *const u8 {
     self.ptr
@@ -297,11 +331,11 @@ impl<S: Size> Shared<S> {
       Some(match &mut self.backend {
         SharedBackend::Vec(vec) => vec.as_mut_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { buf: mmap, .. } => (**mmap).as_mut_ptr().add(self.data_offset),
+        SharedBackend::MmapMut { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         SharedBackend::Mmap { .. } => return None,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap(mmap) => mmap.as_mut_ptr().add(self.data_offset),
+        SharedBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
       })
     }
   }
@@ -312,27 +346,27 @@ impl<S: Size> Shared<S> {
       match &self.backend {
         SharedBackend::Vec(vec) => vec.as_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
+        SharedBackend::MmapMut { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::Mmap { buf: mmap, .. } => (**mmap).as_ptr().add(self.data_offset),
+        SharedBackend::Mmap { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap(mmap) => mmap.as_ptr().add(self.data_offset),
+        SharedBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
       }
     }
   }
 
   #[inline]
-  pub(super) const fn header_ptr(&self) -> *const Header<S> {
+  pub(super) const fn header_ptr(&self) -> *const u8 {
     self.header_ptr
   }
 
   #[inline]
-  pub(super) const fn header_mut_ptr(&self) -> *mut Header<S> {
-    self.header_ptr
+  pub(super) const fn header_mut_ptr(&self) -> *mut Header {
+    self.header_ptr as *mut Header
   }
 
   #[inline]
-  pub(super) const fn cap(&self) -> S {
+  pub(super) const fn cap(&self) -> u32 {
     self.cap
   }
 
@@ -348,12 +382,13 @@ impl<S: Size> Shared<S> {
         file,
         lock,
         shrink_on_drop,
+        ..
       } => {
         use fs4::FileExt;
 
         // we must trigger the drop of the mmap
         let used = if *shrink_on_drop {
-          let header_ptr = self.header_ptr().cast::<Header<S>>();
+          let header_ptr = self.header_ptr().cast::<Header>();
           let header = &*header_ptr;
           Some(header.allocated.load(Ordering::Acquire))
         } else {
@@ -363,9 +398,8 @@ impl<S: Size> Shared<S> {
         let _ = Box::from_raw(*buf);
 
         if let Some(used) = used {
-          let used = used.to_u64();
-          if used < self.cap.to_u64() {
-            let _ = file.set_len(used);
+          if used < self.cap {
+            let _ = file.set_len(used as u64);
           }
         }
 
@@ -380,6 +414,7 @@ impl<S: Size> Shared<S> {
         file,
         shrink_on_drop,
         buf,
+        ..
       } => {
         use fs4::FileExt;
 
@@ -398,9 +433,8 @@ impl<S: Size> Shared<S> {
         let _ = Box::from_raw(*buf);
 
         if let Some(used) = used {
-          let used = used.to_u64();
-          if used < self.cap.to_u64() {
-            let _ = file.set_len(used);
+          if used < self.cap {
+            let _ = file.set_len(used as u64);
             let _ = file.sync_all();
           }
         }

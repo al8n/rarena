@@ -9,114 +9,33 @@ use crate::common::*;
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
 
-#[cfg(not(feature = "loom"))]
-use crate::common::AtomicMut;
-
 #[allow(unused_imports)]
 use std::boxed::Box;
 
 mod backed;
 use backed::*;
 
-mod sealed;
-use sealed::Atomic;
-
 mod bytes;
 pub use bytes::*;
-
-mod object;
-pub use object::*;
-
-// mod segment;
-// use segment::*;
 
 #[cfg(test)]
 mod tests;
 
-#[doc(hidden)]
-pub trait Size:
-  sealed::Sealed
-  + ops::Add<Output = Self>
-  + ops::Sub<Output = Self>
-  + ops::Rem<Output = Self>
-  + ops::Not<Output = Self>
-  + ops::BitAnd<Output = Self>
-  + fmt::Debug
-  + Sized
-  + Send
-  + Sync
-  + Copy
-  + Eq
-  + Ord
-  + 'static
-{
-  const ZERO: Self;
-  const ONE: Self;
-
-  type Atomic: sealed::Atomic<Self>;
-
-  fn to_usize(self) -> usize;
-
-  fn to_u64(self) -> u64;
-
-  fn from_usize(s: usize) -> Self;
-}
-
-impl Size for u32 {
-  const ONE: Self = 1;
-  const ZERO: Self = 0;
-
-  type Atomic = AtomicU32;
-
-  #[inline(always)]
-  fn to_usize(self) -> usize {
-    self as usize
-  }
-
-  #[inline(always)]
-  fn to_u64(self) -> u64 {
-    self as u64
-  }
-
-  #[inline(always)]
-  fn from_usize(s: usize) -> Self {
-    s as Self
-  }
-}
-
-impl Size for u64 {
-  const ONE: Self = 1;
-  const ZERO: Self = 0;
-
-  type Atomic = AtomicU64;
-
-  #[inline(always)]
-  fn to_usize(self) -> usize {
-    self as usize
-  }
-
-  #[inline(always)]
-  fn to_u64(self) -> u64 {
-    self
-  }
-
-  #[inline(always)]
-  fn from_usize(s: usize) -> Self {
-    s as Self
-  }
-}
+const OVERHEAD: usize = mem::size_of::<Header>();
 
 #[derive(Debug)]
 #[repr(C)]
-pub(super) struct Header<S: Size = u32> {
-  allocated: S::Atomic,
+pub(super) struct Header {
+  sentinel: AtomicU64,
+  allocated: AtomicU32,
 }
 
-impl<S: Size> Header<S> {
+impl Header {
   #[inline]
-  fn new(size: S) -> Self {
+  fn new(size: u32) -> Self {
     Self {
-      allocated: <S::Atomic as Atomic<S>>::new(size),
+      allocated: AtomicU32::new(size),
+      sentinel: AtomicU64::new(0),
     }
   }
 }
@@ -135,24 +54,25 @@ impl core::fmt::Display for ArenaError {
 impl std::error::Error for ArenaError {}
 
 /// Arena should be lock-free
-pub struct Arena<S: Size = u32> {
+pub struct Arena {
   write_data_ptr: NonNull<u8>,
   read_data_ptr: *const u8,
-  header_ptr: *const Header<S>,
+  header_ptr: *const u8,
   ptr: *mut u8,
-  data_offset: usize,
+  data_offset: u32,
   inner: AtomicPtr<()>,
-  cap: S,
+  cap: u32,
 }
 
-impl<S: Size> core::fmt::Debug for Arena<S> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl fmt::Debug for Arena {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let header = self.header();
-    let allocated = header.allocated.load(Ordering::Acquire).to_usize();
+    let allocated = header.allocated.load(Ordering::Acquire);
 
     // Safety:
     // The ptr is always non-null, we only deallocate it when the arena is dropped.
-    let data = unsafe { slice::from_raw_parts(self.read_data_ptr, allocated - self.data_offset) };
+    let data =
+      unsafe { slice::from_raw_parts(self.read_data_ptr, (allocated - self.data_offset) as usize) };
 
     f.debug_struct("Arena")
       .field("cap", &self.cap)
@@ -162,7 +82,7 @@ impl<S: Size> core::fmt::Debug for Arena<S> {
   }
 }
 
-impl<S: Size> Clone for Arena<S> {
+impl Clone for Arena {
   fn clone(&self) -> Self {
     unsafe {
       let shared: *mut Shared = self.inner.load(Ordering::Relaxed).cast();
@@ -188,23 +108,23 @@ impl<S: Size> Clone for Arena<S> {
   }
 }
 
-impl<S: Size> Arena<S> {
+impl Arena {
   /// Returns the number of bytes allocated by the arena.
   #[inline]
   pub fn size(&self) -> usize {
-    self.header().allocated.load(Ordering::Acquire).to_usize()
+    self.header().allocated.load(Ordering::Acquire) as usize
   }
 
   /// Returns the capacity of the arena.
   #[inline]
   pub fn capacity(&self) -> usize {
-    self.cap.to_usize()
+    self.cap as usize
   }
 
   /// Returns the number of bytes remaining bytes can be allocated by the arena.
   #[inline]
   pub fn remaining(&self) -> usize {
-    self.cap.to_usize().saturating_sub(self.size())
+    (self.cap as usize).saturating_sub(self.size())
   }
 
   /// Returns the number of references to the arena.
@@ -217,38 +137,60 @@ impl<S: Size> Arena<S> {
     }
   }
 
-  /// Clears the ARENA.
   #[inline]
-  pub fn clear(&self) {
-    let header = self.header();
-    header
-      .allocated
-      .store(S::from_usize(self.data_offset), Ordering::Release);
-  }
-
-  #[inline]
-  pub(super) const fn header(&self) -> &Header<S> {
+  pub(super) fn header(&self) -> &Header {
     // Safety:
     // The header is always non-null, we only deallocate it when the arena is dropped.
-    unsafe { &*self.header_ptr }
+    unsafe { &*(self.header_ptr as *const _) }
   }
 }
 
-unsafe impl<S: Size> Send for Arena<S> {}
-unsafe impl<S: Size> Sync for Arena<S> {}
+unsafe impl Send for Arena {}
+unsafe impl Sync for Arena {}
 
-impl<S: Size> Arena<S> {
+impl Arena {
   /// Creates a new ARENA with the given capacity,
   #[inline]
-  pub fn new(cap: S) -> Self {
-    Self::new_in(Shared::new_vec(cap))
+  pub fn new(cap: u32, alignment: usize) -> Self {
+    Self::new_in(Shared::new_vec(cap, alignment))
+  }
+
+  /// Creates a new ARENA backed by a mmap with the given capacity.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  pub fn map_mut<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    alignment: usize,
+  ) -> std::io::Result<Self> {
+    Shared::map_mut(path, open_options, mmap_options, alignment).map(Self::new_in)
+  }
+
+  /// Creates a new read only ARENA backed by a mmap with the given capacity.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  pub fn map<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    alignment: usize,
+  ) -> std::io::Result<Self> {
+    Shared::map(path, open_options, mmap_options, alignment).map(Self::new_in)
+  }
+
+  /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  pub fn map_anon(mmap_options: MmapOptions, alignment: usize) -> std::io::Result<Self> {
+    Shared::map_anon(mmap_options, alignment).map(Self::new_in)
   }
 
   /// Allocates an owned slice of memory in the ARENA.
   ///
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
   #[inline]
-  pub fn alloc_bytes_owned(&self, size: S) -> Result<BytesMut<S>, ArenaError> {
+  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, ArenaError> {
     self.alloc_bytes(size).map(|mut b| b.to_owned())
   }
 
@@ -257,8 +199,8 @@ impl<S: Size> Arena<S> {
   /// The [`BytesRefMut`] is zeroed out.
   ///
   /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
-  pub fn alloc_bytes(&self, size: S) -> Result<BytesRefMut<S>, ArenaError> {
-    if size == S::ZERO {
+  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+    if size == 0 {
       return Ok(BytesRefMut::null(self));
     }
 
@@ -294,141 +236,12 @@ impl<S: Size> Arena<S> {
     Err(ArenaError)
   }
 
-  /// Allocates an owned `T` in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc`](Self::alloc).
-  #[inline]
-  pub fn alloc_owned<T>(&self) -> Result<Owned<T, S>, ArenaError> {
-    self.alloc::<T>().map(|mut r| r.to_owned())
-  }
-
-  /// Allocates `T` in the ARENA.
-  pub fn alloc<T>(&self) -> Result<RefMut<T, S>, ArenaError> {
-    let mem_t = mem::size_of::<T>();
-
-    if mem_t == 0 {
-      // SAFETY: T is zero-sized and zero-aligned.
-      return Ok(unsafe { RefMut::null(self) });
-    }
-
-    let padded = Self::pad::<T>();
-    let header = self.header();
-    let mut current_allocated = header.allocated.load(Ordering::Acquire);
-
-    loop {
-      let want = current_allocated + padded;
-
-      if want > self.cap {
-        break;
-      }
-
-      match header.allocated.compare_exchange_weak(
-        current_allocated,
-        want,
-        Ordering::SeqCst,
-        Ordering::Acquire,
-      ) {
-        Ok(current) => {
-          // Return the aligned offset.
-          let current = current.to_usize();
-          let padded = padded.to_usize();
-          let allocated = current + padded;
-          let ptr_offset = allocated & !(mem::align_of::<T>() - 1);
-          return Ok(RefMut::new(
-            self,
-            unsafe { NonNull::new_unchecked(self.ptr.add(ptr_offset).cast()) },
-            current,
-            padded,
-          ));
-        }
-        Err(x) => {
-          current_allocated = x;
-        }
-      }
-    }
-
-    Err(ArenaError)
-  }
-
-  /// Allocates an owned `T` in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_unaligned`](Self::alloc_unaligned).
-  #[inline]
-  pub fn alloc_owned_unaligned<T>(&self) -> Result<Owned<T, S>, ArenaError> {
-    self.alloc_unaligned::<T>().map(|mut r| r.to_owned())
-  }
-
-  /// Allocates `T` in the ARENA, without padding.
-  pub fn alloc_unaligned<T>(&self) -> Result<RefMut<T, S>, ArenaError> {
-    let mem_t = mem::size_of::<T>();
-    // If size of T is zero, return early with a null reference.
-    if mem_t == 0 {
-      // SAFETY: T is zero-sized and zero-aligned.
-      return Ok(unsafe { RefMut::null(self) });
-    }
-
-    // Delegate to alloc_bytes with the aligned size.
-    let mut bytes_ref = self.alloc_bytes(S::from_usize(mem_t))?;
-    // Detach it, so the bytes_ref will not be collected by ARENA when dropped.
-    bytes_ref.detach = true;
-
-    // Calculate the aligned pointer within the allocated bytes.
-    let ptr = bytes_ref.as_mut_ptr();
-    let ptr_offset = ptr as usize - self.write_data_ptr.as_ptr() as usize;
-
-    Ok(RefMut::new(
-      self,
-      unsafe { NonNull::new_unchecked(ptr.cast()) },
-      bytes_ref.offset,
-      bytes_ref.cap,
-    ))
-  }
-
   fn dealloc(&self, _offset: usize, _size: usize, _used: usize) {
     // TODO: Implement deallocation logic
   }
-}
-
-impl<S: Size> Arena<S> {
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // #[inline]
-  // pub(super) fn mmap_mut<P: AsRef<std::path::Path>>(
-  //   path: P,
-  //   open_options: OpenOptions,
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::mmap_mut(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
-  // }
-
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // #[inline]
-  // pub(super) fn mmap<P: AsRef<std::path::Path>>(
-  //   path: P,
-  //   open_options: OpenOptions,
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::mmap(path, open_options, mmap_options, min_cap, alignment).map(Self::new_in)
-  // }
-
-  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  // #[inline]
-  // pub(super) fn new_anonymous_mmap(
-  //   mmap_options: MmapOptions,
-  //   min_cap: usize,
-  //   alignment: usize,
-  // ) -> std::io::Result<Self> {
-  //   let min_cap = min_cap.saturating_add(OVERHEAD);
-  //   Shared::new_mmaped_anon(mmap_options, min_cap, alignment).map(Self::new_in)
-  // }
 
   #[inline]
-  fn new_in(mut shared: Shared<S>) -> Self {
+  fn new_in(mut shared: Shared) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
     // And this ptr is only deallocated when the arena is dropped.
@@ -446,7 +259,7 @@ impl<S: Size> Arena<S> {
       read_data_ptr,
       header_ptr,
       ptr,
-      data_offset: shared.data_offset,
+      data_offset: shared.data_offset as u32,
       inner: AtomicPtr::new(Box::into_raw(Box::new(shared)) as _),
     }
   }
@@ -471,143 +284,11 @@ impl<S: Size> Arena<S> {
     }
   }
 
-  // #[cfg(not(feature = "unaligned"))]
-  // pub(super) fn alloc<T>(
-  //   &self,
-  //   size: u32,
-  //   value_size: u32,
-  //   align: u32,
-  //   overflow: u32,
-  // ) -> Result<AllocMeta, ArenaError> {
-  //   let trailer_size = mem::size_of::<T>();
-  //   let trailer_align = mem::align_of::<T>();
-
-  //   // Pad the allocation with enough bytes to ensure the requested alignment.
-  //   let padded = size as u64 + align as u64 - 1;
-  //   let trailer_padded = trailer_size as u64 + trailer_align as u64 - 1;
-  //   let header = self.header();
-  //   let mut current_allocated = header.allocated.load(Ordering::Acquire);
-  //   if current_allocated + padded + overflow as u64 + trailer_padded + value_size as u64
-  //     > self.cap as u64
-  //   {
-  //     return Err(ArenaError);
-  //   }
-
-  //   loop {
-  //     let want = current_allocated + padded + trailer_padded + value_size as u64;
-  //     match header.allocated.compare_exchange_weak(
-  //       current_allocated,
-  //       want,
-  //       Ordering::SeqCst,
-  //       Ordering::Acquire,
-  //     ) {
-  //       Ok(current) => {
-  //         // Return the aligned offset.
-  //         let allocated = current + padded;
-  //         let node_offset = (allocated as u32 - size) & !(align - 1);
-
-  //         let allocated_for_trailer = allocated + trailer_padded;
-  //         let value_offset =
-  //           (allocated_for_trailer as u32 - trailer_size as u32) & !(trailer_align as u32 - 1);
-
-  //         #[cfg(feature = "tracing")]
-  //         tracing::trace!(
-  //           "ARENA allocates {} bytes for a node",
-  //           want - current_allocated
-  //         );
-
-  //         return Ok(AllocMeta {
-  //           node_offset,
-  //           value_offset,
-  //           allocated: (want - current_allocated) as u32,
-  //         });
-  //       }
-  //       Err(x) => {
-  //         if x + padded + overflow as u64 + trailer_padded + value_size as u64 > self.cap as u64 {
-  //           return Err(ArenaError);
-  //         }
-
-  //         current_allocated = x;
-  //       }
-  //     }
-  //   }
-  // }
-
-  // #[cfg(not(feature = "unaligned"))]
-  // pub(super) fn alloc_key(&self, size: u16) -> Result<(u32, u16), ArenaError> {
-  //   let size = size as u64;
-  //   let header = self.header();
-  //   let mut current_allocated = header.allocated.load(Ordering::Acquire);
-  //   if current_allocated + size > self.cap as u64 {
-  //     return Err(ArenaError);
-  //   }
-
-  //   loop {
-  //     let want = current_allocated + size;
-  //     match header.allocated.compare_exchange_weak(
-  //       current_allocated,
-  //       want,
-  //       Ordering::SeqCst,
-  //       Ordering::Acquire,
-  //     ) {
-  //       Ok(current) => {
-  //         // Return the aligned offset.
-  //         #[cfg(feature = "tracing")]
-  //         tracing::trace!("ARENA allocates {} bytes for a key", size);
-  //         return Ok((current as u32, size as u16));
-  //       }
-  //       Err(x) => {
-  //         if x + size > self.cap as u64 {
-  //           return Err(ArenaError);
-  //         }
-
-  //         current_allocated = x;
-  //       }
-  //     }
-  //   }
-  // }
-
-  // #[cfg(not(feature = "unaligned"))]
-  // pub(super) fn alloc_value<T>(&self, size: u32) -> Result<(u32, u32), ArenaError> {
-  //   let padded = Self::pad_value_and_trailer::<T>(size);
-  //   let header = self.header();
-  //   let mut current_allocated = header.allocated.load(Ordering::Acquire);
-  //   if current_allocated + padded > self.cap as u64 {
-  //     return Err(ArenaError);
-  //   }
-
-  //   loop {
-  //     let want = current_allocated + padded;
-  //     match header.allocated.compare_exchange_weak(
-  //       current_allocated,
-  //       want,
-  //       Ordering::SeqCst,
-  //       Ordering::Acquire,
-  //     ) {
-  //       Ok(current) => {
-  //         // Return the aligned offset.
-  //         let allocated = current + padded;
-  //         let value_offset = (allocated as u32 - size) & !(mem::align_of::<T>() as u32 - 1);
-  //         #[cfg(feature = "tracing")]
-  //         tracing::trace!("ARENA allocates {} bytes for a value", padded);
-  //         return Ok((value_offset, padded as u32));
-  //       }
-  //       Err(x) => {
-  //         if x + padded > self.cap as u64 {
-  //           return Err(ArenaError);
-  //         }
-
-  //         current_allocated = x;
-  //       }
-  //     }
-  //   }
-  // }
-
   #[inline]
-  fn pad<T>() -> S {
+  fn _pad<T>() -> usize {
     let size = mem::size_of::<T>();
     let align = mem::align_of::<T>();
-    S::from_usize(size + align - 1)
+    size + align - 1
   }
 
   /// ## Safety:
@@ -660,7 +341,7 @@ impl<S: Size> Arena<S> {
   }
 }
 
-impl<S: Size> Drop for Arena<S> {
+impl Drop for Arena {
   fn drop(&mut self) {
     unsafe {
       self.inner.with_mut(|shared| {

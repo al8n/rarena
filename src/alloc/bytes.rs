@@ -95,10 +95,10 @@ macro_rules! impl_bytes_mut_utils {
   ($($ty:ident), +$(,)?) => {
     $(
       paste::paste! {
-        put_byte_order!([< put_ $ty >]::to_be_bytes($ty, "big-endian"));
+        put_byte_order!([< put_ $ty _be>]::to_be_bytes($ty, "big-endian"));
         put_byte_order!([< put_ $ty _le >]::to_le_bytes($ty, "little-endian"));
         put_byte_order!([< put_ $ty _ne >]::to_ne_bytes($ty, "native-endian"));
-        write_byte_order!([< write_ $ty >]::[< put_ $ty >]::to_be_bytes($ty, "big-endian"));
+        write_byte_order!([< write_ $ty _be>]::[< put_ $ty _be>]::to_be_bytes($ty, "big-endian"));
         write_byte_order!([< write_ $ty _le >]::[< put_ $ty _le >]::to_le_bytes($ty, "little-endian"));
         write_byte_order!([< write_ $ty _ne >]::[< put_ $ty _ne >]::to_ne_bytes($ty, "native-endian"));
       }
@@ -268,7 +268,7 @@ macro_rules! impl_bytes_utils {
   ($($ty:ident), +$(,)?) => {
     $(
       paste::paste! {
-        get_byte_order!([< get_ $ty >]::from_be_bytes($ty, "big-endian"));
+        get_byte_order!([< get_ $ty _be >]::from_be_bytes($ty, "big-endian"));
         get_byte_order!([< get_ $ty _le >]::from_le_bytes($ty, "little-endian"));
         get_byte_order!([< get_ $ty _ne >]::from_ne_bytes($ty, "native-endian"));
       }
@@ -349,13 +349,13 @@ macro_rules! impl_write_in {
 macro_rules! impl_write {
   ($ident: ident) => {
     #[cfg(feature = "std")]
-    impl<S: Size> std::io::Write for $ident<S> {
+    impl std::io::Write for $ident {
       impl_write_in!();
     }
   };
   ($ident: ident<'a>) => {
     #[cfg(feature = "std")]
-    impl<'a, S: Size> std::io::Write for $ident<'a, S> {
+    impl<'a> std::io::Write for $ident<'a> {
       impl_write_in!();
     }
   };
@@ -434,15 +434,15 @@ impl core::fmt::Display for NotEnoughBytes {
 impl std::error::Error for NotEnoughBytes {}
 
 /// A owned buffer that allocated by the ARENA
-pub struct BytesMut<S: Size> {
-  arena: Option<Arena<S>>,
+pub struct BytesMut {
+  arena: Option<Arena>,
   detach: bool,
   len: usize,
   cap: usize,
   offset: usize,
 }
 
-impl<S: Size> ops::Deref for BytesMut<S> {
+impl ops::Deref for BytesMut {
   type Target = [u8];
 
   #[inline]
@@ -455,7 +455,7 @@ impl<S: Size> ops::Deref for BytesMut<S> {
   }
 }
 
-impl<S: Size> ops::DerefMut for BytesMut<S> {
+impl ops::DerefMut for BytesMut {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     match self.arena {
@@ -466,14 +466,14 @@ impl<S: Size> ops::DerefMut for BytesMut<S> {
   }
 }
 
-impl<S: Size> AsRef<[u8]> for BytesMut<S> {
+impl AsRef<[u8]> for BytesMut {
   #[inline]
   fn as_ref(&self) -> &[u8] {
     self
   }
 }
 
-impl<S: Size> AsMut<[u8]> for BytesMut<S> {
+impl AsMut<[u8]> for BytesMut {
   #[inline]
   fn as_mut(&mut self) -> &mut [u8] {
     self
@@ -482,7 +482,7 @@ impl<S: Size> AsMut<[u8]> for BytesMut<S> {
 
 impl_write!(BytesMut);
 
-impl<S: Size> BytesMut<S> {
+impl BytesMut {
   impl_bytes_mut_utils!(8);
 
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
@@ -506,9 +506,9 @@ impl<S: Size> BytesMut<S> {
   pub(super) fn null() -> Self {
     Self {
       arena: None,
-      len: S::ZERO.to_usize(),
-      cap: S::ZERO.to_usize(),
-      offset: S::ZERO.to_usize(),
+      len: 0,
+      cap: 0,
+      offset: 0,
       detach: false,
     }
   }
@@ -532,7 +532,7 @@ impl<S: Size> BytesMut<S> {
   }
 }
 
-impl<S: Size> Drop for BytesMut<S> {
+impl Drop for BytesMut {
   #[inline]
   fn drop(&mut self) {
     match self.arena {
@@ -544,15 +544,15 @@ impl<S: Size> Drop for BytesMut<S> {
 }
 
 /// A buffer that allocated by the ARENA
-pub struct BytesRefMut<'a, S: Size> {
-  arena: &'a Arena<S>,
+pub struct BytesRefMut<'a> {
+  arena: &'a Arena,
   len: usize,
   pub(super) cap: usize,
   pub(super) offset: usize,
   pub(super) detach: bool,
 }
 
-impl<'a, S: Size> ops::Deref for BytesRefMut<'a, S> {
+impl<'a> ops::Deref for BytesRefMut<'a> {
   type Target = [u8];
 
   #[inline]
@@ -566,7 +566,7 @@ impl<'a, S: Size> ops::Deref for BytesRefMut<'a, S> {
   }
 }
 
-impl<'a, S: Size> ops::DerefMut for BytesRefMut<'a, S> {
+impl<'a> ops::DerefMut for BytesRefMut<'a> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     if self.cap == 0 {
@@ -578,14 +578,14 @@ impl<'a, S: Size> ops::DerefMut for BytesRefMut<'a, S> {
   }
 }
 
-impl<'a, S: Size> AsRef<[u8]> for BytesRefMut<'a, S> {
+impl<'a> AsRef<[u8]> for BytesRefMut<'a> {
   #[inline]
   fn as_ref(&self) -> &[u8] {
     self
   }
 }
 
-impl<'a, S: Size> AsMut<[u8]> for BytesRefMut<'a, S> {
+impl<'a> AsMut<[u8]> for BytesRefMut<'a> {
   #[inline]
   fn as_mut(&mut self) -> &mut [u8] {
     self
@@ -594,7 +594,7 @@ impl<'a, S: Size> AsMut<[u8]> for BytesRefMut<'a, S> {
 
 impl_write!(BytesRefMut<'a>);
 
-impl<'a, S: Size> BytesRefMut<'a, S> {
+impl<'a> BytesRefMut<'a> {
   impl_bytes_mut_utils!(8);
 
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
@@ -607,6 +607,12 @@ impl<'a, S: Size> BytesRefMut<'a, S> {
 
   impl_bytes_utils!(slice);
 
+  /// Returns the capacity of the buffer.
+  #[inline]
+  pub const fn capacity(&self) -> usize {
+    self.cap
+  }
+
   /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
   /// which means the space used by the buffer will never be reclaimed.
   #[inline]
@@ -616,18 +622,18 @@ impl<'a, S: Size> BytesRefMut<'a, S> {
 
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
-  pub(super) unsafe fn new(arena: &'a Arena<S>, len: S, offset: S) -> Self {
+  pub(super) unsafe fn new(arena: &'a Arena, len: u32, offset: u32) -> Self {
     Self {
       arena,
       len: 0,
-      cap: len.to_usize(),
-      offset: offset.to_usize(),
+      cap: len as usize,
+      offset: offset as usize,
       detach: false,
     }
   }
 
   #[inline]
-  pub(super) const fn null(arena: &'a Arena<S>) -> Self {
+  pub(super) const fn null(arena: &'a Arena) -> Self {
     Self {
       arena,
       cap: 0,
@@ -639,7 +645,7 @@ impl<'a, S: Size> BytesRefMut<'a, S> {
 
   #[allow(clippy::wrong_self_convention)]
   #[inline]
-  pub(super) fn to_owned(&mut self) -> BytesMut<S> {
+  pub(super) fn to_owned(&mut self) -> BytesMut {
     if self.cap == 0 {
       return BytesMut::null();
     }
@@ -675,7 +681,7 @@ impl<'a, S: Size> BytesRefMut<'a, S> {
   }
 }
 
-impl<'a, S: Size> Drop for BytesRefMut<'a, S> {
+impl<'a> Drop for BytesRefMut<'a> {
   #[inline]
   fn drop(&mut self) {
     if self.detach {

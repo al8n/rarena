@@ -1,3 +1,4 @@
+#[cfg(not(miri))]
 use fs4::FileExt;
 use memmap2::MmapOptions as Mmap2Options;
 use std::{
@@ -318,6 +319,7 @@ impl OpenOptions {
   pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
     if let Some(size) = self.create_new {
       return self.opts.open(path).and_then(|f| {
+        #[cfg(not(miri))]
         if self.lock_exclusive {
           f.lock_exclusive()?;
         } else if self.lock_shared {
@@ -331,6 +333,7 @@ impl OpenOptions {
     if let Some(size) = self.create {
       return if path.as_ref().exists() {
         self.opts.open(path).and_then(|f| {
+          #[cfg(not(miri))]
           if self.lock_exclusive {
             f.lock_exclusive()?;
           } else if self.lock_shared {
@@ -340,6 +343,7 @@ impl OpenOptions {
         })
       } else {
         self.opts.open(path).and_then(|f| {
+          #[cfg(not(miri))]
           if self.lock_exclusive {
             f.lock_exclusive()?;
           } else if self.lock_shared {
@@ -352,6 +356,7 @@ impl OpenOptions {
     }
 
     self.opts.open(path).and_then(|f| {
+      #[cfg(not(miri))]
       if self.lock_exclusive {
         f.lock_exclusive()?;
       } else if self.lock_shared {
