@@ -21,10 +21,10 @@ mod options;
 pub use options::*;
 
 mod common {
-  #[cfg(not(loom))]
+  #[cfg(not(feature = "loom"))]
   pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};
 
-  #[cfg(loom)]
+  #[cfg(feature = "loom")]
   pub(crate) use loom::alloc::{alloc_zeroed, dealloc, Layout};
 
   #[cfg(not(feature = "loom"))]

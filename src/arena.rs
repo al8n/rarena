@@ -64,6 +64,11 @@ impl core::fmt::Display for ArenaError {
 #[cfg(feature = "std")]
 impl std::error::Error for ArenaError {}
 
+struct Allocated {
+  offset: u32,
+  cap: u32,
+}
+
 /// Arena should be lock-free
 pub struct Arena {
   write_data_ptr: NonNull<u8>,
@@ -219,32 +224,29 @@ impl Arena {
       return Ok(RefMut::new_zst(self));
     }
 
-    let size_with_padding = Self::pad::<T>();
-    let mut bytes = self.alloc_bytes(size_with_padding as u32)?;
-    let ptr = bytes.as_mut_ptr();
-    bytes.detach();
-
+    let allocated = self
+      .alloc_in::<T>()?
+      .expect("allocated size is not zero, but get None");
+    let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.offset as usize) };
     if mem::needs_drop::<T>() {
       unsafe {
-        let object_ptr: *mut MaybeUninit<T> =
-          ptr.add(size_with_padding - mem::size_of::<T>()).cast();
-        ptr::write(object_ptr, MaybeUninit::uninit());
+        let ptr: *mut MaybeUninit<T> = ptr.cast();
+        ptr::write(ptr, MaybeUninit::uninit());
 
         Ok(RefMut::new(
-          ptr::read(object_ptr),
-          bytes.offset as u32,
-          bytes.cap,
+          ptr::read(ptr),
+          allocated.offset,
+          allocated.cap as usize,
           self,
         ))
       }
     } else {
       // SAFETY: The ptr is valid and well aligned.
       unsafe {
-        let object_ptr = ptr.add(size_with_padding - mem::size_of::<T>());
         Ok(RefMut::new_inline(
-          NonNull::new_unchecked(object_ptr.cast()),
-          bytes.offset as u32,
-          bytes.cap,
+          NonNull::new_unchecked(ptr.cast()),
+          allocated.offset,
+          allocated.cap as usize,
           self,
         ))
       }
@@ -264,9 +266,17 @@ impl Arena {
   /// The [`BytesRefMut`] is zeroed out.
   ///
   /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
+  #[inline]
   pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+    self.alloc_bytes_in(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated.cap, allocated.offset) },
+    })
+  }
+
+  fn alloc_bytes_in(&self, size: u32) -> Result<Option<Allocated>, ArenaError> {
     if size == 0 {
-      return Ok(BytesRefMut::null(self));
+      return Ok(None);
     }
 
     let header = self.header();
@@ -284,14 +294,7 @@ impl Arena {
         Ordering::SeqCst,
         Ordering::Acquire,
       ) {
-        Ok(offset) => {
-          unsafe {
-            // SAFETY: The len and offset is valid.
-            let mut bytes = BytesRefMut::new(self, size, offset);
-            bytes.fill(0);
-            return Ok(bytes);
-          }
-        }
+        Ok(offset) => return Ok(Some(Allocated { offset, cap: size })),
         Err(x) => allocated = x,
       }
     }
@@ -308,7 +311,7 @@ impl Arena {
   }
 
   /// It is like a pop operation, we will always allocate from the largest segment.
-  fn alloc_slow_path(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+  fn alloc_slow_path(&self, size: u32) -> Result<Option<Allocated>, ArenaError> {
     let backoff = Backoff::new();
     let header = self.header();
 
@@ -356,15 +359,12 @@ impl Arena {
         Ok(_) => {
           // We have successfully remove the head node from the list.
           // Then we can allocate the memory.
-          unsafe {
-            // SAFETY: The len and offset is valid.
-            let mut bytes = BytesRefMut::new(self, size, next);
-            bytes.fill(0);
-
-            // give back the remaining memory to the free list.
-            self.dealloc(next + size, node_size - size);
-            return Ok(bytes);
-          }
+          // give back the remaining memory to the free list.
+          self.dealloc(next + size, node_size - size);
+          return Ok(Some(Allocated {
+            offset: next,
+            cap: size,
+          }));
         }
         Err(current_sentinel) => {
           let (_, size) = decode_segment_node(current_sentinel);
@@ -378,6 +378,47 @@ impl Arena {
         }
       }
     }
+  }
+
+  fn alloc_in<T>(&self) -> Result<Option<Allocated>, ArenaError> {
+    if mem::size_of::<T>() == 0 {
+      return Ok(None);
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+
+    unsafe {
+      loop {
+        let ptr = self.get_pointer(allocated as usize);
+        let aligned_offset = ptr.align_offset(mem::align_of::<T>()) as u32;
+        let size = aligned_offset + mem::size_of::<T>() as u32;
+        let want = allocated + size;
+        if want > self.cap {
+          break;
+        }
+
+        match header.allocated.compare_exchange_weak(
+          allocated,
+          want,
+          Ordering::SeqCst,
+          Ordering::Acquire,
+        ) {
+          Ok(offset) => return Ok(Some(Allocated { offset, cap: size })),
+          Err(x) => allocated = x,
+        }
+      }
+    }
+
+    // allocate through slow path
+    for _ in 0..SLOW_RETRIES {
+      match self.alloc_slow_path(Self::pad::<T>() as u32) {
+        Ok(bytes) => return Ok(bytes),
+        Err(_) => continue,
+      }
+    }
+
+    Err(ArenaError)
   }
 
   fn dealloc(&self, offset: u32, size: u32) {
@@ -603,21 +644,33 @@ impl Arena {
   /// ## Safety:
   /// - The caller must make sure that `offset` must be less than the capacity of the arena.
   #[inline]
-  pub(super) const unsafe fn get_pointer<T>(&self, offset: usize) -> *const T {
+  pub(super) const unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
     if offset == 0 {
-      return self.ptr.cast();
+      return self.ptr;
     }
-    self.read_data_ptr.add(offset).cast()
+    self.read_data_ptr.add(offset)
   }
 
   /// ## Safety:
   /// - The caller must make sure that `offset` must be less than the capacity of the arena.
   #[inline]
-  pub(super) unsafe fn get_pointer_mut<T>(&self, offset: usize) -> *mut T {
+  pub(super) unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
     if offset == 0 {
-      return self.ptr.cast();
+      return self.ptr;
     }
-    self.write_data_ptr.as_ptr().add(offset).cast()
+    self.write_data_ptr.as_ptr().add(offset)
+  }
+
+  /// ## Safety:
+  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
+  #[inline]
+  pub(super) unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> *mut T {
+    if offset == 0 {
+      return ptr::null_mut();
+    }
+    let ptr = self.write_data_ptr.as_ptr().add(offset);
+    let aligned_offset = ptr.align_offset(mem::align_of::<T>());
+    ptr.add(aligned_offset) as *mut T
   }
 }
 
