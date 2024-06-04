@@ -11,7 +11,7 @@ fn alloc_bytes(a: Arena) {
 fn alloc_bytes_vec() {
   #[cfg(feature = "loom")]
   loom::model(|| {
-    alloc_bytes(Arena::new(ARENA_SIZE as u32, 8));
+    alloc_bytes(Arena::new(ArenaOptions::new()));
   });
 
   #[cfg(not(feature = "loom"))]

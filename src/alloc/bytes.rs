@@ -537,7 +537,7 @@ impl Drop for BytesMut {
   fn drop(&mut self) {
     match self.arena {
       Some(_) if self.detach => {}
-      Some(ref arena) => arena.dealloc(self.offset, self.cap, self.len),
+      Some(ref arena) => arena.dealloc(self.offset as u32, self.cap as u32),
       None => {}
     }
   }
@@ -688,6 +688,6 @@ impl<'a> Drop for BytesRefMut<'a> {
       return;
     }
 
-    self.arena.dealloc(self.offset, self.len, self.cap);
+    self.arena.dealloc(self.offset as u32, self.cap as u32);
   }
 }

@@ -134,24 +134,25 @@ pub(super) struct Shared {
 }
 
 impl Shared {
-  pub(super) fn new_vec(cap: u32, alignment: usize) -> Self {
+  pub(super) fn new_vec(cap: u32, alignment: usize, min_segment_size: u32) -> Self {
     let vec = AlignedVec::new(cap as usize, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
       let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
-
-      let mut this = Self {
+      let data_offset = header_ptr_offset + mem::size_of::<Header>();
+      let this = Self {
         cap,
         refs: AtomicUsize::new(1),
         ptr,
         header_ptr: ptr.add(header_ptr_offset),
         backend: SharedBackend::Vec(vec),
-        data_offset: 0,
+        data_offset,
       };
-      let data_offset = header_ptr_offset + mem::size_of::<Header>();
-      this.header_mut_ptr().write(Header::new(data_offset as u32));
-      this.data_offset = data_offset;
+
+      this
+        .header_mut_ptr()
+        .write(Header::new(data_offset as u32, min_segment_size));
 
       this
     }
@@ -163,6 +164,7 @@ impl Shared {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
     alignment: usize,
+    min_segment_size: u32,
   ) -> std::io::Result<Self> {
     let (create_new, file) = open_options.open(path.as_ref())?;
 
@@ -200,8 +202,18 @@ impl Shared {
           data_offset,
         };
 
+        // Ensure that the header_ptr is correctly aligned
+        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
+          return Err(invalid_data(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Header pointer is not aligned",
+          )));
+        }
+
         // Safety: we have add the overhead for the header
-        this.header_mut_ptr().write(Header::new(data_offset as u32));
+        this
+          .header_mut_ptr()
+          .write(Header::new(data_offset as u32, min_segment_size));
 
         Ok(this)
       })
@@ -237,7 +249,7 @@ impl Shared {
         let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
 
-        Ok(Self {
+        let this = Self {
           cap: len as u32,
           backend: SharedBackend::Mmap {
             buf: Box::into_raw(Box::new(mmap)),
@@ -250,13 +262,27 @@ impl Shared {
           ptr: ptr as _,
           refs: AtomicUsize::new(1),
           data_offset,
-        })
+        };
+
+        // Ensure that the header_ptr is correctly aligned
+        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
+          return Err(invalid_data(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Header pointer is not aligned",
+          )));
+        }
+
+        Ok(this)
       })
     }
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub(super) fn map_anon(mmap_options: MmapOptions, alignment: usize) -> std::io::Result<Self> {
+  pub(super) fn map_anon(
+    mmap_options: MmapOptions,
+    alignment: usize,
+    min_segment_size: u32,
+  ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
       if mmap.len() < OVERHEAD {
         return Err(invalid_data(TooSmall::new(mmap.len(), OVERHEAD)));
@@ -290,7 +316,9 @@ impl Shared {
           )));
         }
 
-        this.header_mut_ptr().write(Header::new(data_offset as u32));
+        this
+          .header_mut_ptr()
+          .write(Header::new(data_offset as u32, min_segment_size));
         Ok(this)
       }
     })

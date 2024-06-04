@@ -4,7 +4,9 @@ use core::{
   slice,
 };
 
-use crate::common::*;
+use crossbeam_utils::Backoff;
+
+use crate::{common::*, ArenaOptions};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
@@ -22,20 +24,24 @@ pub use bytes::*;
 mod tests;
 
 const OVERHEAD: usize = mem::size_of::<Header>();
+const SLOW_RETRIES: usize = 5;
 
 #[derive(Debug)]
 #[repr(C)]
 pub(super) struct Header {
+  /// The sentinel node for the ordered free list.
   sentinel: AtomicU64,
   allocated: AtomicU32,
+  min_segment_size: AtomicU32,
 }
 
 impl Header {
   #[inline]
-  fn new(size: u32) -> Self {
+  fn new(size: u32, min_segment_size: u32) -> Self {
     Self {
       allocated: AtomicU32::new(size),
-      sentinel: AtomicU64::new(0),
+      sentinel: AtomicU64::new(encode_segment_node(u32::MAX, u32::MAX)),
+      min_segment_size: AtomicU32::new(min_segment_size),
     }
   }
 }
@@ -151,8 +157,12 @@ unsafe impl Sync for Arena {}
 impl Arena {
   /// Creates a new ARENA with the given capacity,
   #[inline]
-  pub fn new(cap: u32, alignment: usize) -> Self {
-    Self::new_in(Shared::new_vec(cap, alignment))
+  pub fn new(opts: ArenaOptions) -> Self {
+    Self::new_in(Shared::new_vec(
+      opts.capacity(),
+      opts.alignment(),
+      opts.minimum_segment_size(),
+    ))
   }
 
   /// Creates a new ARENA backed by a mmap with the given capacity.
@@ -160,11 +170,18 @@ impl Arena {
   #[inline]
   pub fn map_mut<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    alignment: usize,
   ) -> std::io::Result<Self> {
-    Shared::map_mut(path, open_options, mmap_options, alignment).map(Self::new_in)
+    Shared::map_mut(
+      path,
+      open_options,
+      mmap_options,
+      opts.alignment(),
+      opts.minimum_segment_size(),
+    )
+    .map(Self::new_in)
   }
 
   /// Creates a new read only ARENA backed by a mmap with the given capacity.
@@ -176,14 +193,18 @@ impl Arena {
     mmap_options: MmapOptions,
     alignment: usize,
   ) -> std::io::Result<Self> {
+    assert!(
+      alignment.is_power_of_two(),
+      "alignment must be a power of 2"
+    );
     Shared::map(path, open_options, mmap_options, alignment).map(Self::new_in)
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
-  pub fn map_anon(mmap_options: MmapOptions, alignment: usize) -> std::io::Result<Self> {
-    Shared::map_anon(mmap_options, alignment).map(Self::new_in)
+  pub fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
+    Shared::map_anon(mmap_options, opts.alignment(), opts.minimum_segment_size()).map(Self::new_in)
   }
 
   /// Allocates an owned slice of memory in the ARENA.
@@ -231,13 +252,228 @@ impl Arena {
       }
     }
 
-    // TODO: check if the segmented list has enough space to allocate.
+    // allocate through slow path
+    for _ in 0..SLOW_RETRIES {
+      match self.alloc_slow_path(size) {
+        Ok(bytes) => return Ok(bytes),
+        Err(_) => continue,
+      }
+    }
 
     Err(ArenaError)
   }
 
-  fn dealloc(&self, _offset: usize, _size: usize, _used: usize) {
-    // TODO: Implement deallocation logic
+  /// It is like a pop operation, we will always allocate from the largest segment.
+  fn alloc_slow_path(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+    let backoff = Backoff::new();
+    let header = self.header();
+
+    loop {
+      let head = header.sentinel.load(Ordering::Acquire);
+      let (next, node_size) = decode_segment_node(head);
+      // free list is empty
+      if next == u32::MAX && node_size == u32::MAX {
+        return Err(ArenaError);
+      }
+
+      if node_size == 0 {
+        // The current head is removed from the list, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // The larget segment does not have enough space to allocate, so just return err.
+      if size > node_size {
+        return Err(ArenaError);
+      }
+
+      // CAS to remove the current
+      let removed_head = encode_segment_node(next, 0);
+      if header
+        .sentinel
+        .compare_exchange_weak(head, removed_head, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+      {
+        // wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // We have successfully mark the head is removed, then we need to let head node's next point to the next node.
+      let next_node = unsafe { self.get_segment_node(next) };
+      let next_node_val = next_node.load(Ordering::Acquire);
+
+      match header.sentinel.compare_exchange(
+        removed_head,
+        next_node_val,
+        Ordering::AcqRel,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => {
+          // We have successfully remove the head node from the list.
+          // Then we can allocate the memory.
+          unsafe {
+            // SAFETY: The len and offset is valid.
+            let mut bytes = BytesRefMut::new(self, size, next);
+            bytes.fill(0);
+
+            // give back the remaining memory to the free list.
+            self.dealloc(next + size, node_size - size);
+            return Ok(bytes);
+          }
+        }
+        Err(current_sentinel) => {
+          let (_, size) = decode_segment_node(current_sentinel);
+          if size == 0 {
+            // The current head is removed from the list, wait other thread to make progress.
+            backoff.snooze();
+            continue;
+          }
+
+          backoff.spin();
+        }
+      }
+    }
+  }
+
+  fn dealloc(&self, offset: u32, size: u32) {
+    // check if we have enough space to allocate a new segment in this segment.
+    if !self.validate_segment(offset, size) {
+      return;
+    }
+
+    let backoff = Backoff::new();
+
+    unsafe {
+      let ptr = self.write_data_ptr.as_ptr().add(offset as usize);
+
+      // clear the memory
+      ptr::write_bytes(ptr, 0, size as usize);
+      let header = self.header();
+
+      loop {
+        let (prev, next) = self.find_free_list_position(size);
+
+        let prev_node = prev
+          .map(|p| self.get_segment_node(p))
+          .unwrap_or(&header.sentinel);
+        let next_node_offset = next.unwrap_or(u32::MAX);
+
+        self.write_segment_node(next_node_offset, offset, size);
+
+        // CAS prev_node's next points to the new_node
+        let prev_node_val = prev_node.load(Ordering::Acquire);
+        let (_, prev_node_size) = decode_segment_node(prev_node_val);
+
+        // the prev is removed from the list, then we need to refind the position.
+        if prev_node_size == 0 {
+          // wait other thread to make progress.
+          backoff.snooze();
+          continue;
+        }
+
+        match prev_node.compare_exchange(
+          prev_node_val,
+          encode_segment_node(offset, size),
+          Ordering::AcqRel,
+          Ordering::Relaxed,
+        ) {
+          Ok(_) => break,
+          Err(current_prev) => {
+            let (_, size) = decode_segment_node(current_prev);
+            // the prev is removed from the list, then we need to refind the position.
+            if size == 0 {
+              // wait other thread to make progress.
+              backoff.snooze();
+              continue;
+            }
+
+            backoff.spin();
+          }
+        }
+      }
+    }
+  }
+
+  /// Returns `true` if this offset and size is valid for a segment node.
+  #[inline]
+  fn validate_segment(&self, offset: u32, size: u32) -> bool {
+    unsafe {
+      let ptr = self.write_data_ptr.as_ptr().add(offset as usize);
+      let aligned_offset = ptr.align_offset(mem::align_of::<AtomicU64>());
+      let want = aligned_offset + mem::size_of::<AtomicU64>() + mem::size_of::<u32>();
+      if want >= size as usize {
+        return false;
+      }
+
+      if size < self.header().min_segment_size.load(Ordering::Acquire) {
+        return false;
+      }
+
+      true
+    }
+  }
+
+  fn find_free_list_position(&self, val: u32) -> (Option<u32>, Option<u32>) {
+    let header = self.header();
+    let mut current = &header.sentinel;
+
+    let mut prev = 0;
+    let backoff = Backoff::new();
+    loop {
+      let current_node = current.load(Ordering::Acquire);
+      let (current_next, current_node_size) = decode_segment_node(current_node);
+
+      // we reach the tail of the list
+      if current_next == u32::MAX {
+        // the list is empty
+        if prev == 0 {
+          return (None, None);
+        }
+
+        return (Some(prev), None);
+      }
+
+      // the current is marked as removed
+      if current_node_size == 0 {
+        // wait other thread to remove the node.
+        backoff.snooze();
+        continue;
+      }
+
+      // the size is smaller than or equal to the val
+      // then the value should be inserted before the current node
+      if val >= current_node_size {
+        if prev == 0 {
+          return (None, Some(current_next));
+        }
+
+        return (Some(prev), Some(current_next));
+      }
+
+      let next = unsafe { self.get_segment_node(current_next) };
+
+      prev = current_next;
+      current = next;
+      backoff.spin();
+    }
+  }
+
+  unsafe fn get_segment_node(&self, offset: u32) -> &AtomicU64 {
+    let ptr = self.read_data_ptr.add(offset as usize);
+    let aligned_offset = ptr.align_offset(mem::align_of::<AtomicU64>());
+    let ptr = ptr.add(aligned_offset);
+    &*(ptr as *const _)
+  }
+
+  unsafe fn write_segment_node(&self, next: u32, offset: u32, size: u32) -> u32 {
+    let ptr = self.write_data_ptr.as_ptr().add(offset as usize);
+    let aligned_offset = ptr.align_offset(mem::align_of::<AtomicU64>());
+    let ptr = ptr.add(aligned_offset);
+    let node = ptr as *mut AtomicU64;
+    let node = &mut *node;
+    node.store(encode_segment_node(next, size), Ordering::Release);
+    offset
   }
 
   #[inline]
@@ -386,6 +622,16 @@ impl Drop for Arena {
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn invalid_data<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::Error {
   std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+}
+
+#[inline]
+const fn decode_segment_node(val: u64) -> (u32, u32) {
+  ((val >> 32) as u32, val as u32)
+}
+
+#[inline]
+const fn encode_segment_node(next: u32, size: u32) -> u64 {
+  ((next as u64) << 32) | size as u64
 }
 
 #[inline(never)]

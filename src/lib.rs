@@ -16,11 +16,8 @@ extern crate std;
 /// ARENA allocator
 pub mod alloc;
 
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 mod options;
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-pub use options::{MmapOptions, OpenOptions};
+pub use options::*;
 
 mod common {
   #[cfg(not(loom))]
