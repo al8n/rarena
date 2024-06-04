@@ -39,7 +39,7 @@ impl Default for OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let options = OpenOptions::default();
   /// ```
@@ -56,7 +56,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let mut options = OpenOptions::new();
   /// ```
@@ -80,7 +80,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().read(true);
   /// ```
@@ -101,7 +101,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().write(true);
   /// ```
@@ -146,7 +146,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().append(true);
   /// ```
@@ -166,7 +166,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().write(true).truncate(true);
   /// ```
@@ -188,13 +188,13 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().write(true).create(Some(1000));
   /// ```
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().write(true).create(None);
   /// ```
@@ -234,7 +234,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let file = OpenOptions::new()
   ///   .write(true)
@@ -242,7 +242,7 @@ impl OpenOptions {
   /// ```
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new()
   ///   .write(true)
@@ -271,7 +271,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().shrink_on_drop(true);
   /// ```
@@ -289,7 +289,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().lock_shared(true);
   /// ```
@@ -307,7 +307,7 @@ impl OpenOptions {
   /// # Examples
   ///
   /// ```rust
-  /// use rarena::OpenOptions;
+  /// use rarena_allocator::OpenOptions;
   ///
   /// let opts = OpenOptions::new().lock_exclusive(true);
   /// ```
@@ -401,7 +401,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```rust
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   /// // Create a new memory map options.
   /// let mut mmap_options = MmapOptions::new();
@@ -420,7 +420,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   /// let opts = MmapOptions::new().len(9);
   /// ```
@@ -439,7 +439,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   /// let opts = MmapOptions::new().offset(30);
   /// ```
@@ -458,7 +458,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   /// let stack = MmapOptions::new().stack();
   /// ```
@@ -481,7 +481,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   /// let stack = MmapOptions::new().huge(Some(21)).len(2*1024*1024);
   /// ```
@@ -500,7 +500,7 @@ impl MmapOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::MmapOptions;
+  /// use rarena_allocator::MmapOptions;
   ///
   ///
   /// let opts = MmapOptions::new().populate();

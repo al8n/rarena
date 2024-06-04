@@ -42,7 +42,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_maximum_alignment(16);
   /// ```
@@ -66,7 +66,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_capacity(2048);
   /// ```
@@ -85,7 +85,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_minimum_segment_size(64);
   /// ```
@@ -100,7 +100,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_maximum_alignment(16);
   ///
@@ -116,7 +116,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_capacity(2048);
   ///
@@ -132,7 +132,7 @@ impl ArenaOptions {
   /// # Example
   ///
   /// ```
-  /// use rarena::ArenaOptions;
+  /// use rarena_allocator::ArenaOptions;
   ///
   /// let opts = ArenaOptions::new().with_minimum_segment_size(64);
   ///

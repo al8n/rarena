@@ -1,0 +1,20 @@
+[package]
+name = "rarena"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+description = "Lock-free allocator and data structures based on ARENA."
+categories = ["data-structures", "memory-management", "concurrency", "no-std"]
+keywords = ["arena", "lock-free"]
+
+[features]
+default = ["std"]
+alloc = ["rarena-allocator/alloc"]
+std = ["rarena-allocator/std"]
+memmap = ["rarena-allocator/memmap", "std"]
+
+[dependencies]
+rarena-allocator.workspace = true

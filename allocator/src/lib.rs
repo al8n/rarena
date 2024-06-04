@@ -5,7 +5,7 @@
 #![deny(missing_docs)]
 
 #[cfg(not(any(feature = "std", feature = "alloc")))]
-compile_error!("`rarena` requires either the 'std' or 'alloc' feature to be enabled");
+compile_error!("`rarena-allocator` requires either the 'std' or 'alloc' feature to be enabled");
 
 #[cfg(not(feature = "std"))]
 extern crate alloc as std;
