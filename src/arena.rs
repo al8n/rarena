@@ -191,13 +191,8 @@ impl Arena {
     path: P,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    alignment: usize,
   ) -> std::io::Result<Self> {
-    assert!(
-      alignment.is_power_of_two(),
-      "alignment must be a power of 2"
-    );
-    Shared::map(path, open_options, mmap_options, alignment).map(Self::new_in)
+    Shared::map(path, open_options, mmap_options).map(Self::new_in)
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.

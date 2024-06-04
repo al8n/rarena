@@ -225,7 +225,6 @@ impl Shared {
     path: P,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    alignment: usize,
   ) -> std::io::Result<Self> {
     if !path.as_ref().exists() {
       return Err(std::io::Error::new(
@@ -243,8 +242,6 @@ impl Shared {
           return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
         }
 
-        // TODO:  should we align the memory?
-        let _alignment = alignment.max(mem::align_of::<Header>());
         let ptr = mmap.as_ptr();
         let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
         let data_offset = header_ptr_offset + mem::size_of::<Header>();

@@ -29,12 +29,12 @@ fn alloc_bytes_mmap() {
     .read(true)
     .write(true);
   let mmap_options = MmapOptions::default();
-  alloc_bytes(Arena::map_mut(p, open_options, mmap_options, 8).unwrap());
+  alloc_bytes(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
 }
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn alloc_bytes_mmap_anon() {
   let mmap_options = MmapOptions::default().len(ARENA_SIZE as usize);
-  alloc_bytes(Arena::map_anon(mmap_options, 8).unwrap());
+  alloc_bytes(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
 }

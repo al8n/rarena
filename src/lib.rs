@@ -14,7 +14,8 @@ extern crate alloc as std;
 extern crate std;
 
 /// ARENA allocator
-pub mod alloc;
+pub mod arena;
+pub use arena::{Arena, ArenaError};
 
 mod options;
 pub use options::*;
