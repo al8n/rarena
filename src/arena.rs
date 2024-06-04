@@ -1,5 +1,7 @@
 use core::{
-  fmt, mem, ops,
+  fmt,
+  mem::{self, MaybeUninit},
+  ops,
   ptr::{self, NonNull},
   slice,
 };
@@ -19,6 +21,9 @@ use backed::*;
 
 mod bytes;
 pub use bytes::*;
+
+mod object;
+pub use object::*;
 
 #[cfg(test)]
 mod tests;
@@ -160,7 +165,7 @@ impl Arena {
   pub fn new(opts: ArenaOptions) -> Self {
     Self::new_in(Shared::new_vec(
       opts.capacity(),
-      opts.alignment(),
+      opts.maximum_alignment(),
       opts.minimum_segment_size(),
     ))
   }
@@ -178,7 +183,7 @@ impl Arena {
       path,
       open_options,
       mmap_options,
-      opts.alignment(),
+      opts.maximum_alignment(),
       opts.minimum_segment_size(),
     )
     .map(Self::new_in)
@@ -199,7 +204,51 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
   pub fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
-    Shared::map_anon(mmap_options, opts.alignment(), opts.minimum_segment_size()).map(Self::new_in)
+    Shared::map_anon(
+      mmap_options,
+      opts.maximum_alignment(),
+      opts.minimum_segment_size(),
+    )
+    .map(Self::new_in)
+  }
+
+  /// Allocates a `T` in the ARENA.
+  #[inline]
+  pub fn alloc<T>(&self) -> Result<RefMut<'_, T>, ArenaError> {
+    if mem::size_of::<T>() == 0 {
+      return Ok(RefMut::new_zst(self));
+    }
+
+    let size_with_padding = Self::pad::<T>();
+    let mut bytes = self.alloc_bytes(size_with_padding as u32)?;
+    let ptr = bytes.as_mut_ptr();
+    bytes.detach();
+
+    if mem::needs_drop::<T>() {
+      unsafe {
+        let object_ptr: *mut MaybeUninit<T> =
+          ptr.add(size_with_padding - mem::size_of::<T>()).cast();
+        ptr::write(object_ptr, MaybeUninit::uninit());
+
+        Ok(RefMut::new(
+          ptr::read(object_ptr),
+          bytes.offset as u32,
+          bytes.cap,
+          self,
+        ))
+      }
+    } else {
+      // SAFETY: The ptr is valid and well aligned.
+      unsafe {
+        let object_ptr = ptr.add(size_with_padding - mem::size_of::<T>());
+        Ok(RefMut::new_inline(
+          NonNull::new_unchecked(object_ptr.cast()),
+          bytes.offset as u32,
+          bytes.cap,
+          self,
+        ))
+      }
+    }
   }
 
   /// Allocates an owned slice of memory in the ARENA.
@@ -516,7 +565,7 @@ impl Arena {
   }
 
   #[inline]
-  fn _pad<T>() -> usize {
+  fn pad<T>() -> usize {
     let size = mem::size_of::<T>();
     let align = mem::align_of::<T>();
     size + align - 1

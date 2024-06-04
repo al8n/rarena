@@ -8,7 +8,7 @@ pub use open_options::*;
 /// Options for creating an ARENA
 #[derive(Debug, Clone, Copy)]
 pub struct ArenaOptions {
-  alignment: usize,
+  maximum_alignment: usize,
   capacity: u32,
   minimum_segment_size: u32,
 }
@@ -25,31 +25,34 @@ impl ArenaOptions {
   #[inline]
   pub const fn new() -> Self {
     Self {
-      alignment: 8,
+      maximum_alignment: 8,
       capacity: 1024,
       minimum_segment_size: 48,
     }
   }
 
-  /// Set the alignment of the ARENA.
+  /// Set the maximum alignment of the ARENA.
+  ///
+  /// If you are trying to allocate a `T` which requires a larger alignment than this value,
+  /// then will lead to `read_unaligned`, which is undefined behavior on some platforms.
   ///
   /// The alignment must be a power of 2.
-  /// The default alignment is 8.
+  /// The default maximum alignment is `8`.
   ///
   /// # Example
   ///
   /// ```
   /// use rarena::ArenaOptions;
   ///
-  /// let opts = ArenaOptions::new().with_alignment(16);
+  /// let opts = ArenaOptions::new().with_maximum_alignment(16);
   /// ```
   #[inline]
-  pub const fn with_alignment(mut self, alignment: usize) -> Self {
+  pub const fn with_maximum_alignment(mut self, alignment: usize) -> Self {
     assert!(
       alignment.is_power_of_two(),
       "alignment must be a power of 2"
     );
-    self.alignment = alignment;
+    self.maximum_alignment = alignment;
     self
   }
 
@@ -92,20 +95,20 @@ impl ArenaOptions {
     self
   }
 
-  /// Get the alignment of the ARENA.
+  /// Get the maximum alignment of the ARENA.
   ///
   /// # Example
   ///
   /// ```
   /// use rarena::ArenaOptions;
   ///
-  /// let opts = ArenaOptions::new().with_alignment(16);
+  /// let opts = ArenaOptions::new().with_maximum_alignment(16);
   ///
-  /// assert_eq!(opts.alignment(), 16);
+  /// assert_eq!(opts.maximum_alignment(), 16);
   /// ```
   #[inline]
-  pub const fn alignment(&self) -> usize {
-    self.alignment
+  pub const fn maximum_alignment(&self) -> usize {
+    self.maximum_alignment
   }
 
   /// Get the capacity of the ARENA.
