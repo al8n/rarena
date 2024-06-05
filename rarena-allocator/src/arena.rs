@@ -362,8 +362,7 @@ impl Arena {
   /// // reopen the file
   /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
-  /// let ptr: *const Recoverable = arena.get_pointer(offset as usize).cast();
-  /// let foo = &*ptr;
+  /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
   ///
   /// assert_eq!(foo.field1, 10);
   /// assert_eq!(foo.field2.load(Ordering::Acquire), 20);
@@ -377,7 +376,7 @@ impl Arena {
     let allocated = self
       .alloc_in::<T>()?
       .expect("allocated size is not zero, but get None");
-    let ptr = unsafe { self.get_aligned_pointer::<T>(allocated.offset as usize) };
+    let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.offset as usize) };
     if mem::needs_drop::<T>() {
       unsafe {
         let ptr: *mut MaybeUninit<T> = ptr.as_ptr().cast();
@@ -491,6 +490,7 @@ impl Arena {
   }
 
   /// Returns a mutable bytes slice from the ARENA.
+  /// If the ARENA is read-only, then this method will return an empty slice.
   ///
   /// # Safety
   /// - `offset..offset + size` must be allocated memory.
@@ -505,6 +505,10 @@ impl Arena {
     }
 
     let ptr = self.get_pointer_mut(offset);
+    if ptr.is_null() {
+      return &mut [];
+    }
+
     slice::from_raw_parts_mut(ptr, size)
   }
 
@@ -521,6 +525,7 @@ impl Arena {
   }
 
   /// Returns a pointer to the memory at the given offset.
+  /// If the ARENA is read-only, then this method will return a null pointer.
   ///
   /// # Safety
   /// - `offset` must be less than the capacity of the arena.
@@ -529,7 +534,11 @@ impl Arena {
     if offset == 0 {
       return self.ptr;
     }
-    self.write_data_ptr.as_ptr().add(offset)
+    let ptr = self.write_data_ptr.as_ptr();
+    if ptr.is_null() {
+      return ptr::null_mut();
+    }
+    ptr.add(offset)
   }
 
   /// Returns an aligned pointer to the memory at the given offset.
@@ -538,11 +547,34 @@ impl Arena {
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the arena.
   #[inline]
-  pub unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> NonNull<T> {
+  pub unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
+    if offset == 0 {
+      return ptr::null();
+    }
+
+    let ptr = self.read_data_ptr.add(offset);
+    let aligned_offset = ptr.align_offset(mem::align_of::<T>());
+    ptr.add(aligned_offset).cast()
+  }
+
+  /// Returns an aligned pointer to the memory at the given offset.
+  /// If the ARENA is read-only, then this method will return a null pointer.
+  ///
+  /// # Safety
+  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
+  /// - `offset` must be less than the capacity of the arena.
+  #[inline]
+  pub unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
     if offset == 0 {
       return NonNull::dangling();
     }
-    let ptr = self.write_data_ptr.as_ptr().add(offset);
+
+    let ptr = self.write_data_ptr.as_ptr();
+    if ptr.is_null() {
+      return NonNull::dangling();
+    }
+
+    let ptr = ptr.add(offset);
     let aligned_offset = ptr.align_offset(mem::align_of::<T>());
     NonNull::new_unchecked(ptr.add(aligned_offset).cast())
   }
