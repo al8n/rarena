@@ -13,6 +13,12 @@ extern crate alloc as std;
 #[cfg(feature = "std")]
 extern crate std;
 
+/// SkipMap
+pub mod map;
+
+/// SkipSet
+pub mod set;
+
 mod common {
   #[cfg(not(feature = "loom"))]
   pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};

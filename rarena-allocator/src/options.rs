@@ -11,6 +11,7 @@ pub struct ArenaOptions {
   maximum_alignment: usize,
   capacity: u32,
   minimum_segment_size: u32,
+  maximum_retries: u8,
 }
 
 impl Default for ArenaOptions {
@@ -28,6 +29,7 @@ impl ArenaOptions {
       maximum_alignment: 8,
       capacity: 1024,
       minimum_segment_size: 48,
+      maximum_retries: 5,
     }
   }
 
@@ -95,6 +97,25 @@ impl ArenaOptions {
     self
   }
 
+  /// Set the maximum retries of the ARENA.
+  ///
+  /// This value controls how many times the ARENA will retry to allocate from slow path.
+  ///
+  /// The default maximum retries is `5`.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_maximum_retries(10);
+  /// ```
+  #[inline]
+  pub const fn with_maximum_retries(mut self, maximum_retries: u8) -> Self {
+    self.maximum_retries = maximum_retries;
+    self
+  }
+
   /// Get the maximum alignment of the ARENA.
   ///
   /// # Example
@@ -141,5 +162,24 @@ impl ArenaOptions {
   #[inline]
   pub const fn minimum_segment_size(&self) -> u32 {
     self.minimum_segment_size
+  }
+
+  /// Get the maximum retries of the ARENA.
+  /// This value controls how many times the ARENA will retry to allocate from slow path.
+  ///
+  /// The default maximum retries is `5`.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_maximum_retries(10);
+  ///
+  /// assert_eq!(opts.maximum_retries(), 10);
+  /// ```
+  #[inline]
+  pub const fn maximum_retries(&self) -> u8 {
+    self.maximum_retries
   }
 }

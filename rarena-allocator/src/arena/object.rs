@@ -44,6 +44,12 @@ impl<'a, T> RefMut<'a, T> {
     }
   }
 
+  /// Returns the offset to the pointer of the ARENA.
+  #[inline]
+  pub const fn offset(&self) -> usize {
+    self.offset as usize
+  }
+
   /// Returns a shared reference to the value.
   ///
   /// # Safety
@@ -65,6 +71,23 @@ impl<'a, T> RefMut<'a, T> {
       Kind::Slot(slot) => slot.as_mut_ptr().as_mut().unwrap(),
       Kind::Inline(ptr) => ptr.as_mut(),
       Kind::Dangling(val) => val.as_mut(),
+    }
+  }
+
+  /// Returns the pointer to the `T`, the pointer may not be initialized.
+  /// If the pointer is not initialized, then [`NonNull::dangling()`] is returned.
+  pub fn as_mut_ptr(&mut self) -> NonNull<T> {
+    match &mut self.kind {
+      Kind::Slot(slot) => {
+        if slot.as_ptr().is_null() {
+          NonNull::dangling()
+        } else {
+          // SAFETY: we have checked that the pointer is not null.
+          unsafe { NonNull::new_unchecked(slot.as_mut_ptr()) }
+        }
+      }
+      Kind::Inline(ptr) => *ptr,
+      Kind::Dangling(val) => *val,
     }
   }
 

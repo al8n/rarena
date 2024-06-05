@@ -29,7 +29,6 @@ pub use object::*;
 mod tests;
 
 const OVERHEAD: usize = mem::size_of::<Header>();
-const SLOW_RETRIES: usize = 5;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -78,6 +77,7 @@ pub struct Arena {
   header_ptr: *const u8,
   ptr: *mut u8,
   data_offset: u32,
+  max_retries: u8,
   inner: AtomicPtr<()>,
   cap: u32,
 }
@@ -117,6 +117,7 @@ impl Clone for Arena {
         write_data_ptr: self.write_data_ptr,
         read_data_ptr: self.read_data_ptr,
         header_ptr: self.header_ptr,
+        max_retries: self.max_retries,
         ptr: self.ptr,
         data_offset: self.data_offset,
         inner: AtomicPtr::new(shared as _),
@@ -135,7 +136,7 @@ impl Arena {
 
   /// Returns the capacity of the arena.
   #[inline]
-  pub fn capacity(&self) -> usize {
+  pub const fn capacity(&self) -> usize {
     self.cap as usize
   }
 
@@ -161,6 +162,15 @@ impl Arena {
     self.header().discarded.load(Ordering::Acquire) as usize
   }
 
+  /// Forcelly increases the discarded bytes.
+  #[inline]
+  pub fn increase_discarded(&self, size: usize) {
+    self
+      .header()
+      .discarded
+      .fetch_add(size as u32, Ordering::Release);
+  }
+
   /// Returns the minimum segment size of the arena.
   #[inline]
   pub fn minimum_segment_size(&self) -> usize {
@@ -174,6 +184,12 @@ impl Arena {
       .header()
       .min_segment_size
       .store(size as u32, Ordering::Release);
+  }
+
+  /// Returns the data offset of the arena. The offset is the end of the ARENA header.
+  #[inline]
+  pub const fn data_offset(&self) -> usize {
+    self.data_offset as usize
   }
 
   #[inline]
@@ -191,11 +207,12 @@ impl Arena {
   /// Creates a new ARENA with the given capacity,
   #[inline]
   pub fn new(opts: ArenaOptions) -> Self {
-    Self::new_in(Shared::new_vec(
+    let shared = Shared::new_vec(
       opts.capacity(),
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
-    ))
+    );
+    Self::new_in(shared, opts.maximum_retries())
   }
 
   /// Creates a new ARENA backed by a mmap with the given capacity.
@@ -214,7 +231,7 @@ impl Arena {
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
     )
-    .map(Self::new_in)
+    .map(|shared| Self::new_in(shared, opts.maximum_retries()))
   }
 
   /// Creates a new read only ARENA backed by a mmap with the given capacity.
@@ -225,7 +242,7 @@ impl Arena {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self> {
-    Shared::map(path, open_options, mmap_options).map(Self::new_in)
+    Shared::map(path, open_options, mmap_options).map(|shared| Self::new_in(shared, 0))
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
@@ -237,7 +254,7 @@ impl Arena {
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
     )
-    .map(Self::new_in)
+    .map(|shared| Self::new_in(shared, opts.maximum_retries()))
   }
 
   /// Allocates a `T` in the ARENA.
@@ -250,10 +267,10 @@ impl Arena {
     let allocated = self
       .alloc_in::<T>()?
       .expect("allocated size is not zero, but get None");
-    let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.offset as usize) };
+    let ptr = unsafe { self.get_aligned_pointer::<T>(allocated.offset as usize) };
     if mem::needs_drop::<T>() {
       unsafe {
-        let ptr: *mut MaybeUninit<T> = ptr.cast();
+        let ptr: *mut MaybeUninit<T> = ptr.as_ptr().cast();
         ptr::write(ptr, MaybeUninit::uninit());
 
         Ok(RefMut::new(
@@ -264,15 +281,12 @@ impl Arena {
         ))
       }
     } else {
-      // SAFETY: The ptr is valid and well aligned.
-      unsafe {
-        Ok(RefMut::new_inline(
-          NonNull::new_unchecked(ptr.cast()),
-          allocated.offset,
-          allocated.cap as usize,
-          self,
-        ))
-      }
+      Ok(RefMut::new_inline(
+        ptr,
+        allocated.offset,
+        allocated.cap as usize,
+        self,
+      ))
     }
   }
 
@@ -295,6 +309,110 @@ impl Arena {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated.cap, allocated.offset) },
     })
+  }
+
+  /// Flushes the memory-mapped file to disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    let shared = self.inner.load(Ordering::Acquire);
+    {
+      let shared: *mut Shared = shared.cast();
+      unsafe { (*shared).flush() }
+    }
+  }
+
+  /// Flushes the memory-mapped file to disk asynchronously.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    let shared = self.inner.load(Ordering::Acquire);
+    {
+      let shared: *mut Shared = shared.cast();
+      unsafe { (*shared).flush_async() }
+    }
+  }
+
+  /// Returns a bytes slice from the ARENA.
+  ///
+  /// # Safety
+  /// - `offset..offset + size` must be allocated memory.
+  /// - `offset` must be less than the capacity of the arena.
+  /// - `size` must be less than the capacity of the arena.
+  /// - `offset + size` must be less than the capacity of the arena.
+  #[inline]
+  pub const unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
+    if offset == 0 {
+      return &[];
+    }
+
+    let ptr = self.get_pointer(offset);
+    slice::from_raw_parts(ptr, size)
+  }
+
+  /// Returns a mutable bytes slice from the ARENA.
+  ///
+  /// # Safety
+  /// - `offset..offset + size` must be allocated memory.
+  /// - `offset` must be less than the capacity of the arena.
+  /// - `size` must be less than the capacity of the arena.
+  /// - `offset + size` must be less than the capacity of the arena.
+  #[allow(clippy::mut_from_ref)]
+  #[inline]
+  pub unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
+    if offset == 0 {
+      return &mut [];
+    }
+
+    let ptr = self.get_pointer_mut(offset);
+    slice::from_raw_parts_mut(ptr, size)
+  }
+
+  /// Returns a pointer to the memory at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be less than the capacity of the arena.
+  #[inline]
+  pub const unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
+    if offset == 0 {
+      return self.ptr;
+    }
+    self.read_data_ptr.add(offset)
+  }
+
+  /// Returns a pointer to the memory at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be less than the capacity of the arena.
+  #[inline]
+  pub unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
+    if offset == 0 {
+      return self.ptr;
+    }
+    self.write_data_ptr.as_ptr().add(offset)
+  }
+
+  /// Returns an aligned pointer to the memory at the given offset.
+  ///
+  /// # Safety
+  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
+  /// - `offset` must be less than the capacity of the arena.
+  #[inline]
+  pub unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> NonNull<T> {
+    if offset == 0 {
+      return NonNull::dangling();
+    }
+    let ptr = self.write_data_ptr.as_ptr().add(offset);
+    let aligned_offset = ptr.align_offset(mem::align_of::<T>());
+    NonNull::new_unchecked(ptr.add(aligned_offset).cast())
+  }
+
+  /// Returns the offset to the start of the ARENA.
+  ///
+  /// # Safety
+  /// - `ptr` must be allocated by this ARENA.
+  #[inline]
+  pub unsafe fn offset(&self, ptr: *mut u8) -> usize {
+    let offset = ptr.offset_from(self.write_data_ptr.as_ptr());
+    offset as usize
   }
 
   fn alloc_bytes_in(&self, size: u32) -> Result<Option<Allocated>, ArenaError> {
@@ -323,7 +441,7 @@ impl Arena {
     }
 
     // allocate through slow path
-    for _ in 0..SLOW_RETRIES {
+    for _ in 0..self.max_retries {
       match self.alloc_slow_path(size) {
         Ok(bytes) => return Ok(bytes),
         Err(_) => continue,
@@ -434,7 +552,7 @@ impl Arena {
     }
 
     // allocate through slow path
-    for _ in 0..SLOW_RETRIES {
+    for _ in 0..self.max_retries {
       match self.alloc_slow_path(Self::pad::<T>() as u32) {
         Ok(bytes) => return Ok(bytes),
         Err(_) => continue,
@@ -592,7 +710,7 @@ impl Arena {
   }
 
   #[inline]
-  fn new_in(mut shared: Shared) -> Self {
+  fn new_in(mut shared: Shared, max_retries: u8) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
     // And this ptr is only deallocated when the arena is dropped.
@@ -610,28 +728,9 @@ impl Arena {
       read_data_ptr,
       header_ptr,
       ptr,
+      max_retries,
       data_offset: shared.data_offset as u32,
       inner: AtomicPtr::new(Box::into_raw(Box::new(shared)) as _),
-    }
-  }
-
-  /// Flushes the memory-mapped file to disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
-    {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush() }
-    }
-  }
-
-  /// Flushes the memory-mapped file to disk asynchronously.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
-    {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush_async() }
     }
   }
 
@@ -640,67 +739,6 @@ impl Arena {
     let size = mem::size_of::<T>();
     let align = mem::align_of::<T>();
     size + align - 1
-  }
-
-  /// ## Safety:
-  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
-  /// - The caller must make sure that `size` must be less than the capacity of the arena.
-  /// - The caller must make sure that `offset + size` must be less than the capacity of the arena.
-  #[inline]
-  pub(super) const unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
-    if offset == 0 {
-      return &[];
-    }
-
-    let ptr = self.get_pointer(offset);
-    slice::from_raw_parts(ptr, size)
-  }
-
-  /// ## Safety:
-  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
-  /// - The caller must make sure that `size` must be less than the capacity of the arena.
-  /// - The caller must make sure that `offset + size` must be less than the capacity of the arena.
-  #[allow(clippy::mut_from_ref)]
-  #[inline]
-  pub(super) unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
-    if offset == 0 {
-      return &mut [];
-    }
-
-    let ptr = self.get_pointer_mut(offset);
-    slice::from_raw_parts_mut(ptr, size)
-  }
-
-  /// ## Safety:
-  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
-  #[inline]
-  pub(super) const unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
-    if offset == 0 {
-      return self.ptr;
-    }
-    self.read_data_ptr.add(offset)
-  }
-
-  /// ## Safety:
-  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
-  #[inline]
-  pub(super) unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
-    if offset == 0 {
-      return self.ptr;
-    }
-    self.write_data_ptr.as_ptr().add(offset)
-  }
-
-  /// ## Safety:
-  /// - The caller must make sure that `offset` must be less than the capacity of the arena.
-  #[inline]
-  pub(super) unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> *mut T {
-    if offset == 0 {
-      return ptr::null_mut();
-    }
-    let ptr = self.write_data_ptr.as_ptr().add(offset);
-    let aligned_offset = ptr.align_offset(mem::align_of::<T>());
-    ptr.add(aligned_offset) as *mut T
   }
 }
 
