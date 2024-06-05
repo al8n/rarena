@@ -1,3 +1,5 @@
+use either::Either;
+
 use super::*;
 
 macro_rules! write_byte_order {
@@ -435,7 +437,7 @@ impl std::error::Error for NotEnoughBytes {}
 
 /// A owned buffer that allocated by the ARENA
 pub struct BytesMut {
-  arena: Option<Arena>,
+  arena: Either<Arena, NonNull<u8>>,
   detach: bool,
   len: usize,
   cap: usize,
@@ -449,8 +451,8 @@ impl ops::Deref for BytesMut {
   fn deref(&self) -> &Self::Target {
     match self.arena {
       // SAFETY: The buffer is allocated by the ARENA, and the len and offset are valid.
-      Some(ref arena) => unsafe { arena.get_bytes(self.offset, self.len) },
-      None => &[],
+      Either::Left(ref arena) => unsafe { arena.get_bytes(self.offset, self.len) },
+      Either::Right(_) => &[],
     }
   }
 }
@@ -460,8 +462,8 @@ impl ops::DerefMut for BytesMut {
   fn deref_mut(&mut self) -> &mut Self::Target {
     match self.arena {
       // SAFETY: The buffer is allocated by the ARENA, and the len and offset are valid.
-      Some(ref arena) => unsafe { arena.get_bytes_mut(self.offset, self.len) },
-      None => &mut [],
+      Either::Left(ref arena) => unsafe { arena.get_bytes_mut(self.offset, self.len) },
+      Either::Right(_) => &mut [],
     }
   }
 }
@@ -502,10 +504,30 @@ impl BytesMut {
     self.detach = true;
   }
 
+  /// Returns the pointer to the buffer.
+  #[inline]
+  pub fn as_mut_ptr(&self) -> *mut u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    match self.arena.as_ref() {
+      Either::Left(arena) => unsafe { arena.get_pointer_mut(self.offset) },
+      Either::Right(ptr) => ptr.as_ptr(),
+    }
+  }
+
+  /// Returns the pointer to the buffer.
+  #[inline]
+  pub fn as_ptr(&self) -> *const u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    match self.arena.as_ref() {
+      Either::Left(arena) => unsafe { arena.get_pointer(self.offset) },
+      Either::Right(ptr) => ptr.as_ptr(),
+    }
+  }
+
   #[inline]
   pub(super) fn null() -> Self {
     Self {
-      arena: None,
+      arena: Either::Right(NonNull::dangling()),
       len: 0,
       cap: 0,
       offset: 0,
@@ -517,8 +539,8 @@ impl BytesMut {
   const fn buffer(&self) -> &[u8] {
     match self.arena {
       // SAFETY: The buffer is allocated by the ARENA, and the len and offset are valid.
-      Some(ref arena) => unsafe { arena.get_bytes(self.offset, self.cap) },
-      None => &[],
+      Either::Left(ref arena) => unsafe { arena.get_bytes(self.offset, self.cap) },
+      Either::Right(_) => &[],
     }
   }
 
@@ -526,8 +548,8 @@ impl BytesMut {
   fn buffer_mut(&mut self) -> &mut [u8] {
     match self.arena {
       // SAFETY: The buffer is allocated by the ARENA, and the len and offset are valid.
-      Some(ref arena) => unsafe { arena.get_bytes_mut(self.offset, self.cap) },
-      None => &mut [],
+      Either::Left(ref arena) => unsafe { arena.get_bytes_mut(self.offset, self.cap) },
+      Either::Right(_) => &mut [],
     }
   }
 }
@@ -536,9 +558,9 @@ impl Drop for BytesMut {
   #[inline]
   fn drop(&mut self) {
     match self.arena {
-      Some(_) if self.detach => {}
-      Some(ref arena) => arena.dealloc(self.offset as u32, self.cap as u32),
-      None => {}
+      Either::Left(_) if self.detach => {}
+      Either::Left(ref arena) => arena.dealloc(self.offset as u32, self.cap as u32),
+      Either::Right(_) => {}
     }
   }
 }
@@ -620,6 +642,20 @@ impl<'a> BytesRefMut<'a> {
     self.detach = true;
   }
 
+  /// Returns the pointer to the buffer.
+  #[inline]
+  pub fn as_mut_ptr(&self) -> *mut u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    unsafe { self.arena.get_pointer_mut(self.offset) }
+  }
+
+  /// Returns the pointer to the buffer.
+  #[inline]
+  pub fn as_ptr(&self) -> *const u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    unsafe { self.arena.get_pointer(self.offset) }
+  }
+
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
   pub(super) unsafe fn new(arena: &'a Arena, len: u32, offset: u32) -> Self {
@@ -652,7 +688,7 @@ impl<'a> BytesRefMut<'a> {
     self.detach = true;
 
     BytesMut {
-      arena: Some(self.arena.clone()),
+      arena: Either::Left(self.arena.clone()),
       len: self.len,
       cap: self.cap,
       offset: self.offset,

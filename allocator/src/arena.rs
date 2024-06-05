@@ -38,6 +38,7 @@ pub(super) struct Header {
   sentinel: AtomicU64,
   allocated: AtomicU32,
   min_segment_size: AtomicU32,
+  discarded: AtomicU32,
 }
 
 impl Header {
@@ -47,6 +48,7 @@ impl Header {
       allocated: AtomicU32::new(size),
       sentinel: AtomicU64::new(encode_segment_node(u32::MAX, u32::MAX)),
       min_segment_size: AtomicU32::new(min_segment_size),
+      discarded: AtomicU32::new(0),
     }
   }
 }
@@ -151,6 +153,27 @@ impl Arena {
 
       (*shared).refs.load(Ordering::Acquire)
     }
+  }
+
+  /// Returns the number of bytes discarded by the arena.
+  #[inline]
+  pub fn discarded(&self) -> usize {
+    self.header().discarded.load(Ordering::Acquire) as usize
+  }
+
+  /// Returns the minimum segment size of the arena.
+  #[inline]
+  pub fn minimum_segment_size(&self) -> usize {
+    self.header().min_segment_size.load(Ordering::Acquire) as usize
+  }
+
+  /// Sets the minimum segment size of the arena.
+  #[inline]
+  pub fn set_minimum_segment_size(&self, size: usize) {
+    self
+      .header()
+      .min_segment_size
+      .store(size as u32, Ordering::Release);
   }
 
   #[inline]
@@ -424,6 +447,7 @@ impl Arena {
   fn dealloc(&self, offset: u32, size: u32) {
     // check if we have enough space to allocate a new segment in this segment.
     if !self.validate_segment(offset, size) {
+      self.discard(size);
       return;
     }
 
@@ -542,6 +566,12 @@ impl Arena {
       current = next;
       backoff.spin();
     }
+  }
+
+  #[inline]
+  fn discard(&self, size: u32) {
+    let header = self.header();
+    header.discarded.fetch_add(size, Ordering::Release);
   }
 
   unsafe fn get_segment_node(&self, offset: u32) -> &AtomicU64 {
