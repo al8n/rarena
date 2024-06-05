@@ -274,6 +274,8 @@ impl Arena {
   ///
   /// ## Memory leak
   ///
+  /// The following example demonstrates the memory leak when the `T` is a heap allocated type and detached.
+  ///
   /// ```ignore
   ///
   /// let arena = Arena::new(ArenaOptions::new());
@@ -288,6 +290,8 @@ impl Arena {
   /// ```
   ///
   /// ## Undefined behavior
+  ///
+  /// The following example demonstrates the undefined behavior when the `T` is not recoverable.
   ///
   /// ```ignore
   ///
@@ -312,6 +316,34 @@ impl Arena {
   ///
   /// ## Good practice
   ///
+  /// Some examples about how to use this method correctly.
+  ///
+  /// ### Heap allocated type with carefull memory management
+  ///
+  /// ```ignore
+  /// let arena = Arena::new(ArenaOptions::new());
+  ///
+  /// // Do not invoke detach, so when the data is dropped, the drop logic will be handled by the ARENA.
+  /// // automatically.
+  /// {
+  ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  ///   data.write(vec![1, 2, 3]);
+  /// }
+  ///
+  ///
+  /// let mut detached_data = arena.alloc::<Vec<u8>>().unwrap();
+  /// detached_data.detach();
+  /// detached_data.write(vec![4, 5, 6]);
+  ///
+  /// // some other logic
+  ///
+  /// core::ptr::drop_in_place(detached_data.as_mut()); // drop the `Vec` manually.
+  ///
+  /// drop(arena); // it is safe, the `Vec` is already dropped.
+  /// ```
+  ///
+  /// ### Recoverable type with file backed ARENA
+  ///
   /// ```ignore
   ///
   /// struct Recoverable {
@@ -330,11 +362,11 @@ impl Arena {
   /// // reopen the file
   /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
-  /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
-  /// let b = foo.field1; // valid
-  /// assert_eq!(b, 10);
-  /// let c = foo.field2.load(Ordering::Acquire); // valid
-  /// assert_eq!(c, 20);
+  /// let ptr: *const Recoverable = arena.get_pointer(offset as usize).cast();
+  /// let foo = &*ptr;
+  ///
+  /// assert_eq!(foo.field1, 10);
+  /// assert_eq!(foo.field2.load(Ordering::Acquire), 20);
   /// ```
   #[inline]
   pub unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, ArenaError> {

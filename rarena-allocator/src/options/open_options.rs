@@ -11,8 +11,8 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
   opts: StdOpenOptions,
-  create: Option<u64>,
-  create_new: Option<u64>,
+  create: Option<u32>,
+  create_new: Option<u32>,
   shrink_on_drop: bool,
   lock_shared: bool,
   lock_exclusive: bool,
@@ -199,7 +199,7 @@ impl OpenOptions {
   /// let opts = OpenOptions::new().write(true).create(None);
   /// ```
   #[inline]
-  pub fn create(mut self, size: Option<u64>) -> Self {
+  pub fn create(mut self, size: Option<u32>) -> Self {
     match size {
       Some(size) => {
         self.opts.create(true);
@@ -249,7 +249,7 @@ impl OpenOptions {
   ///   .create_new(None);
   /// ```
   #[inline]
-  pub fn create_new(mut self, size: Option<u64>) -> Self {
+  pub fn create_new(mut self, size: Option<u32>) -> Self {
     match size {
       Some(size) => {
         self.opts.create_new(true);
@@ -327,7 +327,7 @@ impl OpenOptions {
           f.lock_shared()?;
         }
 
-        f.set_len(size).map(|_| (true, f))
+        f.set_len(size as u64).map(|_| (true, f))
       });
     }
 
@@ -351,7 +351,7 @@ impl OpenOptions {
             f.lock_shared()?;
           }
 
-          f.set_len(size).map(|_| (true, f))
+          f.set_len(size as u64).map(|_| (true, f))
         })
       };
     }
@@ -425,8 +425,8 @@ impl MmapOptions {
   /// let opts = MmapOptions::new().len(9);
   /// ```
   #[inline]
-  pub fn len(mut self, len: usize) -> Self {
-    self.0.len(len);
+  pub fn len(mut self, len: u32) -> Self {
+    self.0.len(len as usize);
     self
   }
 

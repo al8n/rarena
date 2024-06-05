@@ -273,7 +273,7 @@ jobs:
       - name: Install Rust
         run: rustup update $nightly && rustup default $nightly
       - name: Loom tests
-        run: cargo test --tests --features loom
+        run: cargo test --tests --features loom,memmap
   
   # valgrind
   valgrind:
