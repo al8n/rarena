@@ -1,0 +1,21 @@
+[package]
+name = "rarena-skiplist"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage = "https://github.com/al8n/rarena/tree/main/rarena-skiplist"
+license.workspace = true
+
+[features]
+default = ["std"]
+alloc = ["rarena-allocator/alloc"]
+std = ["rarena-allocator/std"]
+memmap = ["rarena-allocator/memmap", "std"]
+
+loom = ["rarena-allocator/loom", "dep:loom"]
+
+[dependencies]
+rarena-allocator.workspace = true
+
+loom = { workspace = true, optional = true }

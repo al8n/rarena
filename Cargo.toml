@@ -1,7 +1,8 @@
 [workspace]
 members = [
-  "allocator",
   "rarena",
+  "rarena-skiplist",
+  "rarena-allocator",
 ]
 resolver = "2"
 
@@ -14,8 +15,11 @@ homepage = "https://github.com/al8n/rarena"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-rarena-allocator = { version = "0.0.0", path = "./allocator", default-features = false }
+
 crossbeam-utils = { version = "0.8", default-features = false }
+loom = "0.7"
+rarena-allocator = { version = "0.0.0", path = "./rarena-allocator", default-features = false }
+rarena-skiplist = { version = "0.0.0", path = "./rarena-skiplist", default-features = false }
 
 [workspace.metadata.docs.rs]
 all-features = true
