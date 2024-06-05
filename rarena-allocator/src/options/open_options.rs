@@ -444,8 +444,8 @@ impl MmapOptions {
   /// let opts = MmapOptions::new().offset(30);
   /// ```
   #[inline]
-  pub fn offset(mut self, offset: u64) -> Self {
-    self.0.offset(offset);
+  pub fn offset(mut self, offset: u32) -> Self {
+    self.0.offset(offset as u64);
     self
   }
 
