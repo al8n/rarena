@@ -42,7 +42,7 @@ fn alloc_bytes_mmap_anon() {
 }
 
 fn alloc_heap(a: Arena) {
-  let mut b = a.alloc::<Vec<u8>>().unwrap();
+  let mut b = unsafe { a.alloc::<Vec<u8>>().unwrap() };
   b.write(Vec::with_capacity(10));
 
   unsafe {
@@ -89,7 +89,7 @@ fn alloc_heap_mmap_anon() {
 }
 
 fn alloc_inlined(a: Arena) {
-  let mut b = a.alloc::<u32>().unwrap();
+  let mut b = unsafe { a.alloc::<u32>().unwrap() };
   b.write(10);
 
   unsafe {
@@ -132,14 +132,14 @@ fn alloc_inlined_mmap_anon() {
 }
 
 fn alloc_zst(a: Arena) {
-  let mut b = a.alloc::<()>().unwrap();
+  let mut b = unsafe { a.alloc::<()>().unwrap() };
 
   unsafe {
     assert_eq!(b.as_ref(), &());
     assert_eq!(b.as_mut(), &mut ());
   }
 
-  let mut c = a.alloc::<core::marker::PhantomData<Vec<u8>>>().unwrap();
+  let mut c = unsafe { a.alloc::<core::marker::PhantomData<Vec<u8>>>().unwrap() };
   unsafe {
     assert_eq!(c.as_ref(), &core::marker::PhantomData::<Vec<u8>>);
     assert_eq!(c.as_mut(), &mut core::marker::PhantomData::<Vec<u8>>);

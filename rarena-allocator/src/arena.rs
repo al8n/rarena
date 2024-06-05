@@ -258,8 +258,86 @@ impl Arena {
   }
 
   /// Allocates a `T` in the ARENA.
+  ///
+  /// # Safety
+  ///
+  /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
+  /// then the caller must ensure that the `T` is dropped before the ARENA is dropped.
+  /// Otherwise, it will lead to memory leaks.
+  ///
+  /// - If this is file backed ARENA, then `T` must be recoverable from bytes.
+  ///   1. Types require allocation are not recoverable.
+  ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
+  ///   although those types are on stack, but they cannot be recovered, when reopens the file.
+  ///
+  /// # Examples
+  ///
+  /// ## Memory leak
+  ///
+  /// ```ignore
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  ///
+  /// {
+  ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  ///   data.detach();
+  ///   data.write(vec![1, 2, 3]);
+  /// }
+  ///
+  /// drop(arena); // memory leak, the `Vec<u8>` is not dropped.
+  /// ```
+  ///
+  /// ## Undefined behavior
+  ///
+  /// ```ignore
+  ///
+  /// struct TypeOnHeap {
+  ///   data: Vec<u8>,
+  /// }
+  ///
+  /// let arena = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
+  ///
+  /// let mut data = arena.alloc::<TypeOnHeap>().unwrap();
+  /// data.detach();
+  /// data.write(TypeOnHeap { data: vec![1, 2, 3] });
+  /// let offset = data.offset();
+  /// drop(arena);
+  ///
+  /// // reopen the file
+  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  ///
+  /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
+  /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
+  /// ```
+  ///
+  /// ## Good practice
+  ///
+  /// ```ignore
+  ///
+  /// struct Recoverable {
+  ///   field1: u64,
+  ///   field2: AtomicU32,
+  /// }
+  ///
+  /// let arena = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
+  ///
+  /// let mut data = arena.alloc::<Recoverable>().unwrap();
+  /// data.write(Recoverable { field1: 10, field2: AtomicU32::new(20) });
+  ///
+  /// let offset = data.offset();
+  /// drop(arena);
+  ///
+  /// // reopen the file
+  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  ///
+  /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
+  /// let b = foo.field1; // valid
+  /// assert_eq!(b, 10);
+  /// let c = foo.field2.load(Ordering::Acquire); // valid
+  /// assert_eq!(c, 20);
+  /// ```
   #[inline]
-  pub fn alloc<T>(&self) -> Result<RefMut<'_, T>, ArenaError> {
+  pub unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, ArenaError> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -328,6 +406,38 @@ impl Arena {
     {
       let shared: *mut Shared = shared.cast();
       unsafe { (*shared).flush_async() }
+    }
+  }
+
+  /// Clear the ARENA.
+  ///
+  /// # Safety
+  /// - The current pointers get from the ARENA cannot be used anymore after calling this method.
+  /// - This method is not thread-safe.
+  ///
+  /// # Examples
+  ///
+  /// Undefine behavior:
+  ///
+  /// ```ignore
+  /// let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  ///
+  /// arena.clear();
+  ///
+  /// data.write(vec![1, 2, 3]); // undefined behavior
+  /// ```
+  pub unsafe fn clear(&self) {
+    let header = self.header();
+    header.allocated.store(self.data_offset, Ordering::Release);
+    header
+      .sentinel
+      .store(encode_segment_node(u32::MAX, u32::MAX), Ordering::Release);
+    header.discarded.store(0, Ordering::Release);
+    // Safety:
+    // 1. pointer is well aligned
+    // 2. cap is in bounds
+    unsafe {
+      ptr::write_bytes(self.write_data_ptr.as_ptr(), 0, self.cap as usize);
     }
   }
 
