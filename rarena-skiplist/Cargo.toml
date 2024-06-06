@@ -13,7 +13,7 @@ alloc = ["rarena-allocator/alloc"]
 std = ["rarena-allocator/std", "rand/default"]
 memmap = ["rarena-allocator/memmap", "std"]
 
-loom = ["rarena-allocator/loom", "dep:loom"]
+loom = ["rarena-allocator/loom", "dep:loom", "std"]
 
 [dependencies]
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }

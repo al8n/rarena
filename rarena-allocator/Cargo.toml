@@ -1,6 +1,6 @@
 [package]
 name = "rarena-allocator"
-version = "0.0.0"
+version = "0.0.1"
 edition.workspace = true
 repository.workspace = true
 homepage = "https://github.com/al8n/rarena/tree/main/rarena-allocator"
@@ -9,7 +9,7 @@ description = "Lock-free ARENA allocator which can be used in both memory and on
 license.workspace = true
 rust-version.workspace = true
 categories = ["data-structures", "memory-management", "concurrency", "no-std"]
-keywords = ["arena", "lock-free"]
+keywords = ["arena", "lock-free", "allocator"]
 
 [[bench]]
 path = "benches/foo.rs"
@@ -22,7 +22,7 @@ alloc = []
 std = ["byteorder", "either/default"]
 memmap = ["memmap2", "fs4", "std"]
 
-loom = ["dep:loom"]
+loom = ["dep:loom", "std"]
 
 [dependencies]
 byteorder = { version = "1", optional = true }

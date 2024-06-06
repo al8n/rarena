@@ -484,6 +484,7 @@ fn carefully_alloc_mmap_anon_unify() {
   });
 }
 
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn recoverable_in() {
   struct Recoverable {
     field1: u64,

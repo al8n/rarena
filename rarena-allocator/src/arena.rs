@@ -8,7 +8,7 @@ use core::{
 
 use crossbeam_utils::Backoff;
 
-use crate::{common::*, ArenaOptions};
+use crate::{common::*, ArenaOptions, Error};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
@@ -52,19 +52,6 @@ impl Header {
   }
 }
 
-/// An error indicating that the ARENA is full
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct ArenaError;
-
-impl core::fmt::Display for ArenaError {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(f, "allocation failed because ARENA is full")
-  }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for ArenaError {}
-
 struct Allocated {
   offset: u32,
   cap: u32,
@@ -79,6 +66,7 @@ pub struct Arena {
   max_retries: u8,
   inner: NonNull<Memory>,
   unify: bool,
+  ro: bool,
   cap: u32,
 }
 
@@ -119,6 +107,7 @@ impl Clone for Arena {
         max_retries: self.max_retries,
         ptr: self.ptr,
         data_offset: self.data_offset,
+        ro: self.ro,
         inner: self.inner,
         unify: self.unify,
         cap: self.cap,
@@ -229,7 +218,7 @@ impl Arena {
       opts.minimum_segment_size(),
       opts.unify(),
     );
-    Self::new_in(memory, opts.maximum_retries(), opts.unify())
+    Self::new_in(memory, opts.maximum_retries(), opts.unify(), false)
   }
 
   /// Creates a new ARENA backed by a mmap with the given capacity.
@@ -248,7 +237,7 @@ impl Arena {
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
     )
-    .map(|memory| Self::new_in(memory, opts.maximum_retries(), true))
+    .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
   }
 
   /// Creates a new read only ARENA backed by a mmap with the given capacity.
@@ -259,7 +248,7 @@ impl Arena {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self> {
-    Memory::map(path, open_options, mmap_options).map(|memory| Self::new_in(memory, 0, true))
+    Memory::map(path, open_options, mmap_options).map(|memory| Self::new_in(memory, 0, true, true))
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
@@ -272,14 +261,14 @@ impl Arena {
       opts.minimum_segment_size(),
       opts.unify(),
     )
-    .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify()))
+    .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
   }
 
   /// Allocates an owned slice of memory in the ARENA.
   ///
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
   #[inline]
-  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, ArenaError> {
+  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, Error> {
     self.alloc_bytes(size).map(|mut b| b.to_owned())
   }
 
@@ -289,7 +278,7 @@ impl Arena {
   ///
   /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
   #[inline]
-  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, Error> {
     self.alloc_bytes_in(size).map(|a| match a {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated.cap, allocated.offset) },
@@ -313,13 +302,13 @@ impl Arena {
   /// # Safety
   ///
   /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
-  /// then the caller must ensure that the `T` is dropped before the ARENA is dropped.
-  /// Otherwise, it will lead to memory leaks.
+  ///   then the caller must ensure that the `T` is dropped before the ARENA is dropped.
+  ///   Otherwise, it will lead to memory leaks.
   ///
   /// - If this is file backed ARENA, then `T` must be recoverable from bytes.
   ///   1. Types require allocation are not recoverable.
   ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
-  ///   although those types are on stack, but they cannot be recovered, when reopens the file.
+  ///      although those types are on stack, but they cannot be recovered, when reopens the file.
   ///
   /// # Examples
   ///
@@ -419,7 +408,7 @@ impl Arena {
   /// assert_eq!(foo.field2.load(Ordering::Acquire), 20);
   /// ```
   #[inline]
-  pub unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, ArenaError> {
+  pub unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, Error> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -467,7 +456,11 @@ impl Arena {
   ///
   /// data.write(vec![1, 2, 3]); // undefined behavior
   /// ```
-  pub unsafe fn clear(&self) {
+  pub unsafe fn clear(&self) -> Result<(), Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
     let header = self.header();
     header.allocated.store(self.data_offset, Ordering::Release);
     header
@@ -480,6 +473,7 @@ impl Arena {
     unsafe {
       ptr::write_bytes(self.write_data_ptr.as_ptr(), 0, self.cap as usize);
     }
+    Ok(())
   }
 
   /// Returns a bytes slice from the ARENA.
@@ -507,9 +501,14 @@ impl Arena {
   /// - `offset` must be less than the capacity of the ARENA.
   /// - `size` must be less than the capacity of the ARENA.
   /// - `offset + size` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
   #[allow(clippy::mut_from_ref)]
   #[inline]
   pub unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
+    assert!(!self.ro, "ARENA is read-only");
+
     if offset == 0 {
       return &mut [];
     }
@@ -539,8 +538,13 @@ impl Arena {
   ///
   /// # Safety
   /// - `offset` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
   #[inline]
   pub unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
+    assert!(!self.ro, "ARENA is read-only");
+
     if offset == 0 {
       return self.ptr;
     }
@@ -573,8 +577,13 @@ impl Arena {
   /// # Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
   #[inline]
   pub unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
+    assert!(!self.ro, "ARENA is read-only");
+
     if offset == 0 {
       return NonNull::dangling();
     }
@@ -599,7 +608,11 @@ impl Arena {
     offset as usize
   }
 
-  fn alloc_bytes_in(&self, size: u32) -> Result<Option<Allocated>, ArenaError> {
+  fn alloc_bytes_in(&self, size: u32) -> Result<Option<Allocated>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
     if size == 0 {
       return Ok(None);
     }
@@ -625,18 +638,27 @@ impl Arena {
     }
 
     // allocate through slow path
-    for _ in 0..self.max_retries {
+    let mut i = 0;
+
+    loop {
       match self.alloc_slow_path(size) {
         Ok(bytes) => return Ok(bytes),
-        Err(_) => continue,
+        Err(e) => {
+          if i == self.max_retries - 1 {
+            return Err(e);
+          }
+        }
       }
+      i += 1;
     }
-
-    Err(ArenaError)
   }
 
   /// It is like a pop operation, we will always allocate from the largest segment.
-  fn alloc_slow_path(&self, size: u32) -> Result<Option<Allocated>, ArenaError> {
+  fn alloc_slow_path(&self, size: u32) -> Result<Option<Allocated>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
     let backoff = Backoff::new();
     let header = self.header();
 
@@ -645,7 +667,10 @@ impl Arena {
       let (next, node_size) = decode_segment_node(head);
       // free list is empty
       if next == u32::MAX && node_size == u32::MAX {
-        return Err(ArenaError);
+        return Err(Error::InsufficientSpace {
+          requested: size,
+          available: self.remaining() as u32,
+        });
       }
 
       if node_size == 0 {
@@ -656,7 +681,10 @@ impl Arena {
 
       // The larget segment does not have enough space to allocate, so just return err.
       if size > node_size {
-        return Err(ArenaError);
+        return Err(Error::InsufficientSpace {
+          requested: size,
+          available: node_size,
+        });
       }
 
       // CAS to remove the current
@@ -705,7 +733,11 @@ impl Arena {
     }
   }
 
-  fn alloc_in<T>(&self) -> Result<Option<Allocated>, ArenaError> {
+  fn alloc_in<T>(&self) -> Result<Option<Allocated>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
     if mem::size_of::<T>() == 0 {
       return Ok(None);
     }
@@ -736,14 +768,18 @@ impl Arena {
     }
 
     // allocate through slow path
-    for _ in 0..self.max_retries {
+    let mut i = 0;
+    loop {
       match self.alloc_slow_path(Self::pad::<T>() as u32) {
         Ok(bytes) => return Ok(bytes),
-        Err(_) => continue,
+        Err(e) => {
+          if i == self.max_retries - 1 {
+            return Err(e);
+          }
+        }
       }
+      i += 1;
     }
-
-    Err(ArenaError)
   }
 
   fn dealloc(&self, offset: u32, size: u32) {
@@ -894,7 +930,7 @@ impl Arena {
   }
 
   #[inline]
-  fn new_in(mut memory: Memory, max_retries: u8, unify: bool) -> Self {
+  fn new_in(mut memory: Memory, max_retries: u8, unify: bool, ro: bool) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
     // And this ptr is only deallocated when the ARENA is dropped.
@@ -911,6 +947,7 @@ impl Arena {
       read_data_ptr,
       unify,
       ptr,
+      ro,
       max_retries,
       data_offset: memory.data_offset as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },

@@ -1,6 +1,3 @@
-#[cfg(not(feature = "std"))]
-use std::vec::Vec;
-
 use either::Either;
 
 use super::*;
@@ -97,35 +94,6 @@ enum MemoryBackend {
   },
 }
 
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[derive(Debug)]
-struct TooSmall {
-  cap: usize,
-  min_cap: usize,
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl TooSmall {
-  #[inline]
-  const fn new(cap: usize, min_cap: usize) -> Self {
-    Self { cap, min_cap }
-  }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl core::fmt::Display for TooSmall {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(
-      f,
-      "memmap size is less than the minimum capacity: {} < {}",
-      self.cap, self.min_cap
-    )
-  }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl std::error::Error for TooSmall {}
-
 pub(super) struct Memory {
   pub(super) refs: AtomicUsize,
   cap: u32,
@@ -137,7 +105,13 @@ pub(super) struct Memory {
 
 impl Memory {
   pub(super) fn new_vec(cap: u32, alignment: usize, min_segment_size: u32, unify: bool) -> Self {
-    let vec = AlignedVec::new(cap as usize, alignment);
+    let cap = if unify {
+      cap.saturating_add(OVERHEAD as u32)
+    } else {
+      cap.saturating_add(alignment as u32)
+    } as usize;
+
+    let vec = AlignedVec::new(cap, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
@@ -150,11 +124,11 @@ impl Memory {
         header.write(Header::new(data_offset as u32, min_segment_size));
         (Either::Left(header_ptr), data_offset)
       } else {
-        (Either::Right(Header::new(0, min_segment_size)), 0)
+        (Either::Right(Header::new(1, min_segment_size)), alignment)
       };
 
       Self {
-        cap,
+        cap: cap as u32,
         refs: AtomicUsize::new(1),
         ptr,
         header_ptr: header,
@@ -259,14 +233,6 @@ impl Memory {
           data_offset,
         };
 
-        // Ensure that the header_ptr is correctly aligned
-        if (header_ptr as usize) % mem::align_of::<Header>() != 0 {
-          return Err(invalid_data(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Header pointer is not aligned",
-          )));
-        }
-
         Ok(this)
       })
     }
@@ -280,8 +246,12 @@ impl Memory {
     unify: bool,
   ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
-      if mmap.len() < OVERHEAD {
-        return Err(invalid_data(TooSmall::new(mmap.len(), OVERHEAD)));
+      if unify {
+        if mmap.len() < OVERHEAD {
+          return Err(invalid_data(TooSmall::new(mmap.len(), OVERHEAD)));
+        }
+      } else if mmap.len() < alignment {
+        return Err(invalid_data(TooSmall::new(mmap.len(), alignment)));
       }
 
       // TODO:  should we align the memory?
@@ -298,7 +268,7 @@ impl Memory {
           header.write(Header::new(data_offset as u32, min_segment_size));
           (Either::Left(header_ptr), data_offset)
         } else {
-          (Either::Right(Header::new(0, min_segment_size)), 0)
+          (Either::Right(Header::new(1, min_segment_size)), alignment)
         };
 
         let this = Self {
@@ -469,6 +439,35 @@ impl Memory {
     }
   }
 }
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[derive(Debug)]
+struct TooSmall {
+  cap: usize,
+  min_cap: usize,
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+impl TooSmall {
+  #[inline]
+  const fn new(cap: usize, min_cap: usize) -> Self {
+    Self { cap, min_cap }
+  }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+impl core::fmt::Display for TooSmall {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(
+      f,
+      "memmap size is less than the minimum capacity: {} < {}",
+      self.cap, self.min_cap
+    )
+  }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+impl std::error::Error for TooSmall {}
 
 #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
 mod tests {

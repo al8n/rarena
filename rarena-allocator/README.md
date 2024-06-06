@@ -21,7 +21,7 @@ Lock-free ARENA allocator which can be used in both memory and on-disk.
 
 ```toml
 [dependencies]
-rarena-allocator = "0.0.0"
+rarena-allocator = "0.0.1"
 ```
 
 #### License

@@ -2,6 +2,7 @@ use either::Either;
 
 use super::*;
 
+#[cfg(feature = "std")]
 macro_rules! write_byte_order {
   ($write_name:ident::$put_name:ident::$converter:ident($ty:ident, $endian:literal)) => {
     paste::paste! {
@@ -100,8 +101,11 @@ macro_rules! impl_bytes_mut_utils {
         put_byte_order!([< put_ $ty _be>]::to_be_bytes($ty, "big-endian"));
         put_byte_order!([< put_ $ty _le >]::to_le_bytes($ty, "little-endian"));
         put_byte_order!([< put_ $ty _ne >]::to_ne_bytes($ty, "native-endian"));
+        #[cfg(feature="std")]
         write_byte_order!([< write_ $ty _be>]::[< put_ $ty _be>]::to_be_bytes($ty, "big-endian"));
+        #[cfg(feature="std")]
         write_byte_order!([< write_ $ty _le >]::[< put_ $ty _le >]::to_le_bytes($ty, "little-endian"));
+        #[cfg(feature="std")]
         write_byte_order!([< write_ $ty _ne >]::[< put_ $ty _ne >]::to_ne_bytes($ty, "native-endian"));
       }
     )*
@@ -331,6 +335,7 @@ macro_rules! impl_bytes_utils {
   };
 }
 
+#[cfg(feature = "std")]
 macro_rules! impl_write_in {
   () => {
     #[inline]
