@@ -12,6 +12,7 @@ pub struct ArenaOptions {
   capacity: u32,
   minimum_segment_size: u32,
   maximum_retries: u8,
+  unify: bool,
 }
 
 impl Default for ArenaOptions {
@@ -30,6 +31,7 @@ impl ArenaOptions {
       capacity: 1024,
       minimum_segment_size: 48,
       maximum_retries: 5,
+      unify: false,
     }
   }
 
@@ -116,6 +118,29 @@ impl ArenaOptions {
     self
   }
 
+  /// Set if use the unify memory layout of the ARENA.
+  ///
+  /// File backed ARENA has different memory layout with other kind backed ARENA,
+  /// set this value to `true` will unify the memory layout of the ARENA, which means
+  /// all kinds of backed ARENA will have the same memory layout.
+  ///
+  /// This value will be ignored if the ARENA is backed by a file backed memory map.
+  ///
+  /// The default value is `false`.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_unify(true);
+  /// ```
+  #[inline]
+  pub const fn with_unify(mut self, unify: bool) -> Self {
+    self.unify = unify;
+    self
+  }
+
   /// Get the maximum alignment of the ARENA.
   ///
   /// # Example
@@ -181,5 +206,27 @@ impl ArenaOptions {
   #[inline]
   pub const fn maximum_retries(&self) -> u8 {
     self.maximum_retries
+  }
+
+  /// Get if use the unify memory layout of the ARENA.
+  ///
+  /// File backed ARENA has different memory layout with other kind backed ARENA,
+  /// set this value to `true` will unify the memory layout of the ARENA, which means
+  /// all kinds of backed ARENA will have the same memory layout.
+  ///
+  /// This value will be ignored if the ARENA is backed by a file backed memory map.
+  ///  
+  /// The default value is `false`.
+  ///
+  /// # Example
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_unify(true);
+  ///
+  /// assert_eq!(opts.unify(), true);
+  /// ```
+  #[inline]
+  pub const fn unify(&self) -> bool {
+    self.unify
   }
 }

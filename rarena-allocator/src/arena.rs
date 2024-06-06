@@ -32,7 +32,7 @@ const OVERHEAD: usize = mem::size_of::<Header>();
 
 #[derive(Debug)]
 #[repr(C)]
-pub(super) struct Header {
+struct Header {
   /// The sentinel node for the ordered free list.
   sentinel: AtomicU64,
   allocated: AtomicU32,
@@ -74,11 +74,11 @@ struct Allocated {
 pub struct Arena {
   write_data_ptr: NonNull<u8>,
   read_data_ptr: *const u8,
-  header_ptr: *const u8,
   ptr: *mut u8,
   data_offset: u32,
   max_retries: u8,
-  inner: AtomicPtr<()>,
+  inner: NonNull<Memory>,
+  unify: bool,
   cap: u32,
 }
 
@@ -103,9 +103,9 @@ impl fmt::Debug for Arena {
 impl Clone for Arena {
   fn clone(&self) -> Self {
     unsafe {
-      let shared: *mut Shared = self.inner.load(Ordering::Relaxed).cast();
+      let memory = self.inner.as_ref();
 
-      let old_size = (*shared).refs.fetch_add(1, Ordering::Release);
+      let old_size = memory.refs.fetch_add(1, Ordering::Release);
       if old_size > usize::MAX >> 1 {
         abort();
       }
@@ -116,11 +116,11 @@ impl Clone for Arena {
       Self {
         write_data_ptr: self.write_data_ptr,
         read_data_ptr: self.read_data_ptr,
-        header_ptr: self.header_ptr,
         max_retries: self.max_retries,
         ptr: self.ptr,
         data_offset: self.data_offset,
-        inner: AtomicPtr::new(shared as _),
+        inner: self.inner,
+        unify: self.unify,
         cap: self.cap,
       }
     }
@@ -149,11 +149,7 @@ impl Arena {
   /// Returns the number of references to the arena.
   #[inline]
   pub fn refs(&self) -> usize {
-    unsafe {
-      let shared: *mut Shared = self.inner.load(Ordering::Relaxed).cast();
-
-      (*shared).refs.load(Ordering::Acquire)
-    }
+    unsafe { self.inner.as_ref().refs.load(Ordering::Acquire) }
   }
 
   /// Returns the number of bytes discarded by the arena.
@@ -193,10 +189,10 @@ impl Arena {
   }
 
   #[inline]
-  pub(super) fn header(&self) -> &Header {
+  fn header(&self) -> &Header {
     // Safety:
-    // The header is always non-null, we only deallocate it when the arena is dropped.
-    unsafe { &*(self.header_ptr as *const _) }
+    // The inner is always non-null, we only deallocate it when the arena is dropped.
+    unsafe { (*self.inner.as_ptr()).header() }
   }
 }
 
@@ -207,12 +203,13 @@ impl Arena {
   /// Creates a new ARENA with the given capacity,
   #[inline]
   pub fn new(opts: ArenaOptions) -> Self {
-    let shared = Shared::new_vec(
+    let memory = Memory::new_vec(
       opts.capacity(),
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
+      opts.unify(),
     );
-    Self::new_in(shared, opts.maximum_retries())
+    Self::new_in(memory, opts.maximum_retries(), opts.unify())
   }
 
   /// Creates a new ARENA backed by a mmap with the given capacity.
@@ -224,14 +221,14 @@ impl Arena {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self> {
-    Shared::map_mut(
+    Memory::map_mut(
       path,
       open_options,
       mmap_options,
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
     )
-    .map(|shared| Self::new_in(shared, opts.maximum_retries()))
+    .map(|memory| Self::new_in(memory, opts.maximum_retries(), true))
   }
 
   /// Creates a new read only ARENA backed by a mmap with the given capacity.
@@ -242,19 +239,53 @@ impl Arena {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self> {
-    Shared::map(path, open_options, mmap_options).map(|shared| Self::new_in(shared, 0))
+    Memory::map(path, open_options, mmap_options).map(|memory| Self::new_in(memory, 0, true))
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
   pub fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
-    Shared::map_anon(
+    Memory::map_anon(
       mmap_options,
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
+      opts.unify(),
     )
-    .map(|shared| Self::new_in(shared, opts.maximum_retries()))
+    .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify()))
+  }
+
+  /// Allocates an owned slice of memory in the ARENA.
+  ///
+  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
+  #[inline]
+  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, ArenaError> {
+    self.alloc_bytes(size).map(|mut b| b.to_owned())
+  }
+
+  /// Allocates a slice of memory in the ARENA.
+  ///
+  /// The [`BytesRefMut`] is zeroed out.
+  ///
+  /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
+  #[inline]
+  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
+    self.alloc_bytes_in(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated.cap, allocated.offset) },
+    })
+  }
+
+  /// Flushes the memory-mapped file to disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush() }
+  }
+
+  /// Flushes the memory-mapped file to disk asynchronously.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush_async() }
   }
 
   /// Allocates a `T` in the ARENA.
@@ -396,47 +427,6 @@ impl Arena {
         allocated.cap as usize,
         self,
       ))
-    }
-  }
-
-  /// Allocates an owned slice of memory in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
-  #[inline]
-  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, ArenaError> {
-    self.alloc_bytes(size).map(|mut b| b.to_owned())
-  }
-
-  /// Allocates a slice of memory in the ARENA.
-  ///
-  /// The [`BytesRefMut`] is zeroed out.
-  ///
-  /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
-  #[inline]
-  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, ArenaError> {
-    self.alloc_bytes_in(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated.cap, allocated.offset) },
-    })
-  }
-
-  /// Flushes the memory-mapped file to disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
-    {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush() }
-    }
-  }
-
-  /// Flushes the memory-mapped file to disk asynchronously.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    let shared = self.inner.load(Ordering::Acquire);
-    {
-      let shared: *mut Shared = shared.cast();
-      unsafe { (*shared).flush_async() }
     }
   }
 
@@ -884,27 +874,26 @@ impl Arena {
   }
 
   #[inline]
-  fn new_in(mut shared: Shared, max_retries: u8) -> Self {
+  fn new_in(mut memory: Memory, max_retries: u8, unify: bool) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
     // And this ptr is only deallocated when the arena is dropped.
-    let read_data_ptr = shared.as_ptr();
-    let header_ptr = shared.header_ptr();
-    let ptr = shared.null_mut();
-    let write_data_ptr = shared
+    let read_data_ptr = memory.as_ptr();
+    let ptr = memory.null_mut();
+    let write_data_ptr = memory
       .as_mut_ptr()
       .map(|p| unsafe { NonNull::new_unchecked(p) })
       .unwrap_or_else(NonNull::dangling);
 
     Self {
-      cap: shared.cap(),
+      cap: memory.cap(),
       write_data_ptr,
       read_data_ptr,
-      header_ptr,
+      unify,
       ptr,
       max_retries,
-      data_offset: shared.data_offset as u32,
-      inner: AtomicPtr::new(Box::into_raw(Box::new(shared)) as _),
+      data_offset: memory.data_offset as u32,
+      inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
     }
   }
 
@@ -919,41 +908,39 @@ impl Arena {
 impl Drop for Arena {
   fn drop(&mut self) {
     unsafe {
-      self.inner.with_mut(|shared| {
-        let shared: *mut Shared = shared.cast();
-        // `Shared` storage... follow the drop steps from Arc.
-        if (*shared).refs.fetch_sub(1, Ordering::Release) != 1 {
-          return;
-        }
+      let memory = self.inner.as_mut();
+      // `Memory` storage... follow the drop steps from Arc.
+      if memory.refs.fetch_sub(1, Ordering::Release) != 1 {
+        return;
+      }
 
-        // This fence is needed to prevent reordering of use of the data and
-        // deletion of the data.  Because it is marked `Release`, the decreasing
-        // of the reference count synchronizes with this `Acquire` fence. This
-        // means that use of the data happens before decreasing the reference
-        // count, which happens before this fence, which happens before the
-        // deletion of the data.
-        //
-        // As explained in the [Boost documentation][1],
-        //
-        // > It is important to enforce any possible access to the object in one
-        // > thread (through an existing reference) to *happen before* deleting
-        // > the object in a different thread. This is achieved by a "release"
-        // > operation after dropping a reference (any access to the object
-        // > through this reference must obviously happened before), and an
-        // > "acquire" operation before deleting the object.
-        //
-        // [1]: (www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        //
-        // Thread sanitizer does not support atomic fences. Use an atomic load
-        // instead.
-        (*shared).refs.load(Ordering::Acquire);
-        // Drop the data
-        let mut shared = Box::from_raw(shared);
+      // This fence is needed to prevent reordering of use of the data and
+      // deletion of the data.  Because it is marked `Release`, the decreasing
+      // of the reference count synchronizes with this `Acquire` fence. This
+      // means that use of the data happens before decreasing the reference
+      // count, which happens before this fence, which happens before the
+      // deletion of the data.
+      //
+      // As explained in the [Boost documentation][1],
+      //
+      // > It is important to enforce any possible access to the object in one
+      // > thread (through an existing reference) to *happen before* deleting
+      // > the object in a different thread. This is achieved by a "release"
+      // > operation after dropping a reference (any access to the object
+      // > through this reference must obviously happened before), and an
+      // > "acquire" operation before deleting the object.
+      //
+      // [1]: (www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
+      //
+      // Thread sanitizer does not support atomic fences. Use an atomic load
+      // instead.
+      memory.refs.load(Ordering::Acquire);
+      // Drop the data
+      let mut memory = Box::from_raw(memory);
 
-        // Relaxed is enough here as we're in a drop, no one else can
-        // access this memory anymore.
-        shared.unmount();
-      });
+      // Relaxed is enough here as we're in a drop, no one else can
+      // access this memory anymore.
+      memory.unmount();
     }
   }
 }

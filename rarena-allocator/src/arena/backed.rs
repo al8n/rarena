@@ -1,6 +1,8 @@
 #[cfg(not(feature = "std"))]
 use std::vec::Vec;
 
+use either::Either;
+
 use super::*;
 
 #[derive(Debug)]
@@ -68,7 +70,7 @@ impl AlignedVec {
   }
 }
 
-enum SharedBackend {
+enum MemoryBackend {
   Vec(AlignedVec),
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   MmapMut {
@@ -124,37 +126,41 @@ impl core::fmt::Display for TooSmall {
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 impl std::error::Error for TooSmall {}
 
-pub(super) struct Shared {
+pub(super) struct Memory {
   pub(super) refs: AtomicUsize,
   cap: u32,
   pub(super) data_offset: usize,
-  header_ptr: *mut u8,
+  header_ptr: Either<*mut u8, Header>,
   ptr: *mut u8,
-  backend: SharedBackend,
+  backend: MemoryBackend,
 }
 
-impl Shared {
-  pub(super) fn new_vec(cap: u32, alignment: usize, min_segment_size: u32) -> Self {
+impl Memory {
+  pub(super) fn new_vec(cap: u32, alignment: usize, min_segment_size: u32, unify: bool) -> Self {
     let vec = AlignedVec::new(cap as usize, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.ptr.as_ptr();
       let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
       let data_offset = header_ptr_offset + mem::size_of::<Header>();
-      let this = Self {
+
+      let (header, data_offset) = if unify {
+        let header_ptr = ptr.add(header_ptr_offset);
+        let header = header_ptr.cast::<Header>();
+        header.write(Header::new(data_offset as u32, min_segment_size));
+        (Either::Left(header_ptr), data_offset)
+      } else {
+        (Either::Right(Header::new(0, min_segment_size)), 0)
+      };
+
+      Self {
         cap,
         refs: AtomicUsize::new(1),
         ptr,
-        header_ptr: ptr.add(header_ptr_offset),
-        backend: SharedBackend::Vec(vec),
+        header_ptr: header,
+        backend: MemoryBackend::Vec(vec),
         data_offset,
-      };
-
-      this
-        .header_mut_ptr()
-        .write(Header::new(data_offset as u32, min_segment_size));
-
-      this
+      }
     }
   }
 
@@ -186,33 +192,25 @@ impl Shared {
         let ptr = mmap.as_mut_ptr();
         let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
-
+        let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
           cap: cap as u32,
-          backend: SharedBackend::MmapMut {
+          backend: MemoryBackend::MmapMut {
             buf: Box::into_raw(Box::new(mmap)),
             file,
             lock: open_options.is_lock(),
             data_ptr: ptr.add(data_offset),
             shrink_on_drop: open_options.is_shrink_on_drop(),
           },
-          header_ptr: ptr.add(header_ptr_offset) as _,
+          header_ptr: Either::Left(header_ptr),
           ptr,
           refs: AtomicUsize::new(1),
           data_offset,
         };
 
-        // Ensure that the header_ptr is correctly aligned
-        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
-          return Err(invalid_data(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Header pointer is not aligned",
-          )));
-        }
-
         // Safety: we have add the overhead for the header
-        this
-          .header_mut_ptr()
+        header_ptr
+          .cast::<Header>()
           .write(Header::new(data_offset as u32, min_segment_size));
 
         Ok(this)
@@ -245,24 +243,24 @@ impl Shared {
         let ptr = mmap.as_ptr();
         let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
-
+        let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
           cap: len as u32,
-          backend: SharedBackend::Mmap {
+          backend: MemoryBackend::Mmap {
             buf: Box::into_raw(Box::new(mmap)),
             file,
             lock: open_options.is_lock(),
             data_ptr: ptr.add(data_offset),
             shrink_on_drop: open_options.is_shrink_on_drop(),
           },
-          header_ptr: ptr.add(header_ptr_offset) as _,
+          header_ptr: Either::Left(header_ptr),
           ptr: ptr as _,
           refs: AtomicUsize::new(1),
           data_offset,
         };
 
         // Ensure that the header_ptr is correctly aligned
-        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
+        if (header_ptr as usize) % mem::align_of::<Header>() != 0 {
           return Err(invalid_data(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Header pointer is not aligned",
@@ -279,6 +277,7 @@ impl Shared {
     mmap_options: MmapOptions,
     alignment: usize,
     min_segment_size: u32,
+    unify: bool,
   ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
       if mmap.len() < OVERHEAD {
@@ -293,29 +292,27 @@ impl Shared {
 
       // Safety: we have add the overhead for the header
       unsafe {
+        let (header, data_offset) = if unify {
+          let header_ptr = ptr.add(header_ptr_offset);
+          let header = header_ptr.cast::<Header>();
+          header.write(Header::new(data_offset as u32, min_segment_size));
+          (Either::Left(header_ptr), data_offset)
+        } else {
+          (Either::Right(Header::new(0, min_segment_size)), 0)
+        };
+
         let this = Self {
           cap: mmap.len() as u32,
-          backend: SharedBackend::AnonymousMmap {
+          backend: MemoryBackend::AnonymousMmap {
             buf: mmap,
             data_ptr: ptr.add(data_offset),
           },
           refs: AtomicUsize::new(1),
           data_offset,
-          header_ptr: ptr.add(header_ptr_offset) as _,
+          header_ptr: header,
           ptr,
         };
 
-        // Ensure that the header_ptr is correctly aligned
-        if (this.header_ptr as usize) % mem::align_of::<Header>() != 0 {
-          return Err(invalid_data(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Header pointer is not aligned",
-          )));
-        }
-
-        this
-          .header_mut_ptr()
-          .write(Header::new(data_offset as u32, min_segment_size));
         Ok(this)
       }
     })
@@ -325,7 +322,7 @@ impl Shared {
   pub(super) fn flush(&self) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      SharedBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush() },
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush() },
       _ => Ok(()),
     }
   }
@@ -334,7 +331,7 @@ impl Shared {
   pub(super) fn flush_async(&self) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      SharedBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_async() },
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_async() },
       _ => Ok(()),
     }
   }
@@ -354,13 +351,13 @@ impl Shared {
   pub(super) fn as_mut_ptr(&mut self) -> Option<*mut u8> {
     unsafe {
       Some(match &mut self.backend {
-        SharedBackend::Vec(vec) => vec.as_mut_ptr().add(self.data_offset),
+        MemoryBackend::Vec(vec) => vec.as_mut_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { data_ptr, .. } => *data_ptr,
+        MemoryBackend::MmapMut { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::Mmap { .. } => return None,
+        MemoryBackend::Mmap { .. } => return None,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
+        MemoryBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
       })
     }
   }
@@ -369,25 +366,25 @@ impl Shared {
   pub(super) fn as_ptr(&self) -> *const u8 {
     unsafe {
       match &self.backend {
-        SharedBackend::Vec(vec) => vec.as_ptr().add(self.data_offset),
+        MemoryBackend::Vec(vec) => vec.as_ptr().add(self.data_offset),
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::MmapMut { data_ptr, .. } => *data_ptr,
+        MemoryBackend::MmapMut { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::Mmap { data_ptr, .. } => *data_ptr,
+        MemoryBackend::Mmap { data_ptr, .. } => *data_ptr,
         #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-        SharedBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
+        MemoryBackend::AnonymousMmap { data_ptr, .. } => *data_ptr,
       }
     }
   }
 
   #[inline]
-  pub(super) const fn header_ptr(&self) -> *const u8 {
-    self.header_ptr
-  }
-
-  #[inline]
-  pub(super) const fn header_mut_ptr(&self) -> *mut Header {
-    self.header_ptr as *mut Header
+  pub(super) fn header(&self) -> &Header {
+    unsafe {
+      match &self.header_ptr {
+        Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
+        Either::Right(header) => header,
+      }
+    }
   }
 
   #[inline]
@@ -402,7 +399,7 @@ impl Shared {
   pub(super) unsafe fn unmount(&mut self) {
     #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
     match &self.backend {
-      SharedBackend::MmapMut {
+      MemoryBackend::MmapMut {
         buf,
         file,
         lock,
@@ -413,8 +410,7 @@ impl Shared {
 
         // we must trigger the drop of the mmap
         let used = if *shrink_on_drop {
-          let header_ptr = self.header_ptr().cast::<Header>();
-          let header = &*header_ptr;
+          let header = self.header();
           Some(header.allocated.load(Ordering::Acquire))
         } else {
           None
@@ -434,7 +430,7 @@ impl Shared {
           let _ = file.unlock();
         }
       }
-      SharedBackend::Mmap {
+      MemoryBackend::Mmap {
         lock,
         file,
         shrink_on_drop,
@@ -448,8 +444,7 @@ impl Shared {
         // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
 
         let used = if *shrink_on_drop {
-          let header_ptr = self.header_ptr().cast::<Header>();
-          let header = &*header_ptr;
+          let header = self.header();
           Some(header.allocated.load(Ordering::Acquire))
         } else {
           None
