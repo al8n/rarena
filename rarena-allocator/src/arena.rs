@@ -52,13 +52,13 @@ impl Header {
   }
 }
 
-/// An error indicating that the arena is full
+/// An error indicating that the ARENA is full
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub struct ArenaError;
 
 impl core::fmt::Display for ArenaError {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(f, "allocation failed because arena is full")
+    write!(f, "allocation failed because ARENA is full")
   }
 }
 
@@ -88,7 +88,7 @@ impl fmt::Debug for Arena {
     let allocated = header.allocated.load(Ordering::Acquire);
 
     // Safety:
-    // The ptr is always non-null, we only deallocate it when the arena is dropped.
+    // The ptr is always non-null, we only deallocate it when the ARENA is dropped.
     let data =
       unsafe { slice::from_raw_parts(self.read_data_ptr, (allocated - self.data_offset) as usize) };
 
@@ -128,31 +128,31 @@ impl Clone for Arena {
 }
 
 impl Arena {
-  /// Returns the number of bytes allocated by the arena.
+  /// Returns the number of bytes allocated by the ARENA.
   #[inline]
   pub fn size(&self) -> usize {
     self.header().allocated.load(Ordering::Acquire) as usize
   }
 
-  /// Returns the capacity of the arena.
+  /// Returns the capacity of the ARENA.
   #[inline]
   pub const fn capacity(&self) -> usize {
     self.cap as usize
   }
 
-  /// Returns the number of bytes remaining bytes can be allocated by the arena.
+  /// Returns the number of bytes remaining bytes can be allocated by the ARENA.
   #[inline]
   pub fn remaining(&self) -> usize {
     (self.cap as usize).saturating_sub(self.size())
   }
 
-  /// Returns the number of references to the arena.
+  /// Returns the number of references to the ARENA.
   #[inline]
   pub fn refs(&self) -> usize {
     unsafe { self.inner.as_ref().refs.load(Ordering::Acquire) }
   }
 
-  /// Returns the number of bytes discarded by the arena.
+  /// Returns the number of bytes discarded by the ARENA.
   #[inline]
   pub fn discarded(&self) -> usize {
     self.header().discarded.load(Ordering::Acquire) as usize
@@ -167,13 +167,13 @@ impl Arena {
       .fetch_add(size as u32, Ordering::Release);
   }
 
-  /// Returns the minimum segment size of the arena.
+  /// Returns the minimum segment size of the ARENA.
   #[inline]
   pub fn minimum_segment_size(&self) -> usize {
     self.header().min_segment_size.load(Ordering::Acquire) as usize
   }
 
-  /// Sets the minimum segment size of the arena.
+  /// Sets the minimum segment size of the ARENA.
   #[inline]
   pub fn set_minimum_segment_size(&self, size: usize) {
     self
@@ -182,16 +182,36 @@ impl Arena {
       .store(size as u32, Ordering::Release);
   }
 
-  /// Returns the data offset of the arena. The offset is the end of the ARENA header.
+  /// Returns the data offset of the ARENA. The offset is the end of the ARENA header.
   #[inline]
   pub const fn data_offset(&self) -> usize {
     self.data_offset as usize
   }
 
+  /// Returns the data section of the ARENA as a byte slice, header is not included.
+  #[inline]
+  pub fn data(&self) -> &[u8] {
+    unsafe {
+      let ptr = self.ptr.add(self.data_offset as usize);
+      let allocated = self.header().allocated.load(Ordering::Acquire);
+      slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
+    }
+  }
+
+  /// Returns the data section of the ARENA as a mutable byte slice, header is included.
+  #[inline]
+  pub fn data_with_header(&self) -> &[u8] {
+    unsafe {
+      let ptr = self.ptr.add(self.data_offset as usize);
+      let allocated = self.header().allocated.load(Ordering::Acquire);
+      slice::from_raw_parts(ptr, allocated as usize)
+    }
+  }
+
   #[inline]
   fn header(&self) -> &Header {
     // Safety:
-    // The inner is always non-null, we only deallocate it when the arena is dropped.
+    // The inner is always non-null, we only deallocate it when the ARENA is dropped.
     unsafe { (*self.inner.as_ptr()).header() }
   }
 }
@@ -309,15 +329,15 @@ impl Arena {
   ///
   /// ```ignore
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let ARENA = Arena::new(ArenaOptions::new());
   ///
   /// {
-  ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  ///   let mut data = ARENA.alloc::<Vec<u8>>().unwrap();
   ///   data.detach();
   ///   data.write(vec![1, 2, 3]);
   /// }
   ///
-  /// drop(arena); // memory leak, the `Vec<u8>` is not dropped.
+  /// drop(ARENA); // memory leak, the `Vec<u8>` is not dropped.
   /// ```
   ///
   /// ## Undefined behavior
@@ -330,18 +350,18 @@ impl Arena {
   ///   data: Vec<u8>,
   /// }
   ///
-  /// let arena = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
+  /// let ARENA = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
   ///
-  /// let mut data = arena.alloc::<TypeOnHeap>().unwrap();
+  /// let mut data = ARENA.alloc::<TypeOnHeap>().unwrap();
   /// data.detach();
   /// data.write(TypeOnHeap { data: vec![1, 2, 3] });
   /// let offset = data.offset();
-  /// drop(arena);
+  /// drop(ARENA);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let ARENA = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
-  /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
+  /// let foo = &*ARENA.get_aligned_pointer::<TypeOnHeap>(offset as usize);
   /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
   /// ```
   ///
@@ -352,17 +372,17 @@ impl Arena {
   /// ### Heap allocated type with carefull memory management
   ///
   /// ```ignore
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let ARENA = Arena::new(ArenaOptions::new());
   ///
   /// // Do not invoke detach, so when the data is dropped, the drop logic will be handled by the ARENA.
   /// // automatically.
   /// {
-  ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  ///   let mut data = ARENA.alloc::<Vec<u8>>().unwrap();
   ///   data.write(vec![1, 2, 3]);
   /// }
   ///
   ///
-  /// let mut detached_data = arena.alloc::<Vec<u8>>().unwrap();
+  /// let mut detached_data = ARENA.alloc::<Vec<u8>>().unwrap();
   /// detached_data.detach();
   /// detached_data.write(vec![4, 5, 6]);
   ///
@@ -370,7 +390,7 @@ impl Arena {
   ///
   /// core::ptr::drop_in_place(detached_data.as_mut()); // drop the `Vec` manually.
   ///
-  /// drop(arena); // it is safe, the `Vec` is already dropped.
+  /// drop(ARENA); // it is safe, the `Vec` is already dropped.
   /// ```
   ///
   /// ### Recoverable type with file backed ARENA
@@ -382,18 +402,18 @@ impl Arena {
   ///   field2: AtomicU32,
   /// }
   ///
-  /// let arena = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
+  /// let ARENA = Arena::map_mut("path/to/file", ArenaOptions::new(), OpenOptions::create_new(Some(1000)).read(true).write(true), MmapOptions::default()).unwrap();
   ///
-  /// let mut data = arena.alloc::<Recoverable>().unwrap();
+  /// let mut data = ARENA.alloc::<Recoverable>().unwrap();
   /// data.write(Recoverable { field1: 10, field2: AtomicU32::new(20) });
   ///
   /// let offset = data.offset();
-  /// drop(arena);
+  /// drop(ARENA);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let ARENA = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
-  /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
+  /// let foo = &*ARENA.get_aligned_pointer::<Recoverable>(offset as usize);
   ///
   /// assert_eq!(foo.field1, 10);
   /// assert_eq!(foo.field2.load(Ordering::Acquire), 20);
@@ -441,9 +461,9 @@ impl Arena {
   /// Undefine behavior:
   ///
   /// ```ignore
-  /// let mut data = arena.alloc::<Vec<u8>>().unwrap();
+  /// let mut data = ARENA.alloc::<Vec<u8>>().unwrap();
   ///
-  /// arena.clear();
+  /// ARENA.clear();
   ///
   /// data.write(vec![1, 2, 3]); // undefined behavior
   /// ```
@@ -466,9 +486,9 @@ impl Arena {
   ///
   /// # Safety
   /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the arena.
-  /// - `size` must be less than the capacity of the arena.
-  /// - `offset + size` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
+  /// - `size` must be less than the capacity of the ARENA.
+  /// - `offset + size` must be less than the capacity of the ARENA.
   #[inline]
   pub const unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
     if offset == 0 {
@@ -484,9 +504,9 @@ impl Arena {
   ///
   /// # Safety
   /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the arena.
-  /// - `size` must be less than the capacity of the arena.
-  /// - `offset + size` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
+  /// - `size` must be less than the capacity of the ARENA.
+  /// - `offset + size` must be less than the capacity of the ARENA.
   #[allow(clippy::mut_from_ref)]
   #[inline]
   pub unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
@@ -505,7 +525,7 @@ impl Arena {
   /// Returns a pointer to the memory at the given offset.
   ///
   /// # Safety
-  /// - `offset` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
   #[inline]
   pub const unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
     if offset == 0 {
@@ -518,7 +538,7 @@ impl Arena {
   /// If the ARENA is read-only, then this method will return a null pointer.
   ///
   /// # Safety
-  /// - `offset` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
   #[inline]
   pub unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
     if offset == 0 {
@@ -535,7 +555,7 @@ impl Arena {
   ///
   /// # Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
   #[inline]
   pub unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
     if offset == 0 {
@@ -552,7 +572,7 @@ impl Arena {
   ///
   /// # Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the arena.
+  /// - `offset` must be less than the capacity of the ARENA.
   #[inline]
   pub unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
     if offset == 0 {
@@ -877,7 +897,7 @@ impl Arena {
   fn new_in(mut memory: Memory, max_retries: u8, unify: bool) -> Self {
     // Safety:
     // The ptr is always non-null, we just initialized it.
-    // And this ptr is only deallocated when the arena is dropped.
+    // And this ptr is only deallocated when the ARENA is dropped.
     let read_data_ptr = memory.as_ptr();
     let ptr = memory.null_mut();
     let write_data_ptr = memory
