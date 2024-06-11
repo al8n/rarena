@@ -27,7 +27,6 @@ const VERSION_OFFSET: usize = MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE;
 const VERSION_SIZE: usize = mem::size_of::<u16>();
 const CURRENT_VERSION: u16 = 0;
 
-
 const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
 const REMOVED_SEGMENT_NODE_SIZE: u32 = 0;
@@ -132,7 +131,10 @@ impl Header {
   fn new(size: u32, min_segment_size: u32) -> Self {
     Self {
       allocated: AtomicU32::new(size),
-      sentinel: AtomicU64::new(encode_segment_node(SENTINEL_SEGMENT_NODE_OFFSET, SENTINEL_SEGMENT_NODE_SIZE)),
+      sentinel: AtomicU64::new(encode_segment_node(
+        SENTINEL_SEGMENT_NODE_OFFSET,
+        SENTINEL_SEGMENT_NODE_SIZE,
+      )),
       min_segment_size: AtomicU32::new(min_segment_size),
       discarded: AtomicU32::new(0),
     }
@@ -563,34 +565,59 @@ impl Memory {
   }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
-struct Allocated {
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u8)]
+#[non_exhaustive]
+enum Source {
+  #[default]
+  Null,
+  Segmented,
+  Unsegmented,
+}
+
+/// The metadata of the structs allocated from ARENA.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Meta {
+  parent_ptr: *const u8,
   memory_offset: u32,
   memory_size: u32,
   ptr_offset: u32,
   ptr_size: u32,
+  source: Source,
 }
 
-impl Allocated {
+unsafe impl Send for Meta {}
+unsafe impl Sync for Meta {}
+
+impl Meta {
   #[inline]
-  const fn null() -> Self {
+  const fn null(parent_ptr: *const u8) -> Self {
     Self {
+      parent_ptr,
       memory_offset: 0,
       memory_size: 0,
       ptr_offset: 0,
       ptr_size: 0,
+      source: Source::Null,
     }
   }
 
   #[inline]
-  const fn new(memory_offset: u32, memory_size: u32) -> Self {
+  const fn new(
+    parent_ptr: *const u8,
+    memory_offset: u32,
+    memory_size: u32,
+    source: Source,
+  ) -> Self {
     Self {
+      parent_ptr,
       memory_offset,
       memory_size,
       // just set the ptr_offset to the memory_offset, and ptr_size to the memory_size.
       // we will align the ptr_offset and ptr_size when it should be aligned.
       ptr_offset: memory_offset,
       ptr_size: memory_size,
+      source,
     }
   }
 
@@ -1343,11 +1370,21 @@ impl Arena {
   /// returns `true` if the deallocation is successful.
   ///
   /// # Safety
+  /// - you must ensure the same `Meta` is not deallocated twice.
+  #[inline]
+  pub unsafe fn dealloc(&self, meta: Meta) -> bool {
+    self.dealloc_in(meta.memory_offset, meta.memory_size, meta.source)
+  }
+
+  /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
+  /// returns `true` if the deallocation is successful.
+  ///
+  /// # Safety
   /// - `offset..offset + size` must be allocated memory.
   /// - `offset` must be less than the capacity of the ARENA.
   /// - `size` must be less than the capacity of the ARENA.
   /// - `offset + size` must be less than the capacity of the ARENA.
-  pub unsafe fn dealloc(&self, offset: u32, size: u32) -> bool {
+  unsafe fn dealloc_in(&self, offset: u32, size: u32, source: Source) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     if !self.validate_segment(offset, size) {
       self.discard(size);
@@ -1529,7 +1566,7 @@ impl Arena {
     offset as usize
   }
 
-  fn alloc_bytes_in(&self, size: u32) -> Result<Option<Allocated>, Error> {
+  fn alloc_bytes_in(&self, size: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -1557,7 +1594,7 @@ impl Arena {
           #[cfg(feature = "tracing")]
           tracing::debug!("allocate {} bytes at offset {} from memory", size, offset);
 
-          let allocated = Allocated::new(offset, size);
+          let allocated = Meta::new(self.ptr as _, offset, size, Source::Unsegmented);
           unsafe { allocated.clear(self) };
           return Ok(Some(allocated));
         }
@@ -1582,7 +1619,7 @@ impl Arena {
   }
 
   /// It is like a pop operation, we will always allocate from the largest segment.
-  fn alloc_slow_path(&self, size: u32) -> Result<Allocated, Error> {
+  fn alloc_slow_path(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -1614,7 +1651,6 @@ impl Arena {
           available: node_size,
         });
       }
-
 
       // CAS to remove the current
       let removed_head = encode_segment_node(next, REMOVED_SEGMENT_NODE_SIZE);
@@ -1650,12 +1686,12 @@ impl Arena {
 
           // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
           unsafe {
-            self.dealloc(next + size, node_size - size);
+            self.dealloc_in(next + size, node_size - size, Source::Unsegmented);
           }
 
           #[cfg(feature = "tracing")]
           tracing::debug!("allocate {} bytes at offset {} from segment", size, next);
-          let allocated = Allocated::new(next, size);
+          let allocated = Meta::new(self.ptr as _, next, size, Source::Segmented);
           unsafe { allocated.clear(self) };
           return Ok(allocated);
         }
@@ -1673,7 +1709,7 @@ impl Arena {
     }
   }
 
-  fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Allocated>, Error> {
+  fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -1700,7 +1736,7 @@ impl Arena {
         Ordering::Acquire,
       ) {
         Ok(offset) => {
-          let mut allocated = Allocated::new(offset, want - offset);
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
           allocated.align_bytes_to::<T>();
           #[cfg(feature = "tracing")]
           tracing::debug!(
@@ -1732,7 +1768,7 @@ impl Arena {
     }
   }
 
-  fn alloc_in<T>(&self) -> Result<Option<Allocated>, Error> {
+  fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -1758,7 +1794,7 @@ impl Arena {
         Ordering::Acquire,
       ) {
         Ok(offset) => {
-          let mut allocated = Allocated::new(offset, want - offset);
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
           allocated.align_to::<T>();
 
           #[cfg(feature = "tracing")]
@@ -1767,7 +1803,7 @@ impl Arena {
             want - offset,
             offset
           );
-          
+
           unsafe { allocated.clear(self) };
           return Ok(Some(allocated));
         }
@@ -1796,6 +1832,10 @@ impl Arena {
   /// Returns `true` if this offset and size is valid for a segment node.
   #[inline]
   fn validate_segment(&self, offset: u32, size: u32) -> bool {
+    if offset == 0 || size == 0 {
+      return false;
+    }
+
     let aligned_offset = align_offset::<AtomicU64>(offset) as usize;
     let want = (aligned_offset - offset as usize) + mem::size_of::<AtomicU64>();
     if want >= size as usize {
@@ -1832,6 +1872,9 @@ impl Arena {
       // the current is marked as removed
       if current_node_size == 0 {
         // wait other thread to remove the node.
+        // move to the next node.
+        current = &header.sentinel;
+        prev = 0;
         backoff.snooze();
         continue;
       }
@@ -2003,7 +2046,7 @@ const fn encode_segment_node(next: u32, size: u32) -> u64 {
 /// (current_offset + alignment - 1) & !(alignment - 1)
 /// ```
 #[inline]
-fn align_offset<T>(current_offset: u32) -> u32 {
+const fn align_offset<T>(current_offset: u32) -> u32 {
   let alignment = mem::align_of::<T>() as u32;
   (current_offset + alignment - 1) & !(alignment - 1)
 }

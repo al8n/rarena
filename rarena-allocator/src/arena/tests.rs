@@ -488,7 +488,6 @@ fn allocate_slow_path_vec_unify() {
   });
 }
 
-
 #[test]
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
@@ -531,7 +530,7 @@ fn allocate_slow_path_concurrent(l: Arena) {
       let _ = l.alloc_bytes(i * 50).unwrap();
       drop(wg);
     })
-  }); 
+  });
 
   wg.wait();
   let remaining = l.remaining();
@@ -567,7 +566,7 @@ fn allocate_slow_path_concurrent_vec_unify() {
 
 #[test]
 #[cfg_attr(miri, ignore)]
-#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_concurrent_mmap() {
   run(|| {
     let dir = tempfile::tempdir().unwrap();
@@ -577,12 +576,14 @@ fn allocate_slow_path_concurrent_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    allocate_slow_path_concurrent(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    allocate_slow_path_concurrent(
+      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+    );
   });
 }
 
 #[test]
-#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_concurrent_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
@@ -591,9 +592,23 @@ fn allocate_slow_path_concurrent_mmap_anon() {
 }
 
 #[test]
-#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_concurrent_unify() {
   run(|| {
     allocate_slow_path_concurrent(Arena::new(ArenaOptions::new().with_unify(true)));
   });
+}
+
+#[test]
+fn test_meta_eq() {
+  let ptr = ptr::null();
+  let a = Meta::new(ptr, 2, 3, Source::Null);
+  let b = Meta::new(unsafe { ptr.add(1) }, 2, 3, Source::Null);
+  assert_ne!(a, b);
+
+  let a_ptr = 1u8;
+  let b_ptr = 1u8;
+  let a = Meta::new(&a_ptr as _, 2, 3, Source::Null);
+  let b = Meta::new(&b_ptr as _, 2, 3, Source::Null);
+  assert_ne!(a, b);
 }
