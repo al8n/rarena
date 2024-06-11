@@ -522,7 +522,7 @@ fn allocate_slow_path_concurrent(l: Arena) {
   let wg = WaitGroup::new();
 
   // make some segments
-  let handles = (1..=5).map(|i| {
+  (1..=5).map(|i| {
     let l = l.clone();
     let b = b.clone();
     let wg = wg.add(1);
@@ -531,11 +531,7 @@ fn allocate_slow_path_concurrent(l: Arena) {
       let _ = l.alloc_bytes(i * 50).unwrap();
       drop(wg);
     })
-  });
-
-  // for handle in handles {
-  //   handle.join().unwrap();
-  // }
+  }); 
 
   wg.wait();
   let remaining = l.remaining();
