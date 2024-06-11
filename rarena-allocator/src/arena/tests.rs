@@ -453,3 +453,151 @@ fn test_too_small() {
     "memmap size is less than the minimum capacity: 10 < 20"
   );
 }
+
+#[cfg(not(feature = "loom"))]
+fn allocate_slow_path(l: Arena) {
+  // make some segments
+  for i in 1..=5 {
+    let _ = l.alloc_bytes(i * 50).unwrap();
+  }
+
+  let remaining = l.remaining();
+  let _ = l.alloc_bytes(remaining as u32).unwrap();
+
+  // 751 -> 501 -> 301 -> 151 -> 51 -> 1
+
+  // allocate from segments
+  for i in (1..=5).rev() {
+    l.alloc_bytes(i * 50).unwrap();
+  }
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn allocate_slow_path_vec() {
+  run(|| {
+    allocate_slow_path(Arena::new(ArenaOptions::new()));
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn allocate_slow_path_vec_unify() {
+  run(|| {
+    allocate_slow_path(Arena::new(ArenaOptions::new().with_unify(true)));
+  });
+}
+
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn allocate_slow_path_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_allocate_slow_path_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    allocate_slow_path(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn allocate_slow_path_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    allocate_slow_path(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+  });
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent(l: Arena) {
+  use std::sync::{Arc, Barrier};
+  use wg::WaitGroup;
+  let b = Arc::new(Barrier::new(5));
+  let wg = WaitGroup::new();
+
+  // make some segments
+  let handles = (1..=5).map(|i| {
+    let l = l.clone();
+    let b = b.clone();
+    let wg = wg.add(1);
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(i * 50).unwrap();
+      drop(wg);
+    })
+  });
+
+  // for handle in handles {
+  //   handle.join().unwrap();
+  // }
+
+  wg.wait();
+  let remaining = l.remaining();
+  let _ = l.alloc_bytes(remaining as u32).unwrap();
+
+  // allocate from segments
+  let b = Arc::new(Barrier::new(5));
+  for i in (1..=5).rev() {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(i * 50);
+    });
+  }
+}
+
+#[test]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_vec() {
+  run(|| {
+    allocate_slow_path_concurrent(Arena::new(ArenaOptions::new()));
+  });
+}
+
+#[test]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_vec_unify() {
+  run(|| {
+    allocate_slow_path_concurrent(Arena::new(ArenaOptions::new().with_unify(true)));
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+fn allocate_slow_path_concurrent_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_allocate_slow_path_concurrent_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    allocate_slow_path_concurrent(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+fn allocate_slow_path_concurrent_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    allocate_slow_path_concurrent(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), all(not(feature = "loom"))))]
+fn allocate_slow_path_concurrent_unify() {
+  run(|| {
+    allocate_slow_path_concurrent(Arena::new(ArenaOptions::new().with_unify(true)));
+  });
+}
