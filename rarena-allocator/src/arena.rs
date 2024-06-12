@@ -27,10 +27,12 @@ const VERSION_OFFSET: usize = MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE;
 const VERSION_SIZE: usize = mem::size_of::<u16>();
 const CURRENT_VERSION: u16 = 0;
 
-const SEGMENT_NODE_SIZE: usize = mem::size_of::<AtomicU64>();
+const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNodeData>();
+const SEGMENT_NODE_SUFFIX_SIZE: usize = mem::size_of::<u32>();
+const FULL_SEGMENT_NODE_SIZE: usize = SEGMENT_NODE_SIZE + SEGMENT_NODE_SUFFIX_SIZE;
 const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
-const REMOVED_SEGMENT_NODE_SIZE: u32 = 0;
+const REMOVED_SEGMENT_NODE: u32 = 0;
 
 #[derive(Debug)]
 struct AlignedVec {
@@ -693,16 +695,6 @@ struct SegmentNode {
 }
 
 impl SegmentNode {
-  #[inline]
-  fn sentinel(ptr: *const u8) -> Self {
-    Self {
-      ptr,
-      ptr_offset: 0,
-      data_offset: SENTINEL_SEGMENT_NODE_OFFSET,
-      data_size: SENTINEL_SEGMENT_NODE_SIZE,
-    }
-  }
-
   /// # Safety
   /// - offset must be a well-aligned and in-bounds `AtomicU64` pointer.
   #[inline]
@@ -710,24 +702,31 @@ impl SegmentNode {
     Self {
       ptr: arena.ptr,
       ptr_offset: offset,
-      data_offset: offset + data_size,
+      data_offset: offset + FULL_SEGMENT_NODE_SIZE as u32,
       data_size,
     }
   }
-
 
   #[inline]
   fn as_ref(&self) -> &SegmentNodeData {
     // Safety: when constructing the SegmentNode, we have checked the ptr_offset is in bounds and well-aligned.
     unsafe {
       let ptr = self.ptr.add(self.ptr_offset as usize);
-      &*ptr.cast::<&SegmentNodeData>()
+      &*ptr.cast::<SegmentNodeData>()
     }
   }
 
   #[inline]
   fn update_next_node(&self, next: u32) {
-    self.as_ref().store(encode_segment_node(next, self.data_size), Ordering::Release)
+    self.as_ref().store(
+      encode_segment_node(self.ptr_offset, next),
+      Ordering::Release,
+    )
+  }
+
+  #[inline]
+  const fn end_offset(&self) -> u32 {
+    self.data_offset + self.data_size
   }
 }
 
@@ -1475,7 +1474,7 @@ impl Arena {
   /// - `offset + size` must be less than the capacity of the ARENA.
   unsafe fn dealloc_in(&self, offset: u32, size: u32, source: Source) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
-    let Some(segment_node) = self.validate_segment(offset, size, source) else {
+    let Some(segment_node) = self.try_new_segment(offset, size, source) else {
       return false;
     };
 
@@ -1484,25 +1483,24 @@ impl Arena {
     let header = self.header();
 
     loop {
-      let (prev, next) = self.find_free_list_position(segment_node.data_size);
-      let prev_node = prev
+      tracing::debug!("try to dealloc {size} bytes at {offset}");
+      let node_offset = self.find_free_list_position(segment_node.data_size);
+      let node = node_offset
         .map(|p| self.get_segment_node(p))
         .unwrap_or(&header.sentinel);
-      let next_node_offset = next.unwrap_or(SENTINEL_SEGMENT_NODE_SIZE);
 
       // CAS prev_node's next points to the new_node
-      let prev_node_val = prev_node.load(Ordering::Acquire);
-      let (prev_node_offset, prev_node_size) = decode_segment_node(prev_node_val);
+      let offset_and_next = node.load(Ordering::Acquire);
+      let (node_offset, next_node_offset) = decode_segment_node(offset_and_next);
 
       // the prev is removed from the list, then we need to refind the position.
-      if prev_node_size == 0 {
+      if node_offset == REMOVED_SEGMENT_NODE {
         // wait other thread to make progress.
         backoff.snooze();
         continue;
       }
 
-      if prev_node_offset == segment_node.ptr_offset || segment_node.ptr_offset == next_node_offset
-      {
+      if node_offset == segment_node.ptr_offset || segment_node.ptr_offset == next_node_offset {
         // we found ourselves, then we need to refind the position.
         backoff.snooze();
         continue;
@@ -1510,27 +1508,26 @@ impl Arena {
 
       segment_node.update_next_node(next_node_offset);
 
-      match prev_node.compare_exchange(
-        prev_node_val,
-        encode_segment_node(segment_node.ptr_offset, segment_node.data_size),
+      match node.compare_exchange(
+        offset_and_next,
+        encode_segment_node(node_offset, segment_node.ptr_offset),
         Ordering::AcqRel,
         Ordering::Relaxed,
       ) {
         Ok(_) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("dealloc {size} bytes at offset {offset}, prev segment: {prev_node_offset}, next segment {next_node_offset}");
+          tracing::debug!("alloc segment node {segment_node:?}, prev segment: {node_offset}, next segment {next_node_offset}");
           break true;
         }
-        Err(current_prev) => {
-          let (_, size) = decode_segment_node(current_prev);
-          // the prev is removed from the list, then we need to refind the position.
-          if size == 0 {
+        Err(current) => {
+          let (offset, _) = decode_segment_node(current);
+          // the current is removed from the list, then we need to refind the position.
+          if offset == REMOVED_SEGMENT_NODE {
             // wait other thread to make progress.
             backoff.snooze();
-            continue;
+          } else {
+            backoff.spin();
           }
-
-          backoff.spin();
         }
       }
     }
@@ -1689,7 +1686,6 @@ impl Arena {
 
           let allocated = Meta::new(self.ptr as _, offset, size, Source::Unsegmented);
           unsafe { allocated.clear(self) };
-          std::println!("fast path {allocated:?} {offset} {size}");
           return Ok(Some(allocated));
         }
         Err(x) => allocated = x,
@@ -1722,48 +1718,51 @@ impl Arena {
     let header = self.header();
 
     loop {
-      let head = header.sentinel.load(Ordering::Acquire);
-      let (next, node_size) = decode_segment_node(head);
-      std::println!("next: {}, node_size: {}", next, node_size);
+      let node = header.sentinel.load(Ordering::Acquire);
+      let (node_offset, next_node_offset) = decode_segment_node(node);
+
       // free list is empty
-      if next == SENTINEL_SEGMENT_NODE_OFFSET && node_size == SENTINEL_SEGMENT_NODE_SIZE {
+      if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return Err(Error::InsufficientSpace {
           requested: size,
           available: self.remaining() as u32,
         });
       }
 
-      if node_size == REMOVED_SEGMENT_NODE_SIZE {
-        // The current head is removed from the list, wait other thread to make progress.
+      // the current node is marked as removed, wait other thread to make progress.
+      if node_offset == REMOVED_SEGMENT_NODE {
         backoff.snooze();
         continue;
       }
 
-      if next == SENTINEL_SEGMENT_NODE_OFFSET {
-        return Err(Error::InsufficientSpace {
-          requested: size,
-          available: self.remaining() as u32,
-        });
-      }
+      // Safety: the current_offset is in bounds and well aligned.
+      let current_node_size = unsafe {
+        ptr::read(
+          self
+            .ptr
+            .add(node_offset as usize + SEGMENT_NODE_SIZE)
+            .cast::<u32>(),
+        )
+      };
 
       // The larget segment does not have enough space to allocate, so just return err.
-      if size > node_size {
+      if size > current_node_size {
         return Err(Error::InsufficientSpace {
           requested: size,
-          available: node_size,
+          available: current_node_size,
         });
       }
 
-      let require = node_size - size;
+      let remaining = current_node_size - size;
 
       // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
-      let segment_node = unsafe { SegmentNode::from_offset(self, next, size) }; 
+      let mut segment_node = unsafe { SegmentNode::from_offset(self, node_offset, current_node_size) };
 
       // CAS to remove the current
-      let removed_head = encode_segment_node(next, REMOVED_SEGMENT_NODE_SIZE);
+      let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
       if header
         .sentinel
-        .compare_exchange(head, removed_head, Ordering::AcqRel, Ordering::Relaxed)
+        .compare_exchange(node, removed_head, Ordering::AcqRel, Ordering::Relaxed)
         .is_err()
       {
         // wait other thread to make progress.
@@ -1771,61 +1770,57 @@ impl Arena {
         continue;
       }
 
-      // We have successfully mark the head is removed, then we need to let head node's next point to the next next node.
+      // We have successfully mark the head is removed, then we need to let head node's next point to the next node.
 
       // if we reach the end of the list, which means no next node.
-      let next_node_val = if next != SENTINEL_SEGMENT_NODE_OFFSET {
-        unsafe { self.get_segment_node(next).load(Ordering::Acquire) }
+      let next_node = if next_node_offset != SENTINEL_SEGMENT_NODE_OFFSET {
+        self
+          .get_segment_node(next_node_offset)
+          .load(Ordering::Acquire)
       } else {
         encode_segment_node(SENTINEL_SEGMENT_NODE_OFFSET, SENTINEL_SEGMENT_NODE_SIZE)
       };
 
       match header.sentinel.compare_exchange(
         removed_head,
-        next_node_val,
+        next_node,
         Ordering::AcqRel,
         Ordering::Relaxed,
       ) {
         Ok(_) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("allocate {} bytes at offset {} from segment", size, next);
+          tracing::debug!("allocate {} bytes at offset {} from segment", size, segment_node.data_offset);
 
-          let mut allocated = Meta::new(
+          // check if the remaining is enough to allocate a new segment.
+          if self.validate_segment(segment_node.end_offset(), remaining) {
+            segment_node.data_size = size;
+            // We have successfully remove the head node from the list.
+            // Then we can allocate the memory.
+            // give back the remaining memory to the free list.
+
+            // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
+            unsafe {
+              self.dealloc_in(segment_node.end_offset(), remaining, Source::Unsegmented);
+            }
+          }
+
+          let allocated = Meta::new(
             self.ptr as _,
-            next,
-            node_size,
+            segment_node.data_offset,
+            size,
             Source::Segmented(segment_node),
           );
-          allocated.ptr_offset = data_offset;
-          allocated.ptr_size = data_size;
-
-          std::println!(
-            "slow path: {:?} offset: {} size: {}",
-            allocated,
-            next + size,
-            node_size - size
-          );
-          // We have successfully remove the head node from the list.
-          // Then we can allocate the memory.
-          // give back the remaining memory to the free list.
-
-          // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
-          unsafe {
-            self.dealloc_in(next + size, node_size - size, Source::Unsegmented);
-            allocated.clear(self);
-          }
-
+          unsafe { allocated.clear(self); }
           return Ok(allocated);
         }
-        Err(current_sentinel) => {
-          let (_, size) = decode_segment_node(current_sentinel);
-          if size == 0 {
+        Err(current) => {
+          let (current_offset, _) = decode_segment_node(current);
+          if current_offset == REMOVED_SEGMENT_NODE {
             // The current head is removed from the list, wait other thread to make progress.
             backoff.snooze();
-            continue;
+          } else {
+            backoff.spin();
           }
-
-          backoff.spin();
         }
       }
     }
@@ -1953,7 +1948,28 @@ impl Arena {
 
   /// Returns `true` if this offset and size is valid for a segment node.
   #[inline]
-  fn validate_segment(&self, offset: u32, size: u32, source: Source) -> Option<SegmentNode> {
+  fn validate_segment(&self, offset: u32, size: u32) -> bool {
+    if offset == 0 || size == 0 {
+      return false;
+    }
+
+    let aligned_offset = align_offset::<AtomicU64>(offset) as usize;
+    let padding = aligned_offset - offset as usize;
+    let segmented_node_size = padding + SEGMENT_NODE_SIZE + SEGMENT_NODE_SUFFIX_SIZE;
+    if segmented_node_size >= size as usize {
+      return false;
+    }
+
+    let available_bytes = size - segmented_node_size as u32;
+    if available_bytes < self.header().min_segment_size.load(Ordering::Acquire) {
+      return false;
+    }
+
+    true
+  }
+
+  #[inline]
+  fn try_new_segment(&self, offset: u32, size: u32, source: Source) -> Option<SegmentNode> {
     if offset == 0 || size == 0 {
       return None;
     }
@@ -1973,7 +1989,7 @@ impl Arena {
       Source::Unsegmented => {
         let aligned_offset = align_offset::<AtomicU64>(offset) as usize;
         let padding = aligned_offset - offset as usize;
-        let segmented_node_size = padding + SEGMENT_NODE_SIZE;
+        let segmented_node_size = padding + SEGMENT_NODE_SIZE + SEGMENT_NODE_SUFFIX_SIZE;
         if segmented_node_size >= size as usize {
           self.discard(size);
           return None;
@@ -1987,44 +2003,62 @@ impl Arena {
 
         self.discard(segmented_node_size as u32);
 
+        // write the segment node suffix (length of the available bytes)
+        unsafe {
+          ptr::write(
+            self
+              .ptr
+              .add(aligned_offset + SEGMENT_NODE_SUFFIX_SIZE)
+              .cast::<u32>(),
+            available_bytes,
+          );
+        }
+
         Some(SegmentNode {
           ptr: self.ptr,
           ptr_offset: aligned_offset as u32,
-          data_offset: (aligned_offset + SEGMENT_NODE_SIZE) as u32,
+          data_offset: (aligned_offset + SEGMENT_NODE_SIZE + SEGMENT_NODE_SUFFIX_SIZE) as u32,
           data_size: available_bytes,
         })
       }
     }
   }
 
-  fn find_free_list_position(&self, val: u32) -> (Option<u32>, Option<u32>) {
+  fn find_free_list_position(&self, val: u32) -> Option<u32> {
     let header = self.header();
-    let mut current = &header.sentinel;
+    let mut current: &AtomicU64 = &header.sentinel;
 
     let mut prev = 0;
     let backoff = Backoff::new();
     loop {
       let current_node = current.load(Ordering::Acquire);
-      let (current_next, current_node_size) = decode_segment_node(current_node);
+      let (current_offset, next_offset) = decode_segment_node(current_node);
 
-      // we reach the tail of the list
-      if current_next == SENTINEL_SEGMENT_NODE_OFFSET {
-        // the list is empty
-        if prev == 0 {
-          return (None, None);
-        }
-
-        return (Some(prev), None);
+      // the list is empty
+      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return None;
       }
 
+      // the current is marked as remove and the next is the tail.
+      if current_offset == REMOVED_SEGMENT_NODE && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return None;
+      }
+
+      // Safety: the current_offset is in bounds and well aligned.
+      let current_node_size = unsafe {
+        ptr::read(
+          self
+            .ptr
+            .add(current_offset as usize + SEGMENT_NODE_SIZE)
+            .cast::<u32>(),
+        )
+      };
+
       // the current is marked as removed
-      if current_node_size == 0 {
+      if current_offset == REMOVED_SEGMENT_NODE {
         // wait other thread to remove the node.
-        // move to the next node.
-        // because of we pop from head, so the sentinel node
-        // can be the next node.
-        current = &header.sentinel;
-        prev = 0;
+        // move to next.
+        current = self.get_segment_node(next_offset);
         backoff.snooze();
         continue;
       }
@@ -2032,16 +2066,17 @@ impl Arena {
       // the size is smaller than or equal to the val
       // then the value should be inserted before the current node
       if val >= current_node_size {
-        if prev == 0 {
-          return (None, Some(current_next));
-        }
-
-        return (Some(prev), Some(current_next));
+        return Some(prev);
       }
 
-      let next = self.get_segment_node(current_next);
+      // if the next is the tail, then we should insert the value after the current node.
+      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return Some(current_offset);
+      }
 
-      prev = current_next;
+      let next = self.get_segment_node(next_offset);
+
+      prev = current_offset;
       current = next;
       backoff.spin();
     }
@@ -2064,12 +2099,6 @@ impl Arena {
       let ptr = self.ptr.add(offset as usize);
       &*(ptr as *const _)
     }
-  }
-
-  #[inline]
-  fn get_segmented_data_offset(offset: u32) -> u32 {
-    std::println!("offset: {}", offset);
-    align_offset::<AtomicU64>(offset) + mem::size_of::<AtomicU64>() as u32
   }
 
   #[inline]
