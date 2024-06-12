@@ -601,11 +601,6 @@ fn allocate_slow_path_concurrent_unify() {
 
 #[test]
 fn test_meta_eq() {
-  let ptr = ptr::null();
-  let a = Meta::new(ptr, 2, 3, Source::Null);
-  let b = Meta::new(unsafe { ptr.add(1) }, 2, 3, Source::Null);
-  assert_ne!(a, b);
-
   let a_ptr = 1u8;
   let b_ptr = 1u8;
   let a = Meta::new(&a_ptr as _, 2, 3, Source::Null);

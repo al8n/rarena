@@ -571,7 +571,10 @@ impl Memory {
 enum Source {
   #[default]
   Null,
-  Segmented,
+  Segmented {
+    offset: u32,
+    size: u32,
+  },
   Unsegmented,
 }
 
@@ -623,8 +626,8 @@ impl Meta {
 
   #[inline]
   unsafe fn clear(&self, arena: &Arena) {
-    let ptr = arena.ptr.add(self.memory_offset as usize);
-    ptr::write_bytes(ptr, 0, self.memory_size as usize);
+    let ptr = arena.ptr.add(self.ptr_offset as usize);
+    ptr::write_bytes(ptr, 0, self.ptr_size as usize);
   }
 
   #[inline]
@@ -1403,11 +1406,9 @@ impl Arena {
           .unwrap_or(&header.sentinel);
         let next_node_offset = next.unwrap_or(SENTINEL_SEGMENT_NODE_SIZE);
 
-        self.write_segment_node(next_node_offset, offset, size);
-
         // CAS prev_node's next points to the new_node
         let prev_node_val = prev_node.load(Ordering::Acquire);
-        let (_prev_node_offset, prev_node_size) = decode_segment_node(prev_node_val);
+        let (prev_node_offset, prev_node_size) = decode_segment_node(prev_node_val);
 
         // the prev is removed from the list, then we need to refind the position.
         if prev_node_size == 0 {
@@ -1416,27 +1417,39 @@ impl Arena {
           continue;
         }
 
-        match prev_node.compare_exchange(
-          prev_node_val,
-          encode_segment_node(offset, size),
-          Ordering::AcqRel,
-          Ordering::Relaxed,
-        ) {
-          Ok(_) => {
-            #[cfg(feature = "tracing")]
-            tracing::debug!("dealloc {size} bytes at offset {offset}, prev segment: {_prev_node_offset}, next segment {next_node_offset}");
-            break true;
+        match source {
+          Source::Null => unreachable!(),
+          Source::Segmented { .. } if prev_node_offset == offset || offset == next_node_offset => {
+            // we found ourselves, then we need to refind the position.
+            backoff.snooze();
+            continue;
           }
-          Err(current_prev) => {
-            let (_, size) = decode_segment_node(current_prev);
-            // the prev is removed from the list, then we need to refind the position.
-            if size == 0 {
-              // wait other thread to make progress.
-              backoff.snooze();
-              continue;
-            }
+          _ => {
+            self.write_segment_node(next_node_offset, offset, size);
 
-            backoff.spin();
+            match prev_node.compare_exchange(
+              prev_node_val,
+              encode_segment_node(offset, size),
+              Ordering::AcqRel,
+              Ordering::Relaxed,
+            ) {
+              Ok(_) => {
+                #[cfg(feature = "tracing")]
+                tracing::debug!("dealloc {size} bytes at offset {offset}, prev segment: {prev_node_offset}, next segment {next_node_offset}");
+                break true;
+              }
+              Err(current_prev) => {
+                let (_, size) = decode_segment_node(current_prev);
+                // the prev is removed from the list, then we need to refind the position.
+                if size == 0 {
+                  // wait other thread to make progress.
+                  backoff.snooze();
+                  continue;
+                }
+
+                backoff.spin();
+              }
+            }
           }
         }
       }
@@ -1644,8 +1657,12 @@ impl Arena {
         continue;
       }
 
+      let data_offset = Self::get_segmented_data_offset(next);
+      let discard = data_offset - next;
+      let data_size = node_size - discard;
+
       // The larget segment does not have enough space to allocate, so just return err.
-      if size > node_size {
+      if size > data_size {
         return Err(Error::InsufficientSpace {
           requested: size,
           available: node_size,
@@ -1691,7 +1708,22 @@ impl Arena {
 
           #[cfg(feature = "tracing")]
           tracing::debug!("allocate {} bytes at offset {} from segment", size, next);
-          let allocated = Meta::new(self.ptr as _, next, size, Source::Segmented);
+
+          if discard > 0 {
+            self.discard(discard);
+          }
+
+          let mut allocated = Meta::new(
+            self.ptr as _,
+            next,
+            node_size,
+            Source::Segmented {
+              offset: data_offset,
+              size: data_size,
+            },
+          );
+          allocated.ptr_offset = data_offset;
+          allocated.ptr_size = data_size;
           unsafe { allocated.clear(self) };
           return Ok(allocated);
         }
@@ -1873,6 +1905,8 @@ impl Arena {
       if current_node_size == 0 {
         // wait other thread to remove the node.
         // move to the next node.
+        // because of we pop from head, so the sentinel node
+        // can be the next node.
         current = &header.sentinel;
         prev = 0;
         backoff.snooze();
@@ -1907,12 +1941,19 @@ impl Arena {
     header.discarded.fetch_add(size, Ordering::Release);
   }
 
+  #[inline]
   unsafe fn get_segment_node(&self, offset: u32) -> &AtomicU64 {
     let aligned_offset = align_offset::<AtomicU64>(offset);
     let ptr = self.ptr.add(aligned_offset as usize);
     &*(ptr as *const _)
   }
 
+  #[inline]
+  const fn get_segmented_data_offset(offset: u32) -> u32 {
+    align_offset::<AtomicU64>(offset) + mem::size_of::<AtomicU64>() as u32
+  }
+
+  #[inline]
   unsafe fn write_segment_node(&self, next: u32, offset: u32, size: u32) -> u32 {
     let aligned_offset = align_offset::<AtomicU64>(offset);
     let node_ptr = self.ptr.add(aligned_offset as usize).cast::<AtomicU64>();
