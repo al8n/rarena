@@ -433,8 +433,10 @@ fn recoverable_in() {
         field1: 10,
         field2: AtomicU32::new(20),
       });
+      data.detach();
       data.offset()
     };
+    
 
     let a = Arena::map(p, OpenOptions::new().read(true), MmapOptions::default(), 0).unwrap();
     let data = &*a.get_aligned_pointer::<Recoverable>(offset);
@@ -444,8 +446,8 @@ fn recoverable_in() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)]
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+// #[cfg_attr(miri, ignore)]
+// #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn recoverable() {
   run(|| {
     recoverable_in();
@@ -478,7 +480,7 @@ fn allocate_slow_path(l: Arena) {
 
   // allocate from segments
   for i in (1..=5).rev() {
-    l.alloc_bytes(i * 50).unwrap();
+    l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
   }
 }
 
@@ -607,7 +609,7 @@ fn allocate_slow_path_concurrent_create_segments_mmap_anon() {
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
-fn allocate_slow_path_concurrent_create_segments_unify() {
+fn allocate_slow_path_concurrent_create_segments_mmap_anon_unify() {
   run(|| {
     allocate_slow_path_concurrent_create_segments(Arena::new(ArenaOptions::new().with_unify(true)));
   });

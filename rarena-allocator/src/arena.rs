@@ -1357,7 +1357,7 @@ impl Arena {
   ///
   /// let mut data = arena.alloc::<Recoverable>().unwrap();
   /// data.write(Recoverable { field1: 10, field2: AtomicU32::new(20) });
-  ///
+  /// data.detach();
   /// let offset = data.offset();
   /// drop(arena);
   ///
