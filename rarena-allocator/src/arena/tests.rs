@@ -15,6 +15,48 @@ fn run(f: impl Fn() + Send + Sync + 'static) {
   loom::model(f);
 }
 
+impl Arena {
+  #[cfg(feature = "std")]
+  #[allow(dead_code)]
+  fn print_segment_list(&self) {
+    let header = self.header();
+    let mut current: &AtomicU64 = &header.sentinel;
+
+    loop {
+      let current_node = current.load(Ordering::Acquire);
+      let (node_offset, next_node_offset) = decode_segment_node(current_node);
+
+      if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          break;
+        }
+
+        current = self.get_segment_node(next_node_offset);
+        continue;
+      }
+
+      let size = unsafe {
+        self
+          .ptr
+          .add(node_offset as usize + SEGMENT_NODE_SIZE)
+          .cast::<u32>()
+          .read()
+      };
+
+      std::println!(
+        "node_size: {size}, node_offset: {}, next_node_offset: {}",
+        node_offset,
+        next_node_offset
+      );
+
+      if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        break;
+      }
+      current = self.get_segment_node(next_node_offset);
+    }
+  }
+}
+
 #[test]
 fn test_meta_eq() {
   let a_ptr = 1u8;
@@ -436,7 +478,6 @@ fn recoverable_in() {
       data.detach();
       data.offset()
     };
-    
 
     let a = Arena::map(p, OpenOptions::new().read(true), MmapOptions::default(), 0).unwrap();
     let data = &*a.get_aligned_pointer::<Recoverable>(offset);
@@ -446,8 +487,8 @@ fn recoverable_in() {
 }
 
 #[test]
-// #[cfg_attr(miri, ignore)]
-// #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn recoverable() {
   run(|| {
     recoverable_in();
@@ -537,6 +578,7 @@ fn allocate_slow_path_concurrent_create_segments(l: Arena) {
     std::thread::spawn(move || {
       b.wait();
       let _ = l.alloc_bytes(i * 50).unwrap();
+      // std::println!("allocating: {}", i * 50);
       std::thread::yield_now();
     });
   }

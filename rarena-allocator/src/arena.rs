@@ -1492,13 +1492,14 @@ impl Arena {
 
     loop {
       let pos = self.find_free_list_position(segment_node.data_size);
-
-      let node = match pos {
+      let (current_offset_and_next_node_offset, current): (u64, &AtomicU64) = match pos {
         // we should insert to the head of the list.
-        None => &header.sentinel,
-        Some(pos) => self.get_segment_node(pos),
+        None => (
+          encode_segment_node(SENTINEL_SEGMENT_NODE_OFFSET, SENTINEL_SEGMENT_NODE_OFFSET),
+          &header.sentinel,
+        ),
+        Some(pos) => pos,
       };
-      let current_offset_and_next_node_offset = node.load(Ordering::Acquire);
       let (node_offset, next_node_offset) =
         decode_segment_node(current_offset_and_next_node_offset);
 
@@ -1516,7 +1517,7 @@ impl Arena {
 
       segment_node.update_next_node(next_node_offset);
 
-      match node.compare_exchange(
+      match current.compare_exchange(
         current_offset_and_next_node_offset,
         encode_segment_node(node_offset, segment_node.ptr_offset),
         Ordering::AcqRel,
@@ -2047,7 +2048,7 @@ impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
-  fn find_free_list_position(&self, val: u32) -> Option<u32> {
+  fn find_free_list_position(&self, val: u32) -> Option<(u64, &AtomicU64)> {
     let header = self.header();
     let mut current: &AtomicU64 = &header.sentinel;
 
@@ -2083,7 +2084,7 @@ impl Arena {
         if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
           return None;
         }
-        return Some(current_offset);
+        return Some((current_node, current));
       }
 
       // Safety: the next_offset is in bounds and well aligned.
@@ -2103,7 +2104,7 @@ impl Arena {
           return None;
         }
 
-        return Some(current_offset);
+        return Some((current_node, current));
       }
 
       current = self.get_segment_node(next_offset);

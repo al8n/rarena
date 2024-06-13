@@ -30,7 +30,7 @@ impl ArenaOptions {
     Self {
       maximum_alignment: 8,
       capacity: 1024,
-      minimum_segment_size: 1,
+      minimum_segment_size: 20,
       maximum_retries: 5,
       unify: false,
       magic_version: 0,
