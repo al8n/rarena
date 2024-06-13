@@ -15,48 +15,6 @@ fn run(f: impl Fn() + Send + Sync + 'static) {
   loom::model(f);
 }
 
-impl Arena {
-  #[cfg(feature = "std")]
-  #[allow(dead_code)]
-  fn print_segment_list(&self) {
-    let header = self.header();
-    let mut current: &AtomicU64 = &header.sentinel;
-
-    loop {
-      let current_node = current.load(Ordering::Acquire);
-      let (node_offset, next_node_offset) = decode_segment_node(current_node);
-
-      if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-          break;
-        }
-
-        current = self.get_segment_node(next_node_offset);
-        continue;
-      }
-
-      let size = unsafe {
-        self
-          .ptr
-          .add(node_offset as usize + SEGMENT_NODE_SIZE)
-          .cast::<u32>()
-          .read()
-      };
-
-      std::println!(
-        "node_size: {size}, node_offset: {}, next_node_offset: {}",
-        node_offset,
-        next_node_offset
-      );
-
-      if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        break;
-      }
-      current = self.get_segment_node(next_node_offset);
-    }
-  }
-}
-
 #[test]
 fn test_meta_eq() {
   let a_ptr = 1u8;
@@ -739,9 +697,109 @@ fn allocate_slow_path_concurrent_acquire_from_segment_mmap_anon() {
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
-fn allocate_slow_path_concurrent_acquire_from_segment_unify() {
+fn allocate_slow_path_concurrent_acquire_from_segment_mmap_anon_unify() {
   run(|| {
     allocate_slow_path_concurrent_acquire_from_segment(Arena::new(
+      ArenaOptions::new().with_unify(true),
+    ));
+  });
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Arena) {
+  use std::sync::{Arc, Barrier};
+
+  let b = Arc::new(Barrier::new(5));
+  // make some segments
+  for _ in 1..=5 {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(50).unwrap();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+
+  let remaining = l.remaining();
+  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
+  remaining.detach();
+
+  // allocate from segments
+  for _ in (1..=5).rev() {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
+      b.detach();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+}
+
+#[test]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_vec() {
+  run(|| {
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(Arena::new(
+      ArenaOptions::new(),
+    ));
+  });
+}
+
+#[test]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_vec_unify() {
+  run(|| {
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(Arena::new(
+      ArenaOptions::new().with_unify(true),
+    ));
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir
+      .path()
+      .join("test_allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
+      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
+      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_mmap_anon_unify() {
+  run(|| {
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(Arena::new(
       ArenaOptions::new().with_unify(true),
     ));
   });

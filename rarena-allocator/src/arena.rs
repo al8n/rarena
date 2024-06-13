@@ -722,14 +722,6 @@ impl Segment {
       encode_segment_node(self.ptr_offset, next),
       Ordering::Release,
     );
-
-    unsafe {
-      self
-        .ptr
-        .add(self.ptr_offset as usize + SEGMENT_NODE_SIZE)
-        .cast::<u32>()
-        .write(self.data_size);
-    }
   }
 
   #[inline]
@@ -1488,18 +1480,9 @@ impl Arena {
 
     let backoff = Backoff::new();
 
-    let header = self.header();
-
     loop {
-      let pos = self.find_free_list_position(segment_node.data_size);
-      let (current_offset_and_next_node_offset, current): (u64, &AtomicU64) = match pos {
-        // we should insert to the head of the list.
-        None => (
-          encode_segment_node(SENTINEL_SEGMENT_NODE_OFFSET, SENTINEL_SEGMENT_NODE_OFFSET),
-          &header.sentinel,
-        ),
-        Some(pos) => pos,
-      };
+      let (current_offset_and_next_node_offset, current) =
+        self.find_free_list_position(segment_node.data_size);
       let (node_offset, next_node_offset) =
         decode_segment_node(current_offset_and_next_node_offset);
 
@@ -1525,7 +1508,8 @@ impl Arena {
       ) {
         Ok(_) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("create segment node ({} bytes) at {}, prev segment: {node_offset}, next segment {next_node_offset}", segment_node.ptr_offset, segment_node.data_size);
+          tracing::debug!("create segment node ({} bytes) at {}, prev segment: {node_offset}, next segment {next_node_offset}", segment_node.data_size, segment_node.ptr_offset);
+
           break true;
         }
         Err(current) => {
@@ -2029,7 +2013,7 @@ impl Arena {
           ptr::write(
             self
               .ptr
-              .add(aligned_offset + SEGMENT_NODE_SUFFIX_SIZE)
+              .add(aligned_offset + SEGMENT_NODE_SIZE)
               .cast::<u32>(),
             available_bytes,
           );
@@ -2048,7 +2032,7 @@ impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
-  fn find_free_list_position(&self, val: u32) -> Option<(u64, &AtomicU64)> {
+  fn find_free_list_position(&self, val: u32) -> (u64, &AtomicU64) {
     let header = self.header();
     let mut current: &AtomicU64 = &header.sentinel;
 
@@ -2061,12 +2045,12 @@ impl Arena {
       if current_offset == SENTINEL_SEGMENT_NODE_OFFSET
         && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
       {
-        return None;
+        return (current_node, current);
       }
 
       // the current is marked as remove and the next is the tail.
       if current_offset == REMOVED_SEGMENT_NODE && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        return None;
+        return (current_node, current);
       }
 
       if current_offset == REMOVED_SEGMENT_NODE {
@@ -2081,10 +2065,7 @@ impl Arena {
 
       // the next is the tail, then we should insert the value after the current node.
       if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-          return None;
-        }
-        return Some((current_node, current));
+        return (current_node, current);
       }
 
       // Safety: the next_offset is in bounds and well aligned.
@@ -2100,11 +2081,7 @@ impl Arena {
       // the size is smaller than or equal to the val
       // then the value should be inserted after the current node
       if val >= next_node_size {
-        if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-          return None;
-        }
-
-        return Some((current_node, current));
+        return (current_node, current);
       }
 
       current = self.get_segment_node(next_offset);
@@ -2152,6 +2129,47 @@ impl Arena {
     let size = mem::size_of::<T>();
     let align = mem::align_of::<T>();
     size + align - 1
+  }
+
+  #[cfg(test)]
+  #[cfg(feature = "std")]
+  #[allow(dead_code)]
+  pub(super) fn print_segment_list(&self) {
+    let header = self.header();
+    let mut current: &AtomicU64 = &header.sentinel;
+
+    loop {
+      let current_node = current.load(Ordering::Acquire);
+      let (node_offset, next_node_offset) = decode_segment_node(current_node);
+
+      if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          break;
+        }
+
+        current = self.get_segment_node(next_node_offset);
+        continue;
+      }
+
+      let size = unsafe {
+        self
+          .ptr
+          .add(node_offset as usize + SEGMENT_NODE_SIZE)
+          .cast::<u32>()
+          .read()
+      };
+
+      std::println!(
+        "node_size: {size}, node_offset: {}, next_node_offset: {}",
+        node_offset,
+        next_node_offset
+      );
+
+      if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        break;
+      }
+      current = self.get_segment_node(next_node_offset);
+    }
   }
 }
 
