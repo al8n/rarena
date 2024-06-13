@@ -1729,51 +1729,60 @@ impl Arena {
     let header = self.header();
 
     loop {
-      let node = header.sentinel.load(Ordering::Acquire);
-      let (node_offset, next_node_offset) = decode_segment_node(node);
+      let sentinel = header.sentinel.load(Ordering::Acquire);
+      let (sentinel_offset, head_node_offset) = decode_segment_node(sentinel);
 
       // free list is empty
-      if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      if head_node_offset == SENTINEL_SEGMENT_NODE_SIZE {
         return Err(Error::InsufficientSpace {
           requested: size,
           available: self.remaining() as u32,
         });
       }
 
-      // the current node is marked as removed, wait other thread to make progress.
-      if node_offset == REMOVED_SEGMENT_NODE {
+      if head_node_offset == REMOVED_SEGMENT_NODE {
+        // the head node is marked as removed, wait other thread to make progress.
         backoff.snooze();
         continue;
       }
 
       // Safety: the current_offset is in bounds and well aligned.
-      let current_node_size = unsafe {
+      let head_node_size = unsafe {
         ptr::read(
           self
             .ptr
-            .add(node_offset as usize + SEGMENT_NODE_SIZE)
+            .add(head_node_offset as usize + SEGMENT_NODE_SIZE)
             .cast::<u32>(),
         )
       };
 
       // The larget segment does not have enough space to allocate, so just return err.
-      if size > current_node_size {
+      if size > head_node_size {
         return Err(Error::InsufficientSpace {
           requested: size,
-          available: current_node_size,
+          available: head_node_size,
         });
       }
 
-      let remaining = current_node_size - size;
+      let remaining = head_node_size - size;
 
       // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
-      let mut segment_node = unsafe { Segment::from_offset(self, node_offset, current_node_size) };
+      let mut segment_node = unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
 
-      // CAS to remove the current
+      let head = self.get_segment_node(head_node_offset);
+      let head_offset_and_next_node_offset = head.load(Ordering::Acquire);
+      let (head_node_offset, next_node_offset) = decode_segment_node(head_offset_and_next_node_offset);
+
+      if head_node_offset == REMOVED_SEGMENT_NODE {
+        // the head node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // CAS to remove the current head
       let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
-      if header
-        .sentinel
-        .compare_exchange(node, removed_head, Ordering::AcqRel, Ordering::Relaxed)
+      if head
+        .compare_exchange(head_offset_and_next_node_offset, removed_head, Ordering::AcqRel, Ordering::Relaxed)
         .is_err()
       {
         // wait other thread to make progress.
@@ -1781,20 +1790,10 @@ impl Arena {
         continue;
       }
 
-      // We have successfully mark the head is removed, then we need to let head node's next point to the next node.
-
-      // if we reach the end of the list, which means no next node.
-      let next_node = if next_node_offset != SENTINEL_SEGMENT_NODE_OFFSET {
-        self
-          .get_segment_node(next_node_offset)
-          .load(Ordering::Acquire)
-      } else {
-        encode_segment_node(SENTINEL_SEGMENT_NODE_OFFSET, SENTINEL_SEGMENT_NODE_SIZE)
-      };
-
+      // We have successfully mark the head is removed, then we need to let sentinel node points to the next node.
       match header.sentinel.compare_exchange(
-        removed_head,
-        next_node,
+        sentinel,
+        encode_segment_node(sentinel_offset, next_node_offset),
         Ordering::AcqRel,
         Ordering::Relaxed,
       ) {
@@ -1831,8 +1830,8 @@ impl Arena {
           return Ok(allocated);
         }
         Err(current) => {
-          let (current_offset, _) = decode_segment_node(current);
-          if current_offset == REMOVED_SEGMENT_NODE {
+          let (_, head_node_offset) = decode_segment_node(current);
+          if head_node_offset == REMOVED_SEGMENT_NODE {
             // The current head is removed from the list, wait other thread to make progress.
             backoff.snooze();
           } else {
@@ -2091,7 +2090,6 @@ impl Arena {
         )
       };
 
-      std::println!("current_offset {current_offset} next_offset {next_offset} current_node_size: {next_node_size}, val: {val} data {:?}", unsafe { slice::from_raw_parts(self.ptr.add(current_offset as usize), FULL_SEGMENT_NODE_SIZE) });
       // the size is smaller than or equal to the val
       // then the value should be inserted after the current node
       if val >= next_node_size {
