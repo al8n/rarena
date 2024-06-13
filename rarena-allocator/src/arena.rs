@@ -1495,15 +1495,12 @@ impl Arena {
 
       let node = match pos {
         // we should insert to the head of the list.
-        None => {
-          &header.sentinel
-        },
-        Some(pos) => {
-          self.get_segment_node(pos)
-        },
+        None => &header.sentinel,
+        Some(pos) => self.get_segment_node(pos),
       };
       let current_offset_and_next_node_offset = node.load(Ordering::Acquire);
-      let (node_offset, next_node_offset) = decode_segment_node(current_offset_and_next_node_offset);
+      let (node_offset, next_node_offset) =
+        decode_segment_node(current_offset_and_next_node_offset);
 
       if node_offset == REMOVED_SEGMENT_NODE {
         // wait other thread to make progress.
@@ -1767,11 +1764,13 @@ impl Arena {
       let remaining = head_node_size - size;
 
       // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
-      let mut segment_node = unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
+      let mut segment_node =
+        unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
 
       let head = self.get_segment_node(head_node_offset);
       let head_offset_and_next_node_offset = head.load(Ordering::Acquire);
-      let (head_node_offset, next_node_offset) = decode_segment_node(head_offset_and_next_node_offset);
+      let (head_node_offset, next_node_offset) =
+        decode_segment_node(head_offset_and_next_node_offset);
 
       if head_node_offset == REMOVED_SEGMENT_NODE {
         // the head node is marked as removed, wait other thread to make progress.
@@ -1782,7 +1781,12 @@ impl Arena {
       // CAS to remove the current head
       let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
       if head
-        .compare_exchange(head_offset_and_next_node_offset, removed_head, Ordering::AcqRel, Ordering::Relaxed)
+        .compare_exchange(
+          head_offset_and_next_node_offset,
+          removed_head,
+          Ordering::AcqRel,
+          Ordering::Relaxed,
+        )
         .is_err()
       {
         // wait other thread to make progress.
@@ -2053,7 +2057,9 @@ impl Arena {
       let (current_offset, next_offset) = decode_segment_node(current_node);
 
       // the list is empty
-      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET
+        && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
+      {
         return None;
       }
 
