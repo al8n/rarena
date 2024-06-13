@@ -688,7 +688,7 @@ impl SegmentNode {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct Segment {
-  ptr: *const u8,
+  ptr: *mut u8,
   ptr_offset: u32,
   data_offset: u32,
   data_size: u32,
@@ -721,7 +721,15 @@ impl Segment {
     self.as_ref().store(
       encode_segment_node(self.ptr_offset, next),
       Ordering::Release,
-    )
+    );
+
+    unsafe {
+      self
+        .ptr
+        .add(self.ptr_offset as usize + SEGMENT_NODE_SIZE)
+        .cast::<u32>()
+        .write(self.data_size);
+    }
   }
 
   #[inline]
@@ -1483,17 +1491,20 @@ impl Arena {
     let header = self.header();
 
     loop {
-      tracing::debug!("try to dealloc {size} bytes at {offset}");
-      let node_offset = self.find_free_list_position(segment_node.data_size);
-      let node = node_offset
-        .map(|p| self.get_segment_node(p))
-        .unwrap_or(&header.sentinel);
+      let pos = self.find_free_list_position(segment_node.data_size);
 
-      // CAS prev_node's next points to the new_node
-      let offset_and_next = node.load(Ordering::Acquire);
-      let (node_offset, next_node_offset) = decode_segment_node(offset_and_next);
+      let node = match pos {
+        // we should insert to the head of the list.
+        None => {
+          &header.sentinel
+        },
+        Some(pos) => {
+          self.get_segment_node(pos)
+        },
+      };
+      let current_offset_and_next_node_offset = node.load(Ordering::Acquire);
+      let (node_offset, next_node_offset) = decode_segment_node(current_offset_and_next_node_offset);
 
-      // the prev is removed from the list, then we need to refind the position.
       if node_offset == REMOVED_SEGMENT_NODE {
         // wait other thread to make progress.
         backoff.snooze();
@@ -1509,14 +1520,14 @@ impl Arena {
       segment_node.update_next_node(next_node_offset);
 
       match node.compare_exchange(
-        offset_and_next,
+        current_offset_and_next_node_offset,
         encode_segment_node(node_offset, segment_node.ptr_offset),
         Ordering::AcqRel,
         Ordering::Relaxed,
       ) {
         Ok(_) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("alloc segment node {segment_node:?}, prev segment: {node_offset}, next segment {next_node_offset}");
+          tracing::debug!("create segment node ({} bytes) at {}, prev segment: {node_offset}, next segment {next_node_offset}", segment_node.ptr_offset, segment_node.data_size);
           break true;
         }
         Err(current) => {
@@ -1789,7 +1800,11 @@ impl Arena {
       ) {
         Ok(_) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("allocate {} bytes at offset {} from segment", size, segment_node.data_offset);
+          tracing::debug!(
+            "allocate {} bytes at offset {} from segment",
+            size,
+            segment_node.data_offset
+          );
 
           // check if the remaining is enough to allocate a new segment.
           if self.validate_segment(segment_node.end_offset(), remaining) {
@@ -1810,7 +1825,9 @@ impl Arena {
             size,
             Source::Segmented(segment_node),
           );
-          unsafe { allocated.clear(self); }
+          unsafe {
+            allocated.clear(self);
+          }
           return Ok(allocated);
         }
         Err(current) => {
@@ -2024,26 +2041,20 @@ impl Arena {
     }
   }
 
+  /// Returns the free list position to insert the value.
+  /// - `None` means that we should insert to the head.
+  /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
   fn find_free_list_position(&self, val: u32) -> Option<u32> {
     let header = self.header();
-    let sentinel: &AtomicU64 = &header.sentinel;
-    let head = sentinel.load(Ordering::Acquire);
-    let (_, head_offset) = decode_segment_node(head);
- 
-    if head_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-      return None;
-    }
+    let mut current: &AtomicU64 = &header.sentinel;
 
-    let mut current = self.get_segment_node(head_offset);
-
-    let mut prev = 0;
     let backoff = Backoff::new();
     loop {
       let current_node = current.load(Ordering::Acquire);
       let (current_offset, next_offset) = decode_segment_node(current_node);
 
       // the list is empty
-      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return None;
       }
 
@@ -2053,38 +2064,45 @@ impl Arena {
       }
 
       if current_offset == REMOVED_SEGMENT_NODE {
-        // move to the next
-        current = self.get_segment_node(next_offset);
-        backoff.snooze();
+        current = if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          backoff.snooze();
+          &header.sentinel
+        } else {
+          self.get_segment_node(next_offset)
+        };
         continue;
       }
 
-      // Safety: the current_offset is in bounds and well aligned.
-      let current_node_size = unsafe {
+      // the next is the tail, then we should insert the value after the current node.
+      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          return None;
+        }
+        return Some(current_offset);
+      }
+
+      // Safety: the next_offset is in bounds and well aligned.
+      let next_node_size = unsafe {
         ptr::read(
           self
             .ptr
-            .add(current_offset as usize + SEGMENT_NODE_SIZE)
+            .add(next_offset as usize + SEGMENT_NODE_SIZE)
             .cast::<u32>(),
         )
       };
 
+      std::println!("current_offset {current_offset} next_offset {next_offset} current_node_size: {next_node_size}, val: {val} data {:?}", unsafe { slice::from_raw_parts(self.ptr.add(current_offset as usize), FULL_SEGMENT_NODE_SIZE) });
       // the size is smaller than or equal to the val
-      // then the value should be inserted before the current node
-      if val >= current_node_size {
-        return Some(prev);
-      }
+      // then the value should be inserted after the current node
+      if val >= next_node_size {
+        if current_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          return None;
+        }
 
-      // if the next is the tail, then we should insert the value after the current node.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return Some(current_offset);
       }
 
-      let next = self.get_segment_node(next_offset);
-
-      prev = current_offset;
-      current = next;
-      backoff.spin();
+      current = self.get_segment_node(next_offset);
     }
   }
 

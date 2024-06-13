@@ -544,15 +544,15 @@ fn allocate_slow_path_concurrent(l: Arena) {
   let b = Arc::new(Barrier::new(5));
   // make some segments
   for i in 1..=5 {
-    // let l = l.clone();
-    // let b = b.clone();
-    // std::thread::spawn(move || {
-    //   b.wait();
-    //   let _ = l.alloc_bytes(i * 50).unwrap();
-    //   std::println!("thread {i} exit");
-    //   std::thread::yield_now();
-    // });
-    let _ = l.alloc_bytes(i * 50).unwrap();
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(i * 50).unwrap();
+      std::println!("thread {i} exit");
+      std::thread::yield_now();
+    });
+    // let _ = l.alloc_bytes(i * 50).unwrap();
   }
 
   while l.refs() > 1 {
@@ -563,38 +563,56 @@ fn allocate_slow_path_concurrent(l: Arena) {
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
   remaining.detach();
 
-
   let h = l.header();
   let mut current: &AtomicU64 = &h.sentinel;
   loop {
     let node = current.load(Ordering::Acquire);
     let (node_offset, next_node_offset) = decode_segment_node(node);
+
+    if node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      current = l.get_segment_node(next_node_offset);
+      continue;
+    }
+
+    let node_size = unsafe {
+      ptr::read(
+        l.ptr
+          .add(node_offset as usize + SEGMENT_NODE_SIZE)
+          .cast::<u32>(),
+      )
+    };
+    std::println!(
+      "node_offset: {}, next_node_offset: {} segment size {node_size}",
+      node_offset,
+      next_node_offset
+    );
+
     if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
       break;
     }
 
-    let node_size = unsafe {
-      ptr::read(l.ptr.add(node_offset as usize + SEGMENT_NODE_SIZE).cast::<u32>())
-    };
-    std::println!("node_offset: {}, next_node_offset: {} segment size {node_size}", node_offset, next_node_offset);
     current = l.get_segment_node(next_node_offset);
+
+    if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      break;
+    }
   }
 
-  // allocate from segments
-  for i in (1..=5).rev() {
-    let l = l.clone();
-    let b = b.clone();
-    std::thread::spawn(move || {
-      b.wait();
-      let _ = l.alloc_bytes(i * 50 - 16).unwrap();
-      // d.detach();
-      // drop(wg);
-    });
-  }
+  // // allocate from segments
+  // for i in (1..=5).rev() {
+  //   let l = l.clone();
+  //   let b = b.clone();
+  //   std::thread::spawn(move || {
+  //     b.wait();
+  //     let _ = l.alloc_bytes(i * 50 - 16).unwrap();
+  //     // d.detach();
+  //     // drop(wg);
+  //   });
+  // }
 
-  while l.refs() > 1 {
-    std::thread::yield_now();
-  }
+  // while l.refs() > 1 {
+  //   std::thread::yield_now();
+  // }
   // wg.wait();
 }
 
