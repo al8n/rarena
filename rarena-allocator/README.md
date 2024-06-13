@@ -61,7 +61,7 @@ The allocation policy used in the implementation is that, first try to allocate 
 
 ### Memory Layout
 
-- Pure memory layout, only `Vec` and anon memory map backed main memory support this layout.
+- Pure memory layout, only `Vec` and anon memory map backed main memory support this layout, this layout cannot be recovered.
 
   ```text
   --------------------------------------
