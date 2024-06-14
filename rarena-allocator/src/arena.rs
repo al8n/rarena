@@ -194,7 +194,7 @@ impl Memory {
       ptr::write_bytes(ptr, 0, vec.cap);
 
       let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
-      let data_offset = header_ptr_offset + mem::size_of::<Header>();
+      let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
       let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
 
       let (header, data_offset) = if unify {
@@ -206,7 +206,8 @@ impl Memory {
         header_ptr.write(Header::new(data_offset as u32, min_segment_size));
         (Either::Left(header_ptr as _), data_offset)
       } else {
-        (Either::Right(Header::new(1, min_segment_size)), 1)
+        data_offset = 1;
+        (Either::Right(Header::new(1, min_segment_size)), data_offset)
       };
 
       Self {
@@ -381,7 +382,7 @@ impl Memory {
         ptr::write_bytes(ptr, 0, mmap.len());
 
         let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
-        let data_offset = header_ptr_offset + mem::size_of::<Header>();
+        let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset);
 
         let (header, data_offset) = if unify {
@@ -395,7 +396,8 @@ impl Memory {
             .write(Header::new(data_offset as u32, min_segment_size));
           (Either::Left(header_ptr as _), data_offset)
         } else {
-          (Either::Right(Header::new(1, min_segment_size)), 1)
+          data_offset = 1;
+          (Either::Right(Header::new(1, min_segment_size)), data_offset)
         };
 
         let this = Self {
@@ -973,7 +975,7 @@ impl Arena {
       .store(size, Ordering::Release);
   }
 
-  /// Returns the data offset of the ARENA. The offset is the end of the ARENA header.
+  /// Returns the data offset of the ARENA. The offset is the end of the reserved bytes of the ARENA.
   ///
   /// # Example
   ///
@@ -985,11 +987,7 @@ impl Arena {
   /// ```
   #[inline]
   pub const fn data_offset(&self) -> usize {
-    if self.unify {
-      self.data_offset as usize
-    } else {
-      self.data_offset as usize - 1
-    }
+    self.data_offset as usize
   }
 
   /// Returns the data section of the ARENA as a byte slice, header is not included.
@@ -1010,24 +1008,6 @@ impl Arena {
       slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
     }
   }
-
-  // /// Returns the whole allocated memory of the ARENA as a byte slice.
-  // ///
-  // /// # Example
-  // ///
-  // /// ```rust
-  // /// use rarena_allocator::{Arena, ArenaOptions};
-  // ///
-  // /// let arena = Arena::new(ArenaOptions::new());
-  // /// let allocated_memory = arena.allocated_memory();
-  // /// ```
-  // #[inline]
-  // pub fn allocated_memory(&self) -> &[u8] {
-  //   unsafe {
-  //     let allocated = self.header().allocated.load(Ordering::Acquire);
-  //     slice::from_raw_parts(self.ptr, allocated as usize)
-  //   }
-  // }
 
   /// Returns the whole main memory of the ARENA as a byte slice.
   ///
