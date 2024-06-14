@@ -17,12 +17,92 @@ Lock-free ARENA allocator which can be used in both memory and on-disk.
 
 </div>
 
+## Introduction
+
+`rarena-allocator` is a lock-free concurrent-safe ARENA implementation, the underlying memory can from either an allocation or memory map, which means that the allocator can be restored.
+
+There are 3 kinds of main memory:
+
+1. `AlignedVec`
+2. file backed memory map
+3. anon memory map
+
+There are 3 kinds of freelist:
+
+1. none
+   Disable freelist, once main memory is consumed out, then this ARENA cannot allocate anymore.
+
+2. optimistic
+   A lock-free linked list which ordered by segment size (descending), when allocating, pop the head segment.
+
+   e.g.
+
+   freelist: `100 -> 96 -> 50`.
+
+   The head segment size is `100`, we want `20`, then the head will be removed from the linked list, give out `20`, the remaining
+   `80` will be inserted back to the freelist if it is larger than `ArenaOptions::minimum_segment_size()`.
+
+   After this allocation, the freelist will be `96 -> 80 -> 50`.
+
+3. pessimistic
+
+   A lock-free linked list which ordered by segment size (ascending), when allocating, find the most suitable segment.
+
+   e.g.
+
+   freelist: `42 -> 84 -> 100`.
+
+   If we want `50`, then the second segment will be removed from the linked list, give out `50`, the remaining
+   `34` will be inserted back to the freelist if it is larger than `ArenaOptions::minimum_segment_size()`.
+
+   After this allocation, the freelist will be `34 -> 42 -> 100`.
+
+The allocation policy used in the implementation is that, first try to allocate from main memory, main memory is increase-only, so it is blazing fast if main memory has enough space, at the same time, ARENA will collect dropped segments to construct a freelist (lock-free linked list). When the main memory does not have space, the ARENA will try to allocate from the freelist.
+
+This crate contains many unsafe code, although the main functionalities of this crate are well tested by `miri`, `loom` and `sanitizer`, please use it at your own risk.
+
+### Memory Layout
+
+- Pure memory layout, only `Vec` and anon memory map backed main memory support this layout, this layout cannot be recovered.
+
+  ```text
+  --------------------------------------
+  |           1 byte          | ...... |
+  --------------------------------------
+  | reserved as null pointer  |  data  |
+  --------------------------------------
+  ```
+
+- Unify memory layout, all 3 backed memroy will use the same memory layout. Controlled by `ArenaOptions::with_unify(true)`
+
+  ```text
+  --------------------------------------------------------------------------------------------------------------
+  |           1 byte          |    1 byte     |   2 bytes    |      2 bytes     | 2 bytes |  32 bytes | ...... |
+  --------------------------------------------------------------------------------------------------------------
+  | reserved as null pointer  | freelist kind |  magic text  | external version | version |   header  |  data  |
+  --------------------------------------------------------------------------------------------------------------
+  ```
+
 ## Installation
 
 ```toml
 [dependencies]
-rarena-allocator = "0.0.1"
+rarena-allocator = "0.1"
 ```
+
+- `no_std`
+
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.1", default-features = false, features = ["alloc"] }
+  ```
+
+- Enable memory map backed main memory
+  
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.1", features = ["memmap"] }
+  ```
 
 #### License
 

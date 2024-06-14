@@ -5,6 +5,49 @@ mod open_options;
 #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
 pub use open_options::*;
 
+/// Unknown freelist error.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct UnknownFreelist(());
+
+impl core::fmt::Display for UnknownFreelist {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(f, "unknown freelist")
+  }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for UnknownFreelist {}
+
+/// The freelist configuration for the ARENA.
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[repr(u8)]
+#[non_exhaustive]
+pub enum Freelist {
+  /// Disable freelist, once main memory is consumed out, then this ARENA cannot allocate anymore.
+  None = 0,
+
+  /// A lock-free linked list which ordered by segment size (descending), when the main memory is consumed out, the following allocation will just use the head (largest segment) from freelist.
+  #[default]
+  Optimistic = 1,
+
+  /// A lock-free linked list which ordered by segment size (ascending), when the main memory is consumed out, the following allocation will find the most suitable segment from freelist.
+  Pessimistic = 2,
+}
+
+impl TryFrom<u8> for Freelist {
+  type Error = UnknownFreelist;
+
+  fn try_from(value: u8) -> Result<Self, Self::Error> {
+    Ok(match value {
+      0 => Self::None,
+      1 => Self::Optimistic,
+      2 => Self::Pessimistic,
+      _ => return Err(UnknownFreelist(())),
+    })
+  }
+}
+
 /// Options for creating an ARENA
 #[derive(Debug, Clone, Copy)]
 pub struct ArenaOptions {
@@ -14,6 +57,7 @@ pub struct ArenaOptions {
   maximum_retries: u8,
   magic_version: u16,
   unify: bool,
+  freelist: Freelist,
 }
 
 impl Default for ArenaOptions {
@@ -30,10 +74,11 @@ impl ArenaOptions {
     Self {
       maximum_alignment: 8,
       capacity: 1024,
-      minimum_segment_size: 48,
+      minimum_segment_size: 20,
       maximum_retries: 5,
       unify: false,
       magic_version: 0,
+      freelist: Freelist::Optimistic,
     }
   }
 
@@ -163,6 +208,22 @@ impl ArenaOptions {
     self
   }
 
+  /// Set the freelist configuration for the ARENA.
+  /// The default freelist is `Freelist::Optimistic`.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{ArenaOptions, Freelist};
+  ///
+  /// let opts = ArenaOptions::new().with_freelist(Freelist::Pessimistic);
+  /// ```
+  #[inline]
+  pub const fn with_freelist(mut self, freelist: Freelist) -> Self {
+    self.freelist = freelist;
+    self
+  }
+
   /// Get the maximum alignment of the ARENA.
   ///
   /// # Example
@@ -273,5 +334,21 @@ impl ArenaOptions {
   #[inline]
   pub const fn magic_version(&self) -> u16 {
     self.magic_version
+  }
+
+  /// Get the freelist configuration for the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{ArenaOptions, Freelist};
+  ///
+  /// let opts = ArenaOptions::new().with_freelist(Freelist::Pessimistic);
+  ///
+  /// assert_eq!(opts.freelist(), Freelist::Pessimistic);
+  /// ```
+  #[inline]
+  pub const fn freelist(&self) -> Freelist {
+    self.freelist
   }
 }

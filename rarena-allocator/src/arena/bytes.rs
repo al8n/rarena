@@ -7,7 +7,7 @@ pub struct BytesMut {
   arena: Either<Arena, NonNull<u8>>,
   detach: bool,
   len: usize,
-  allocated: Allocated,
+  allocated: Meta,
 }
 
 impl ops::Deref for BytesMut {
@@ -89,6 +89,12 @@ impl BytesMut {
     self.allocated.memory_size as usize
   }
 
+  /// Returns the metadata for the allocation.
+  #[inline]
+  pub const fn meta(&self) -> Meta {
+    self.allocated
+  }
+
   /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
   /// which means the space used by the buffer will never be reclaimed.
   #[inline]
@@ -117,11 +123,11 @@ impl BytesMut {
   }
 
   #[inline]
-  pub(super) fn null() -> Self {
+  pub(super) fn null(parent_ptr: *const u8) -> Self {
     Self {
       arena: Either::Right(NonNull::dangling()),
       len: 0,
-      allocated: Allocated::null(),
+      allocated: Meta::null(parent_ptr),
       detach: false,
     }
   }
@@ -152,7 +158,7 @@ impl Drop for BytesMut {
       Either::Left(_) if self.detach => {}
       // SAFETY: offset and offset + size are inbounds of the ARENA.
       Either::Left(ref arena) => unsafe {
-        let _ = arena.dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+        let _ = arena.dealloc(self.allocated);
       },
       Either::Right(_) => {}
     }
@@ -163,7 +169,7 @@ impl Drop for BytesMut {
 pub struct BytesRefMut<'a> {
   arena: &'a Arena,
   len: usize,
-  pub(super) allocated: Allocated,
+  pub(super) allocated: Meta,
   pub(super) detach: bool,
 }
 
@@ -260,6 +266,12 @@ impl<'a> BytesRefMut<'a> {
     self.len == 0
   }
 
+  /// Returns the metadata for the allocation.
+  #[inline]
+  pub const fn meta(&self) -> Meta {
+    self.allocated
+  }
+
   /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
   /// which means the space used by the buffer will never be reclaimed.
   #[inline]
@@ -283,7 +295,7 @@ impl<'a> BytesRefMut<'a> {
 
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
-  pub(super) unsafe fn new(arena: &'a Arena, allocated: Allocated) -> Self {
+  pub(super) unsafe fn new(arena: &'a Arena, allocated: Meta) -> Self {
     Self {
       arena,
       len: 0,
@@ -295,9 +307,9 @@ impl<'a> BytesRefMut<'a> {
   #[inline]
   pub(super) const fn null(arena: &'a Arena) -> Self {
     Self {
+      allocated: Meta::null(arena.ptr as _),
       arena,
       len: 0,
-      allocated: Allocated::null(),
       detach: false,
     }
   }
@@ -306,7 +318,7 @@ impl<'a> BytesRefMut<'a> {
   #[inline]
   pub(super) fn to_owned(&mut self) -> BytesMut {
     if self.allocated.memory_size == 0 {
-      return BytesMut::null();
+      return BytesMut::null(self.arena.ptr as _);
     }
     self.detach = true;
 
@@ -348,9 +360,7 @@ impl<'a> Drop for BytesRefMut<'a> {
 
     // SAFETY: offset and offset + size are inbounds of the ARENA.
     unsafe {
-      self
-        .arena
-        .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+      self.arena.dealloc(self.allocated);
     }
   }
 }

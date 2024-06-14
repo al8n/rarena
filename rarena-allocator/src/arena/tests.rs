@@ -4,7 +4,11 @@ use core::marker::PhantomData;
 
 use super::*;
 
+mod optimistic_slow_path;
+mod pessimistic_slow_path;
+
 const ARENA_SIZE: u32 = 1024;
+const MAX_SEGMENT_NODE_SIZE: u32 = (FULL_SEGMENT_NODE_SIZE + SEGMENT_NODE_SIZE - 1) as u32;
 
 fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]
@@ -12,6 +16,15 @@ fn run(f: impl Fn() + Send + Sync + 'static) {
 
   #[cfg(feature = "loom")]
   loom::model(f);
+}
+
+#[test]
+fn test_meta_eq() {
+  let a_ptr = 1u8;
+  let b_ptr = 1u8;
+  let a = Meta::new(&a_ptr as _, 2, 3, Source::Null);
+  let b = Meta::new(&b_ptr as _, 2, 3, Source::Null);
+  assert_ne!(a, b);
 }
 
 fn alloc_bytes(a: Arena) {
@@ -92,7 +105,6 @@ fn alloc_offset_and_size(a: Arena) {
   }
 
   let offset = a.data_offset();
-
   let alignment = mem::align_of::<Meta>();
   let meta_offset = (offset + alignment - 1) & !(alignment - 1);
   let meta_end = meta_offset + mem::size_of::<Meta>();
@@ -423,6 +435,7 @@ fn recoverable_in() {
         field1: 10,
         field2: AtomicU32::new(20),
       });
+      data.detach();
       data.offset()
     };
 
@@ -452,4 +465,195 @@ fn test_too_small() {
     std::format!("{}", too_small),
     "memmap size is less than the minimum capacity: 10 < 20"
   );
+}
+
+#[cfg(not(feature = "loom"))]
+fn check_data_offset(l: Arena, offset: usize) {
+  let data_offset = l.data_offset();
+  assert_eq!(data_offset, offset);
+
+  let b = l.data();
+  assert_eq!(b, &[]);
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn check_data_offset_vec() {
+  run(|| {
+    check_data_offset(Arena::new(ArenaOptions::new()), 1);
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn check_data_offset_vec_unify() {
+  run(|| {
+    check_data_offset(Arena::new(ArenaOptions::new().with_unify(true)), 32);
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn check_data_offset_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_check_data_offset_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    check_data_offset(
+      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+      32,
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn check_data_offset_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    check_data_offset(
+      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
+      1,
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn check_data_offset_mmap_anon_unify() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    check_data_offset(
+      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
+      32,
+    );
+  });
+}
+
+#[cfg(not(feature = "loom"))]
+fn allocate_slow_path(l: Arena) {
+  // make some segments
+  for i in 1..=5 {
+    let _ = l.alloc_bytes(i * 50).unwrap();
+  }
+
+  let remaining = l.remaining();
+  let _ = l.alloc_bytes(remaining as u32).unwrap();
+
+  // 751 -> 501 -> 301 -> 151 -> 51 -> 1
+
+  // allocate from segments
+  for i in (1..=5).rev() {
+    l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
+  }
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_create_segments(l: Arena) {
+  use std::sync::{Arc, Barrier};
+
+  let b = Arc::new(Barrier::new(5));
+  // make some segments
+  for i in 1..=5 {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(i * 50).unwrap();
+      std::thread::yield_now();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+
+  let remaining = l.remaining();
+  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
+  remaining.detach();
+
+  // allocate from segments
+  for i in (1..=5).rev() {
+    let mut b = l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
+    b.detach();
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
+  use std::sync::{Arc, Barrier};
+
+  let b = Arc::new(Barrier::new(5));
+  // make some segments
+  for _ in 1..=5 {
+    let _ = l.alloc_bytes(50).unwrap();
+  }
+
+  let remaining = l.remaining();
+  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
+  remaining.detach();
+
+  // allocate from segments
+  for _ in (1..=5).rev() {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
+      b.detach();
+      std::thread::yield_now();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Arena) {
+  use std::sync::{Arc, Barrier};
+
+  let b = Arc::new(Barrier::new(5));
+  // make some segments
+  for _ in 1..=5 {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let _ = l.alloc_bytes(50).unwrap();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
+
+  let remaining = l.remaining();
+  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
+  remaining.detach();
+
+  // allocate from segments
+  for _ in (1..=5).rev() {
+    let l = l.clone();
+    let b = b.clone();
+    std::thread::spawn(move || {
+      b.wait();
+      let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
+      b.detach();
+    });
+  }
+
+  while l.refs() > 1 {
+    std::thread::yield_now();
+  }
 }

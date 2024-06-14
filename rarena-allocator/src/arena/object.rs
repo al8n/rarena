@@ -27,7 +27,7 @@ pub struct Owned<T> {
   kind: Kind<T>,
   arena: Arena,
   detached: bool,
-  pub(super) allocated: Allocated,
+  pub(super) allocated: Meta,
 }
 
 impl<T> Owned<T> {
@@ -87,6 +87,12 @@ impl<T> Owned<T> {
     self.allocated.memory_offset as usize
   }
 
+  /// Returns the metadata for the allocation.
+  #[inline]
+  pub const fn meta(&self) -> Meta {
+    self.allocated
+  }
+
   /// Returns a shared reference to the value.
   ///
   /// # Safety
@@ -144,9 +150,7 @@ impl<T> Drop for Owned<T> {
           }
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self
-              .arena
-              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+            self.arena.dealloc(self.allocated);
           }
         }
       }
@@ -154,9 +158,7 @@ impl<T> Drop for Owned<T> {
         if !self.detached {
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self
-              .arena
-              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+            self.arena.dealloc(self.allocated);
           }
         }
       }
@@ -172,7 +174,7 @@ pub struct RefMut<'a, T> {
   kind: Kind<T>,
   arena: &'a Arena,
   detached: bool,
-  pub(super) allocated: Allocated,
+  pub(super) allocated: Meta,
 }
 
 impl<'a, T> RefMut<'a, T> {
@@ -232,6 +234,12 @@ impl<'a, T> RefMut<'a, T> {
     self.allocated.memory_offset as usize
   }
 
+  /// Returns the metadata for the allocation.
+  #[inline]
+  pub const fn meta(&self) -> Meta {
+    self.allocated
+  }
+
   /// Returns a shared reference to the value.
   ///
   /// # Safety
@@ -274,7 +282,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) const fn new(slot: MaybeUninit<T>, allocated: Allocated, arena: &'a Arena) -> Self {
+  pub(super) const fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Slot(slot),
       arena,
@@ -284,11 +292,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) const fn new_inline(
-    value: NonNull<T>,
-    allocated: Allocated,
-    arena: &'a Arena,
-  ) -> Self {
+  pub(super) const fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Inline(value),
       arena,
@@ -301,9 +305,9 @@ impl<'a, T> RefMut<'a, T> {
   pub(super) const fn new_zst(arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Dangling(NonNull::dangling()),
+      allocated: Meta::null(arena.ptr as _),
       arena,
       detached: false,
-      allocated: Allocated::null(),
     }
   }
 
@@ -336,9 +340,7 @@ impl<'a, T> Drop for RefMut<'a, T> {
           }
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self
-              .arena
-              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+            self.arena.dealloc(self.allocated);
           }
         }
       }
@@ -346,9 +348,7 @@ impl<'a, T> Drop for RefMut<'a, T> {
         if !self.detached {
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self
-              .arena
-              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
+            self.arena.dealloc(self.allocated);
           }
         }
       }
