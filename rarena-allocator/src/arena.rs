@@ -9,7 +9,7 @@ use core::{
 use crossbeam_utils::Backoff;
 use either::Either;
 
-use crate::{common::*, error::*, ArenaOptions};
+use crate::{common::*, error::*, ArenaOptions, Freelist};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
@@ -18,10 +18,12 @@ use crate::{MmapOptions, OpenOptions};
 use std::boxed::Box;
 
 const OVERHEAD: usize = mem::size_of::<Header>();
-const MAGIC_TEXT: [u8; 3] = *b"liu";
-const MAGIC_TEXT_OFFSET: usize = VERSION_OFFSET + VERSION_SIZE;
+const FREELIST_OFFSET: usize = 1;
+const FREELIST_SIZE: usize = mem::size_of::<Freelist>();
+const MAGIC_TEXT: [u8; 2] = *b"al";
+const MAGIC_TEXT_OFFSET: usize = FREELIST_OFFSET + FREELIST_SIZE;
 const MAGIC_TEXT_SIZE: usize = MAGIC_TEXT.len();
-const MAGIC_VERISON_OFFSET: usize = 1;
+const MAGIC_VERISON_OFFSET: usize = MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE;
 const MAGIC_VERISON_SIZE: usize = mem::size_of::<u16>();
 const VERSION_OFFSET: usize = MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE;
 const VERSION_SIZE: usize = mem::size_of::<u16>();
@@ -30,7 +32,6 @@ const CURRENT_VERSION: u16 = 0;
 const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
 const SEGMENT_NODE_SUFFIX_SIZE: usize = mem::size_of::<u32>();
 const FULL_SEGMENT_NODE_SIZE: usize = SEGMENT_NODE_SIZE + SEGMENT_NODE_SUFFIX_SIZE;
-const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
 const REMOVED_SEGMENT_NODE: u32 = 0;
 
@@ -84,7 +85,7 @@ impl AlignedVec {
   }
 
   #[inline]
-  fn layout(&self) -> std::alloc::Layout {
+  const fn layout(&self) -> std::alloc::Layout {
     unsafe { std::alloc::Layout::from_size_align_unchecked(self.cap, self.align) }
   }
 
@@ -152,6 +153,7 @@ struct Memory {
   unify: bool,
   magic_version: u16,
   version: u16,
+  freelist: Freelist,
 }
 
 impl Memory {
@@ -196,7 +198,11 @@ impl Memory {
       let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
 
       let (header, data_offset) = if unify {
-        Self::write_sanify(opts.magic_version(), slice::from_raw_parts_mut(ptr, 8));
+        Self::write_sanify(
+          opts.freelist() as u8,
+          opts.magic_version(),
+          slice::from_raw_parts_mut(ptr, 8),
+        );
         header_ptr.write(Header::new(data_offset as u32, min_segment_size));
         (Either::Left(header_ptr as _), data_offset)
       } else {
@@ -213,6 +219,7 @@ impl Memory {
         unify,
         magic_version: opts.magic_version(),
         version: CURRENT_VERSION,
+        freelist: opts.freelist(),
       }
     }
   }
@@ -225,6 +232,7 @@ impl Memory {
     alignment: usize,
     min_segment_size: u32,
     magic_version: u16,
+    freelist: Freelist,
   ) -> std::io::Result<Self> {
     let (create_new, file) = open_options.open(path.as_ref())?;
 
@@ -249,6 +257,7 @@ impl Memory {
           ptr::write_bytes(ptr, 0, cap);
 
           Self::write_sanify(
+            freelist as u8,
             magic_version,
             slice::from_raw_parts_mut(ptr, header_ptr_offset),
           );
@@ -264,7 +273,7 @@ impl Memory {
             0,
             mmap.len() - allocated as usize,
           );
-          Self::sanity_check(magic_version, &mmap)?;
+          Self::sanity_check(Some(freelist), magic_version, &mmap)?;
           (CURRENT_VERSION, magic_version)
         };
 
@@ -283,6 +292,7 @@ impl Memory {
           unify: true,
           magic_version,
           version,
+          freelist,
         };
 
         Ok(this)
@@ -315,7 +325,7 @@ impl Memory {
           return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
         }
 
-        Self::sanity_check(magic_version, &mmap)?;
+        let freelist = Self::sanity_check(None, magic_version, &mmap)?;
 
         let ptr = mmap.as_ptr();
         let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
@@ -336,6 +346,7 @@ impl Memory {
           unify: true,
           magic_version,
           version: CURRENT_VERSION,
+          freelist,
         };
 
         Ok(this)
@@ -350,6 +361,7 @@ impl Memory {
     min_segment_size: u32,
     unify: bool,
     magic_version: u16,
+    freelist: Freelist,
   ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
       if unify {
@@ -374,6 +386,7 @@ impl Memory {
 
         let (header, data_offset) = if unify {
           Self::write_sanify(
+            freelist as u8,
             magic_version,
             slice::from_raw_parts_mut(ptr, header_ptr_offset),
           );
@@ -395,6 +408,7 @@ impl Memory {
           unify,
           magic_version,
           version: CURRENT_VERSION,
+          freelist,
         };
 
         Ok(this)
@@ -403,18 +417,32 @@ impl Memory {
   }
 
   #[inline]
-  fn write_sanify(magic_version: u16, data: &mut [u8]) {
+  fn write_sanify(freelist: u8, magic_version: u16, data: &mut [u8]) {
+    data[FREELIST_OFFSET] = freelist;
+    data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE]
+      .copy_from_slice(MAGIC_TEXT.as_ref());
     data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
       .copy_from_slice(magic_version.to_le_bytes().as_ref());
     data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
       .copy_from_slice(CURRENT_VERSION.to_le_bytes().as_ref());
-    data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE]
-      .copy_from_slice(MAGIC_TEXT.as_ref());
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
-  fn sanity_check(magic_version: u16, data: &[u8]) -> std::io::Result<()> {
+  fn sanity_check(
+    freelist: Option<Freelist>,
+    magic_version: u16,
+    data: &[u8],
+  ) -> std::io::Result<Freelist> {
+    let stored_freelist = data[FREELIST_OFFSET];
+    let stored_freelist = Freelist::try_from(stored_freelist).map_err(invalid_data)?;
+
+    if let Some(freelist) = freelist {
+      if stored_freelist != freelist {
+        return Err(bad_freelist());
+      }
+    }
+
     let stored_magic_version: u16 = u16::from_le_bytes(
       data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
         .try_into()
@@ -440,7 +468,7 @@ impl Memory {
     if data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE] != MAGIC_TEXT {
       return Err(bad_magic());
     }
-    Ok(())
+    Ok(stored_freelist)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -680,7 +708,7 @@ impl SegmentNode {
     Self {
       offset_and_next: AtomicU64::new(encode_segment_node(
         SENTINEL_SEGMENT_NODE_OFFSET,
-        SENTINEL_SEGMENT_NODE_SIZE,
+        SENTINEL_SEGMENT_NODE_OFFSET,
       )),
     }
   }
@@ -741,6 +769,7 @@ pub struct Arena {
   version: u16,
   ro: bool,
   cap: u32,
+  freelist: Freelist,
 }
 
 impl fmt::Debug for Arena {
@@ -783,6 +812,7 @@ impl Clone for Arena {
         inner: self.inner,
         unify: self.unify,
         cap: self.cap,
+        freelist: self.freelist,
       }
     }
   }
@@ -955,7 +985,11 @@ impl Arena {
   /// ```
   #[inline]
   pub const fn data_offset(&self) -> usize {
-    self.data_offset as usize
+    if self.unify {
+      self.data_offset as usize
+    } else {
+      self.data_offset as usize - 1
+    }
   }
 
   /// Returns the data section of the ARENA as a byte slice, header is not included.
@@ -977,25 +1011,25 @@ impl Arena {
     }
   }
 
-  /// Returns the whole allocated memory of the ARENA as a byte slice.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let allocated_memory = arena.allocated_memory();
-  /// ```
-  #[inline]
-  pub fn allocated_memory(&self) -> &[u8] {
-    unsafe {
-      let allocated = self.header().allocated.load(Ordering::Acquire);
-      slice::from_raw_parts(self.ptr, allocated as usize)
-    }
-  }
+  // /// Returns the whole allocated memory of the ARENA as a byte slice.
+  // ///
+  // /// # Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{Arena, ArenaOptions};
+  // ///
+  // /// let arena = Arena::new(ArenaOptions::new());
+  // /// let allocated_memory = arena.allocated_memory();
+  // /// ```
+  // #[inline]
+  // pub fn allocated_memory(&self) -> &[u8] {
+  //   unsafe {
+  //     let allocated = self.header().allocated.load(Ordering::Acquire);
+  //     slice::from_raw_parts(self.ptr, allocated as usize)
+  //   }
+  // }
 
-  /// Returns the whole memory of the ARENA as a byte slice.
+  /// Returns the whole main memory of the ARENA as a byte slice.
   ///
   /// # Example
   ///
@@ -1083,6 +1117,7 @@ impl Arena {
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
       opts.magic_version(),
+      opts.freelist(),
     )
     .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
   }
@@ -1140,6 +1175,7 @@ impl Arena {
       opts.minimum_segment_size(),
       opts.unify(),
       opts.magic_version(),
+      opts.freelist(),
     )
     .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
   }
@@ -1461,18 +1497,148 @@ impl Arena {
   /// - you must ensure the same `Meta` is not deallocated twice.
   #[inline]
   pub unsafe fn dealloc(&self, meta: Meta) -> bool {
-    self.dealloc_in(meta.memory_offset, meta.memory_size, meta.source)
+    match self.freelist {
+      Freelist::None => {
+        self.increase_discarded(meta.memory_size);
+        true
+      }
+      Freelist::Optimistic => {
+        self.optimistic_dealloc(meta.memory_offset, meta.memory_size, meta.source)
+      }
+      Freelist::Pessimistic => {
+        self.pessimistic_dealloc(meta.memory_offset, meta.memory_size, meta.source)
+      }
+    }
   }
 
-  /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
-  /// returns `true` if the deallocation is successful.
-  ///
-  /// # Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  unsafe fn dealloc_in(&self, offset: u32, size: u32, source: Source) -> bool {
+  /// Returns the free list position to insert the value.
+  /// - `None` means that we should insert to the head.
+  /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
+  fn find_position(&self, val: u32, check: impl Fn(u32, u32) -> bool) -> (u64, &AtomicU64) {
+    let header = self.header();
+    let mut current: &AtomicU64 = &header.sentinel;
+
+    let backoff = Backoff::new();
+    loop {
+      let current_node = current.load(Ordering::Acquire);
+      let (current_offset, next_offset) = decode_segment_node(current_node);
+
+      // the list is empty
+      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET
+        && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
+      {
+        return (current_node, current);
+      }
+
+      // the current is marked as remove and the next is the tail.
+      if current_offset == REMOVED_SEGMENT_NODE && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return (current_node, current);
+      }
+
+      if current_offset == REMOVED_SEGMENT_NODE {
+        current = if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          backoff.snooze();
+          &header.sentinel
+        } else {
+          self.get_segment_node(next_offset)
+        };
+        continue;
+      }
+
+      // the next is the tail, then we should insert the value after the current node.
+      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return (current_node, current);
+      }
+
+      // Safety: the next_offset is in bounds and well aligned.
+      let next_node_size = unsafe {
+        ptr::read(
+          self
+            .ptr
+            .add(next_offset as usize + SEGMENT_NODE_SIZE)
+            .cast::<u32>(),
+        )
+      };
+
+      if check(val, next_node_size) {
+        return (current_node, current);
+      }
+
+      current = self.get_segment_node(next_offset);
+    }
+  }
+
+  #[allow(clippy::type_complexity)]
+  fn find_prev_and_next(
+    &self,
+    val: u32,
+    check: impl Fn(u32, u32) -> bool,
+  ) -> Option<((u64, &AtomicU64), (u64, &AtomicU64))> {
+    let header = self.header();
+    let mut current: &AtomicU64 = &header.sentinel;
+
+    let backoff = Backoff::new();
+    loop {
+      let current_node = current.load(Ordering::Acquire);
+      let (current_offset, next_offset) = decode_segment_node(current_node);
+
+      // the list is empty
+      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET
+        && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
+      {
+        return None;
+      }
+
+      // the current is marked as remove and the next is the tail.
+      if current_offset == REMOVED_SEGMENT_NODE && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return None;
+      }
+
+      if current_offset == REMOVED_SEGMENT_NODE {
+        current = if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          return None;
+        } else {
+          self.get_segment_node(next_offset)
+        };
+        continue;
+      }
+
+      // the next is the tail
+      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+        return None;
+      }
+
+      // Safety: the next_offset is in bounds and well aligned.
+      let next_node_size = unsafe {
+        ptr::read(
+          self
+            .ptr
+            .add(next_offset as usize + SEGMENT_NODE_SIZE)
+            .cast::<u32>(),
+        )
+      };
+
+      if check(val, next_node_size) {
+        let next = self.get_segment_node(next_offset);
+        let next_node = next.load(Ordering::Acquire);
+        let (next_node_offset, _) = decode_segment_node(next_node);
+        if next_node_offset == REMOVED_SEGMENT_NODE {
+          backoff.snooze();
+          continue;
+        }
+
+        if next_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+          return None;
+        }
+
+        return Some(((current_node, current), (next_node, next)));
+      }
+
+      current = self.get_segment_node(next_offset);
+    }
+  }
+
+  fn optimistic_dealloc(&self, offset: u32, size: u32, source: Source) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(segment_node) = self.try_new_segment(offset, size, source) else {
       return false;
@@ -1481,8 +1647,66 @@ impl Arena {
     let backoff = Backoff::new();
 
     loop {
-      let (current_offset_and_next_node_offset, current) =
-        self.find_free_list_position(segment_node.data_size);
+      let (current_offset_and_next_node_offset, current) = self
+        .find_position(segment_node.data_size, |val, next_node_size| {
+          val >= next_node_size
+        });
+      let (node_offset, next_node_offset) =
+        decode_segment_node(current_offset_and_next_node_offset);
+
+      if node_offset == REMOVED_SEGMENT_NODE {
+        // wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      if node_offset == segment_node.ptr_offset || segment_node.ptr_offset == next_node_offset {
+        // we found ourselves, then we need to refind the position.
+        backoff.snooze();
+        continue;
+      }
+
+      segment_node.update_next_node(next_node_offset);
+
+      match current.compare_exchange(
+        current_offset_and_next_node_offset,
+        encode_segment_node(node_offset, segment_node.ptr_offset),
+        Ordering::AcqRel,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => {
+          #[cfg(feature = "tracing")]
+          tracing::debug!("create segment node ({} bytes) at {}, prev segment: {node_offset}, next segment {next_node_offset}", segment_node.data_size, segment_node.ptr_offset);
+
+          break true;
+        }
+        Err(current) => {
+          let (offset, _) = decode_segment_node(current);
+          // the current is removed from the list, then we need to refind the position.
+          if offset == REMOVED_SEGMENT_NODE {
+            // wait other thread to make progress.
+            backoff.snooze();
+          } else {
+            backoff.spin();
+          }
+        }
+      }
+    }
+  }
+
+  fn pessimistic_dealloc(&self, offset: u32, size: u32, source: Source) -> bool {
+    // check if we have enough space to allocate a new segment in this segment.
+    let Some(segment_node) = self.try_new_segment(offset, size, source) else {
+      return false;
+    };
+
+    let backoff = Backoff::new();
+
+    loop {
+      let (current_offset_and_next_node_offset, current) = self
+        .find_position(segment_node.data_size, |val, next_node_size| {
+          val <= next_node_size
+        });
       let (node_offset, next_node_offset) =
         decode_segment_node(current_offset_and_next_node_offset);
 
@@ -1689,11 +1913,110 @@ impl Arena {
     let mut i = 0;
 
     loop {
-      match self.alloc_slow_path(size) {
-        Ok(bytes) => return Ok(Some(bytes)),
-        Err(e) => {
-          if i == self.max_retries - 1 {
-            return Err(e);
+      match self.freelist {
+        Freelist::None => {
+          return Err(Error::InsufficientSpace {
+            requested: size,
+            available: self.remaining() as u32,
+          })
+        }
+        Freelist::Optimistic => match self.alloc_slow_path_optimistic(size) {
+          Ok(bytes) => return Ok(Some(bytes)),
+          Err(e) => {
+            if i == self.max_retries - 1 {
+              return Err(e);
+            }
+          }
+        },
+        Freelist::Pessimistic => match self.alloc_slow_path_pessimistic(size) {
+          Ok(bytes) => return Ok(Some(bytes)),
+          Err(e) => {
+            if i == self.max_retries - 1 {
+              return Err(e);
+            }
+          }
+        },
+      }
+
+      i += 1;
+    }
+  }
+
+  fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    if mem::size_of::<T>() == 0 {
+      return self.alloc_bytes_in(extra);
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+
+    let want = loop {
+      let aligned_offset = align_offset::<T>(allocated);
+      let size = mem::size_of::<T>() as u32;
+      let want = aligned_offset + size + extra;
+      if want > self.cap {
+        break size + extra;
+      }
+
+      match header.allocated.compare_exchange_weak(
+        allocated,
+        want,
+        Ordering::SeqCst,
+        Ordering::Acquire,
+      ) {
+        Ok(offset) => {
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
+          allocated.align_bytes_to::<T>();
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            "allocate {} bytes at offset {} from memory",
+            want - offset,
+            offset
+          );
+          return Ok(Some(allocated));
+        }
+        Err(x) => allocated = x,
+      }
+    };
+
+    // allocate through slow path
+    let mut i = 0;
+    loop {
+      match self.freelist {
+        Freelist::None => {
+          return Err(Error::InsufficientSpace {
+            requested: want,
+            available: self.remaining() as u32,
+          })
+        }
+        Freelist::Optimistic => {
+          match self.alloc_slow_path_optimistic(Self::pad::<T>() as u32 + extra) {
+            Ok(mut bytes) => {
+              bytes.align_bytes_to::<T>();
+              return Ok(Some(bytes));
+            }
+            Err(e) => {
+              if i == self.max_retries - 1 {
+                return Err(e);
+              }
+            }
+          }
+        }
+        Freelist::Pessimistic => {
+          match self.alloc_slow_path_pessimistic(Self::pad::<T>() as u32 + extra) {
+            Ok(mut bytes) => {
+              bytes.align_bytes_to::<T>();
+              return Ok(Some(bytes));
+            }
+            Err(e) => {
+              if i == self.max_retries - 1 {
+                return Err(e);
+              }
+            }
           }
         }
       }
@@ -1701,8 +2024,205 @@ impl Arena {
     }
   }
 
+  fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    if mem::size_of::<T>() == 0 {
+      return Ok(None);
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+    let want = loop {
+      let align_offset = align_offset::<T>(allocated);
+      let size = mem::size_of::<T>() as u32;
+      let want = align_offset + size;
+      if want > self.cap {
+        break size;
+      }
+
+      match header.allocated.compare_exchange_weak(
+        allocated,
+        want,
+        Ordering::SeqCst,
+        Ordering::Acquire,
+      ) {
+        Ok(offset) => {
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
+          allocated.align_to::<T>();
+
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            "allocate {} bytes at offset {} from memory",
+            want - offset,
+            offset
+          );
+
+          unsafe { allocated.clear(self) };
+          return Ok(Some(allocated));
+        }
+        Err(x) => allocated = x,
+      }
+    };
+
+    // allocate through slow path
+    let mut i = 0;
+
+    loop {
+      match self.freelist {
+        Freelist::None => {
+          return Err(Error::InsufficientSpace {
+            requested: want,
+            available: self.remaining() as u32,
+          })
+        }
+        Freelist::Optimistic => match self.alloc_slow_path_optimistic(Self::pad::<T>() as u32) {
+          Ok(mut allocated) => {
+            allocated.align_to::<T>();
+            return Ok(Some(allocated));
+          }
+          Err(e) => {
+            if i == self.max_retries - 1 {
+              return Err(e);
+            }
+          }
+        },
+        Freelist::Pessimistic => match self.alloc_slow_path_pessimistic(Self::pad::<T>() as u32) {
+          Ok(mut allocated) => {
+            allocated.align_to::<T>();
+            return Ok(Some(allocated));
+          }
+          Err(e) => {
+            if i == self.max_retries - 1 {
+              return Err(e);
+            }
+          }
+        },
+      }
+
+      i += 1;
+    }
+  }
+
+  fn alloc_slow_path_pessimistic(&self, size: u32) -> Result<Meta, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    let backoff = Backoff::new();
+
+    loop {
+      let Some(((prev_node_val, prev_node), (next_node_val, next_node))) =
+        self.find_prev_and_next(size, |val, next_node_size| val <= next_node_size)
+      else {
+        return Err(Error::InsufficientSpace {
+          requested: size,
+          available: self.remaining() as u32,
+        });
+      };
+
+      let (prev_node_offset, _) = decode_segment_node(prev_node_val);
+      if prev_node_offset == REMOVED_SEGMENT_NODE {
+        // the current node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      let (next_node_offset, next_next_node_offset) = decode_segment_node(next_node_val);
+      if next_node_offset == REMOVED_SEGMENT_NODE {
+        // the current node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // mark next node as removed
+      let removed_next = encode_segment_node(REMOVED_SEGMENT_NODE, next_next_node_offset);
+      if next_node
+        .compare_exchange(
+          next_node_val,
+          removed_next,
+          Ordering::AcqRel,
+          Ordering::Relaxed,
+        )
+        .is_err()
+      {
+        // wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
+
+      // Safety: the current_offset is in bounds and well aligned.
+      let next_node_size = unsafe {
+        ptr::read(
+          self
+            .ptr
+            .add(next_node_offset as usize + SEGMENT_NODE_SIZE)
+            .cast::<u32>(),
+        )
+      };
+
+      let remaining = next_node_size - size;
+
+      let mut segment_node =
+        unsafe { Segment::from_offset(self, next_node_offset, next_node_size) };
+
+      // update the prev node to point to the next next node.
+      let updated_prev = encode_segment_node(prev_node_offset, next_next_node_offset);
+      match prev_node.compare_exchange(
+        prev_node_val,
+        updated_prev,
+        Ordering::AcqRel,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => {
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            "allocate {} bytes at offset {} from segment",
+            size,
+            next_node_offset
+          );
+
+          // check if the remaining is enough to allocate a new segment.
+          if self.validate_segment(segment_node.end_offset(), remaining) {
+            segment_node.data_size = size;
+            // We have successfully remove the head node from the list.
+            // Then we can allocate the memory.
+            // give back the remaining memory to the free list.
+
+            // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
+            self.pessimistic_dealloc(segment_node.end_offset(), remaining, Source::Unsegmented);
+          }
+
+          let allocated = Meta::new(
+            self.ptr as _,
+            segment_node.data_offset,
+            size,
+            Source::Segmented(segment_node),
+          );
+          unsafe {
+            allocated.clear(self);
+          }
+          return Ok(allocated);
+        }
+        Err(current) => {
+          let (_, next_node_offset) = decode_segment_node(current);
+          if next_node_offset == REMOVED_SEGMENT_NODE {
+            // the current node is marked as removed, wait other thread to make progress.
+            backoff.snooze();
+          } else {
+            backoff.spin();
+          }
+        }
+      }
+    }
+  }
+
   /// It is like a pop operation, we will always allocate from the largest segment.
-  fn alloc_slow_path(&self, size: u32) -> Result<Meta, Error> {
+  fn alloc_slow_path_optimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -1715,7 +2235,7 @@ impl Arena {
       let (sentinel_offset, head_node_offset) = decode_segment_node(sentinel);
 
       // free list is empty
-      if head_node_offset == SENTINEL_SEGMENT_NODE_SIZE {
+      if head_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return Err(Error::InsufficientSpace {
           requested: size,
           available: self.remaining() as u32,
@@ -1802,9 +2322,7 @@ impl Arena {
             // give back the remaining memory to the free list.
 
             // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
-            unsafe {
-              self.dealloc_in(segment_node.end_offset(), remaining, Source::Unsegmented);
-            }
+            self.optimistic_dealloc(segment_node.end_offset(), remaining, Source::Unsegmented);
           }
 
           let allocated = Meta::new(
@@ -1828,126 +2346,6 @@ impl Arena {
           }
         }
       }
-    }
-  }
-
-  fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
-
-    if mem::size_of::<T>() == 0 {
-      return self.alloc_bytes_in(extra);
-    }
-
-    let header = self.header();
-    let mut allocated = header.allocated.load(Ordering::Acquire);
-
-    loop {
-      let aligned_offset = align_offset::<T>(allocated);
-      let size = mem::size_of::<T>() as u32;
-      let want = aligned_offset + size + extra;
-      if want > self.cap {
-        break;
-      }
-
-      match header.allocated.compare_exchange_weak(
-        allocated,
-        want,
-        Ordering::SeqCst,
-        Ordering::Acquire,
-      ) {
-        Ok(offset) => {
-          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
-          allocated.align_bytes_to::<T>();
-          #[cfg(feature = "tracing")]
-          tracing::debug!(
-            "allocate {} bytes at offset {} from memory",
-            want - offset,
-            offset
-          );
-          return Ok(Some(allocated));
-        }
-        Err(x) => allocated = x,
-      }
-    }
-
-    // allocate through slow path
-    let mut i = 0;
-    loop {
-      match self.alloc_slow_path(Self::pad::<T>() as u32 + extra) {
-        Ok(mut bytes) => {
-          bytes.align_bytes_to::<T>();
-          return Ok(Some(bytes));
-        }
-        Err(e) => {
-          if i == self.max_retries - 1 {
-            return Err(e);
-          }
-        }
-      }
-      i += 1;
-    }
-  }
-
-  fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
-
-    if mem::size_of::<T>() == 0 {
-      return Ok(None);
-    }
-
-    let header = self.header();
-    let mut allocated = header.allocated.load(Ordering::Acquire);
-    loop {
-      let align_offset = align_offset::<T>(allocated);
-      let size = mem::size_of::<T>() as u32;
-      let want = align_offset + size;
-      if want > self.cap {
-        break;
-      }
-
-      match header.allocated.compare_exchange_weak(
-        allocated,
-        want,
-        Ordering::SeqCst,
-        Ordering::Acquire,
-      ) {
-        Ok(offset) => {
-          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
-          allocated.align_to::<T>();
-
-          #[cfg(feature = "tracing")]
-          tracing::debug!(
-            "allocate {} bytes at offset {} from memory",
-            want - offset,
-            offset
-          );
-
-          unsafe { allocated.clear(self) };
-          return Ok(Some(allocated));
-        }
-        Err(x) => allocated = x,
-      }
-    }
-
-    // allocate through slow path
-    let mut i = 0;
-    loop {
-      match self.alloc_slow_path(Self::pad::<T>() as u32) {
-        Ok(mut allocated) => {
-          allocated.align_to::<T>();
-          return Ok(Some(allocated));
-        }
-        Err(e) => {
-          if i == self.max_retries - 1 {
-            return Err(e);
-          }
-        }
-      }
-      i += 1;
     }
   }
 
@@ -2029,65 +2427,6 @@ impl Arena {
     }
   }
 
-  /// Returns the free list position to insert the value.
-  /// - `None` means that we should insert to the head.
-  /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
-  fn find_free_list_position(&self, val: u32) -> (u64, &AtomicU64) {
-    let header = self.header();
-    let mut current: &AtomicU64 = &header.sentinel;
-
-    let backoff = Backoff::new();
-    loop {
-      let current_node = current.load(Ordering::Acquire);
-      let (current_offset, next_offset) = decode_segment_node(current_node);
-
-      // the list is empty
-      if current_offset == SENTINEL_SEGMENT_NODE_OFFSET
-        && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
-      {
-        return (current_node, current);
-      }
-
-      // the current is marked as remove and the next is the tail.
-      if current_offset == REMOVED_SEGMENT_NODE && next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        return (current_node, current);
-      }
-
-      if current_offset == REMOVED_SEGMENT_NODE {
-        current = if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-          backoff.snooze();
-          &header.sentinel
-        } else {
-          self.get_segment_node(next_offset)
-        };
-        continue;
-      }
-
-      // the next is the tail, then we should insert the value after the current node.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        return (current_node, current);
-      }
-
-      // Safety: the next_offset is in bounds and well aligned.
-      let next_node_size = unsafe {
-        ptr::read(
-          self
-            .ptr
-            .add(next_offset as usize + SEGMENT_NODE_SIZE)
-            .cast::<u32>(),
-        )
-      };
-
-      // the size is smaller than or equal to the val
-      // then the value should be inserted after the current node
-      if val >= next_node_size {
-        return (current_node, current);
-      }
-
-      current = self.get_segment_node(next_offset);
-    }
-  }
-
   #[inline]
   fn discard(&self, size: u32) {
     let header = self.header();
@@ -2112,6 +2451,7 @@ impl Arena {
     let ptr = memory.as_mut_ptr();
 
     Self {
+      freelist: memory.freelist,
       cap: memory.cap(),
       unify,
       magic_version: memory.magic_version,
@@ -2224,6 +2564,12 @@ fn invalid_data<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::
 #[inline]
 fn bad_magic() -> std::io::Error {
   std::io::Error::new(std::io::ErrorKind::InvalidData, "arena has bad magic")
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn bad_freelist() -> std::io::Error {
+  std::io::Error::new(std::io::ErrorKind::InvalidData, "freelist mismatch")
 }
 
 #[inline]

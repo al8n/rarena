@@ -804,3 +804,68 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment_mmap_an
     ));
   });
 }
+
+fn check_data_offset(l: Arena, offset: usize) {
+  let data_offset = l.data_offset();
+  assert_eq!(data_offset, offset);
+
+  let b = l.data();
+  assert_eq!(b, &[]);
+}
+
+#[test]
+fn check_data_offset_vec() {
+  run(|| {
+    check_data_offset(Arena::new(ArenaOptions::new()), 0);
+  });
+}
+
+#[test]
+fn check_data_offset_vec_unify() {
+  run(|| {
+    check_data_offset(Arena::new(ArenaOptions::new().with_unify(true)), 40);
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn check_data_offset_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_check_data_offset_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    check_data_offset(
+      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+      0,
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn check_data_offset_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    check_data_offset(
+      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
+      0,
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn check_data_offset_mmap_anon_unify() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    check_data_offset(
+      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
+      40,
+    );
+  });
+}
