@@ -18,7 +18,7 @@ license = "MIT OR Apache-2.0"
 
 crossbeam-utils = { version = "0.8", default-features = false }
 loom = "0.7"
-rarena-allocator = { version = "0.0.1", path = "./rarena-allocator", default-features = false }
+rarena-allocator = { version = "0.1", path = "./rarena-allocator", default-features = false }
 rarena-skiplist = { version = "0.0.0", path = "./rarena-skiplist", default-features = false }
 
 [workspace.metadata.docs.rs]

@@ -132,9 +132,7 @@ fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec_unify() {
   run(|| {
-    allocate_slow_path_concurrent_acquire_from_segment(Arena::new(
-      OPTIONS.with_unify(true),
-    ));
+    allocate_slow_path_concurrent_acquire_from_segment(Arena::new(OPTIONS.with_unify(true)));
   });
 }
 
@@ -173,12 +171,9 @@ fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_mmap_anon() {
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_mmap_anon_unify() {
   run(|| {
-    allocate_slow_path_concurrent_acquire_from_segment(Arena::new(
-      OPTIONS.with_unify(true),
-    ));
+    allocate_slow_path_concurrent_acquire_from_segment(Arena::new(OPTIONS.with_unify(true)));
   });
 }
-
 
 #[test]
 #[cfg(all(not(feature = "loom"), feature = "std"))]

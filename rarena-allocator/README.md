@@ -59,6 +59,8 @@ There are 3 kinds of freelist:
 
 The allocation policy used in the implementation is that, first try to allocate from main memory, main memory is increase-only, so it is blazing fast if main memory has enough space, at the same time, ARENA will collect dropped segments to construct a freelist (lock-free linked list). When the main memory does not have space, the ARENA will try to allocate from the freelist.
 
+This crate contains many unsafe code, although the main functionalities of this crate are well tested by `miri`, `loom` and `sanitizer`, please use it at your own risk.
+
 ### Memory Layout
 
 - Pure memory layout, only `Vec` and anon memory map backed main memory support this layout, this layout cannot be recovered.
