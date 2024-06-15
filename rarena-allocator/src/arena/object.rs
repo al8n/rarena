@@ -87,12 +87,6 @@ impl<T> Owned<T> {
     self.allocated.memory_offset as usize
   }
 
-  /// Returns the metadata for the allocation.
-  #[inline]
-  pub const fn meta(&self) -> Meta {
-    self.allocated
-  }
-
   /// Returns a shared reference to the value.
   ///
   /// # Safety
@@ -150,7 +144,9 @@ impl<T> Drop for Owned<T> {
           }
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self.arena.dealloc(self.allocated);
+            self
+              .arena
+              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
           }
         }
       }
@@ -158,7 +154,9 @@ impl<T> Drop for Owned<T> {
         if !self.detached {
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self.arena.dealloc(self.allocated);
+            self
+              .arena
+              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
           }
         }
       }
@@ -232,12 +230,6 @@ impl<'a, T> RefMut<'a, T> {
   #[inline]
   pub const fn memory_offset(&self) -> usize {
     self.allocated.memory_offset as usize
-  }
-
-  /// Returns the metadata for the allocation.
-  #[inline]
-  pub const fn meta(&self) -> Meta {
-    self.allocated
   }
 
   /// Returns a shared reference to the value.
@@ -340,7 +332,9 @@ impl<'a, T> Drop for RefMut<'a, T> {
           }
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self.arena.dealloc(self.allocated);
+            self
+              .arena
+              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
           }
         }
       }
@@ -348,7 +342,9 @@ impl<'a, T> Drop for RefMut<'a, T> {
         if !self.detached {
           // SAFETY: offset and offset + size are inbounds of the ARENA.
           unsafe {
-            self.arena.dealloc(self.allocated);
+            self
+              .arena
+              .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
           }
         }
       }

@@ -89,12 +89,6 @@ impl BytesMut {
     self.allocated.memory_size as usize
   }
 
-  /// Returns the metadata for the allocation.
-  #[inline]
-  pub const fn meta(&self) -> Meta {
-    self.allocated
-  }
-
   /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
   /// which means the space used by the buffer will never be reclaimed.
   #[inline]
@@ -158,7 +152,7 @@ impl Drop for BytesMut {
       Either::Left(_) if self.detach => {}
       // SAFETY: offset and offset + size are inbounds of the ARENA.
       Either::Left(ref arena) => unsafe {
-        let _ = arena.dealloc(self.allocated);
+        let _ = arena.dealloc(self.allocated.memory_offset, self.allocated.memory_size);
       },
       Either::Right(_) => {}
     }
@@ -266,12 +260,6 @@ impl<'a> BytesRefMut<'a> {
     self.len == 0
   }
 
-  /// Returns the metadata for the allocation.
-  #[inline]
-  pub const fn meta(&self) -> Meta {
-    self.allocated
-  }
-
   /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
   /// which means the space used by the buffer will never be reclaimed.
   #[inline]
@@ -360,7 +348,9 @@ impl<'a> Drop for BytesRefMut<'a> {
 
     // SAFETY: offset and offset + size are inbounds of the ARENA.
     unsafe {
-      self.arena.dealloc(self.allocated);
+      self
+        .arena
+        .dealloc(self.allocated.memory_offset, self.allocated.memory_size);
     }
   }
 }

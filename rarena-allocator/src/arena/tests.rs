@@ -22,8 +22,8 @@ fn run(f: impl Fn() + Send + Sync + 'static) {
 fn test_meta_eq() {
   let a_ptr = 1u8;
   let b_ptr = 1u8;
-  let a = Meta::new(&a_ptr as _, 2, 3, Source::Null);
-  let b = Meta::new(&b_ptr as _, 2, 3, Source::Null);
+  let a = Meta::new(&a_ptr as _, 2, 3);
+  let b = Meta::new(&b_ptr as _, 2, 3);
   assert_ne!(a, b);
 }
 

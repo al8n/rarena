@@ -594,16 +594,6 @@ impl Memory {
   }
 }
 
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[repr(u8)]
-#[non_exhaustive]
-enum Source {
-  #[default]
-  Null,
-  Segmented(Segment),
-  Unsegmented,
-}
-
 /// The metadata of the structs allocated from ARENA.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Meta {
@@ -612,7 +602,6 @@ pub struct Meta {
   memory_size: u32,
   ptr_offset: u32,
   ptr_size: u32,
-  source: Source,
 }
 
 unsafe impl Send for Meta {}
@@ -627,17 +616,11 @@ impl Meta {
       memory_size: 0,
       ptr_offset: 0,
       ptr_size: 0,
-      source: Source::Null,
     }
   }
 
   #[inline]
-  const fn new(
-    parent_ptr: *const u8,
-    memory_offset: u32,
-    memory_size: u32,
-    source: Source,
-  ) -> Self {
+  const fn new(parent_ptr: *const u8, memory_offset: u32, memory_size: u32) -> Self {
     Self {
       parent_ptr,
       memory_offset,
@@ -646,7 +629,6 @@ impl Meta {
       // we will align the ptr_offset and ptr_size when it should be aligned.
       ptr_offset: memory_offset,
       ptr_size: memory_size,
-      source,
     }
   }
 
@@ -673,20 +655,14 @@ impl Meta {
 
 #[repr(transparent)]
 struct SegmentNode {
-  /// The first 32 bits are the offset of the memory,
+  /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
-  offset_and_next: AtomicU64,
-  // ** DO NOT REMOVE BELOW COMMENT**
-  // Every Segment is followed by a `len`, which is the length of the bytes that this segment node has.
-  // comment out the `len` field to make the size of Segment to be the same as AtomicU64, in this way,
-  // for each segment node, we can save 4 bytes. Otherwise, padding will make the actual size of Segment
-  // to be 16 bytes.
-  // len: u32,
+  size_and_next: AtomicU64,
 }
 
 impl core::fmt::Debug for SegmentNode {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let (offset, next) = decode_segment_node(self.offset_and_next.load(Ordering::Acquire));
+    let (offset, next) = decode_segment_node(self.size_and_next.load(Ordering::Acquire));
     f.debug_struct("SegmentNode")
       .field("offset", &offset)
       .field("next", &next)
@@ -699,7 +675,7 @@ impl core::ops::Deref for SegmentNode {
 
   #[inline]
   fn deref(&self) -> &Self::Target {
-    &self.offset_and_next
+    &self.size_and_next
   }
 }
 
@@ -707,7 +683,7 @@ impl SegmentNode {
   #[inline]
   fn sentinel() -> Self {
     Self {
-      offset_and_next: AtomicU64::new(encode_segment_node(
+      size_and_next: AtomicU64::new(encode_segment_node(
         SENTINEL_SEGMENT_NODE_OFFSET,
         SENTINEL_SEGMENT_NODE_OFFSET,
       )),
@@ -750,11 +726,6 @@ impl Segment {
     self
       .as_ref()
       .store(encode_segment_node(self.data_size, next), Ordering::Release);
-  }
-
-  #[inline]
-  const fn end_offset(&self) -> u32 {
-    self.data_offset + self.data_size
   }
 }
 
@@ -937,6 +908,9 @@ impl Arena {
   /// ```
   #[inline]
   pub fn increase_discarded(&self, size: u32) {
+    #[cfg(feature = "tracing")]
+    tracing::debug!("discard {size} bytes");
+
     self.header().discarded.fetch_add(size, Ordering::Release);
   }
 
@@ -1472,20 +1446,18 @@ impl Arena {
   /// returns `true` if the deallocation is successful.
   ///
   /// # Safety
-  /// - you must ensure the same `Meta` is not deallocated twice.
+  /// - you must ensure the same `offset..offset + size` is not deallocated twice.
+  /// - `offset` must be larger than the [`Arena::data_offset`].
+  /// - `offset + size` must be less than the [`Arena::allocated`].
   #[inline]
-  pub unsafe fn dealloc(&self, meta: Meta) -> bool {
+  pub unsafe fn dealloc(&self, offset: u32, size: u32) -> bool {
     match self.freelist {
       Freelist::None => {
-        self.increase_discarded(meta.memory_size);
+        self.increase_discarded(size);
         true
       }
-      Freelist::Optimistic => {
-        self.optimistic_dealloc(meta.memory_offset, meta.memory_size, meta.source)
-      }
-      Freelist::Pessimistic => {
-        self.pessimistic_dealloc(meta.memory_offset, meta.memory_size, meta.source)
-      }
+      Freelist::Optimistic => self.optimistic_dealloc(offset, size),
+      Freelist::Pessimistic => self.pessimistic_dealloc(offset, size),
     }
   }
 
@@ -1607,9 +1579,9 @@ impl Arena {
     }
   }
 
-  fn optimistic_dealloc(&self, offset: u32, size: u32, source: Source) -> bool {
+  fn optimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
-    let Some(segment_node) = self.try_new_segment(offset, size, source) else {
+    let Some(segment_node) = self.try_new_segment(offset, size) else {
       return false;
     };
 
@@ -1667,9 +1639,9 @@ impl Arena {
     }
   }
 
-  fn pessimistic_dealloc(&self, offset: u32, size: u32, source: Source) -> bool {
+  fn pessimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
-    let Some(segment_node) = self.try_new_segment(offset, size, source) else {
+    let Some(segment_node) = self.try_new_segment(offset, size) else {
       return false;
     };
 
@@ -1878,7 +1850,7 @@ impl Arena {
           #[cfg(feature = "tracing")]
           tracing::debug!("allocate {} bytes at offset {} from memory", size, offset);
 
-          let allocated = Meta::new(self.ptr as _, offset, size, Source::Unsegmented);
+          let allocated = Meta::new(self.ptr as _, offset, size);
           unsafe { allocated.clear(self) };
           return Ok(Some(allocated));
         }
@@ -1946,7 +1918,7 @@ impl Arena {
         Ordering::Acquire,
       ) {
         Ok(offset) => {
-          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
           allocated.align_bytes_to::<T>();
           #[cfg(feature = "tracing")]
           tracing::debug!(
@@ -2027,7 +1999,7 @@ impl Arena {
         Ordering::Acquire,
       ) {
         Ok(offset) => {
-          let mut allocated = Meta::new(self.ptr as _, offset, want - offset, Source::Unsegmented);
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
           allocated.align_to::<T>();
 
           #[cfg(feature = "tracing")]
@@ -2128,12 +2100,11 @@ impl Arena {
         // wait other thread to make progress.
         backoff.snooze();
         continue;
-      } 
+      }
 
       let remaining = next_node_size - size;
 
-      let mut segment_node =
-        unsafe { Segment::from_offset(self, next_node_offset, next_node_size) };
+      let segment_node = unsafe { Segment::from_offset(self, next_node_offset, next_node_size) };
 
       // update the prev node to point to the next next node.
       let updated_prev = encode_segment_node(prev_node_size, next_next_node_offset);
@@ -2151,23 +2122,22 @@ impl Arena {
             next_node_offset
           );
 
+          let mut memory_size = next_node_size;
+          let data_end_offset = segment_node.data_offset + size;
           // check if the remaining is enough to allocate a new segment.
-          if self.validate_segment(segment_node.end_offset(), remaining) {
-            segment_node.data_size = size;
+          if self.validate_segment(data_end_offset, remaining) {
+            memory_size -= remaining;
             // We have successfully remove the head node from the list.
             // Then we can allocate the memory.
             // give back the remaining memory to the free list.
 
             // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
-            self.pessimistic_dealloc(segment_node.end_offset(), remaining, Source::Unsegmented);
+            self.pessimistic_dealloc(data_end_offset, remaining);
           }
 
-          let allocated = Meta::new(
-            self.ptr as _,
-            segment_node.data_offset,
-            size,
-            Source::Segmented(segment_node),
-          );
+          let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
+          allocated.ptr_offset = segment_node.data_offset;
+          allocated.ptr_size = size;
           unsafe {
             allocated.clear(self);
           }
@@ -2200,7 +2170,9 @@ impl Arena {
       let (sentinel_node_size, head_node_offset) = decode_segment_node(sentinel);
 
       // free list is empty
-      if sentinel_node_size == SENTINEL_SEGMENT_NODE_SIZE && head_node_offset == SENTINEL_SEGMENT_NODE_OFFSET {
+      if sentinel_node_size == SENTINEL_SEGMENT_NODE_SIZE
+        && head_node_offset == SENTINEL_SEGMENT_NODE_OFFSET
+      {
         return Err(Error::InsufficientSpace {
           requested: size,
           available: self.remaining() as u32,
@@ -2216,7 +2188,7 @@ impl Arena {
       let head = self.get_segment_node(head_node_offset);
       let head_node_size_and_next_node_offset = head.load(Ordering::Acquire);
       let (head_node_size, next_node_offset) =
-        decode_segment_node(head_node_size_and_next_node_offset); 
+        decode_segment_node(head_node_size_and_next_node_offset);
 
       if head_node_size == REMOVED_SEGMENT_NODE {
         // the head node is marked as removed, wait other thread to make progress.
@@ -2235,9 +2207,7 @@ impl Arena {
       let remaining = head_node_size - size;
 
       // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
-      let mut segment_node =
-        unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
-
+      let segment_node = unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
 
       if head_node_size == REMOVED_SEGMENT_NODE {
         // the head node is marked as removed, wait other thread to make progress.
@@ -2276,23 +2246,22 @@ impl Arena {
             segment_node.data_offset
           );
 
+          let mut memory_size = head_node_size;
+          let data_end_offset = segment_node.data_offset + size;
           // check if the remaining is enough to allocate a new segment.
-          if self.validate_segment(segment_node.end_offset(), remaining) {
-            segment_node.data_size = size;
+          if self.validate_segment(data_end_offset, remaining) {
+            memory_size -= remaining;
             // We have successfully remove the head node from the list.
             // Then we can allocate the memory.
             // give back the remaining memory to the free list.
 
             // Safety: the `next + size` is in bounds, and `node_size - size` is also in bounds.
-            self.optimistic_dealloc(segment_node.end_offset(), remaining, Source::Unsegmented);
+            self.optimistic_dealloc(data_end_offset, remaining);
           }
 
-          let allocated = Meta::new(
-            self.ptr as _,
-            segment_node.data_offset,
-            size,
-            Source::Segmented(segment_node),
-          );
+          let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
+          allocated.ptr_offset = segment_node.data_offset;
+          allocated.ptr_size = size;
           unsafe {
             allocated.clear(self);
           }
@@ -2334,58 +2303,31 @@ impl Arena {
   }
 
   #[inline]
-  fn try_new_segment(&self, offset: u32, size: u32, source: Source) -> Option<Segment> {
+  fn try_new_segment(&self, offset: u32, size: u32) -> Option<Segment> {
     if offset == 0 || size == 0 {
       return None;
     }
 
-    match source {
-      Source::Null => unreachable!(),
-      Source::Segmented(node) => {
-        unsafe {
-          ptr::write_bytes(
-            self.ptr.add(node.data_offset as usize),
-            0,
-            node.data_size as usize,
-          )
-        }
-        Some(node)
-      }
-      Source::Unsegmented => {
-        let aligned_offset = align_offset::<AtomicU64>(offset) as usize;
-        let padding = aligned_offset - offset as usize;
-        let segmented_node_size = padding + SEGMENT_NODE_SIZE;
-        if segmented_node_size >= size as usize {
-          self.discard(size);
-          return None;
-        }
-
-        let available_bytes = size - segmented_node_size as u32;
-        if available_bytes < self.header().min_segment_size.load(Ordering::Acquire) {
-          self.discard(size);
-          return None;
-        }
-
-        self.discard(segmented_node_size as u32);
-
-        Some(Segment {
-          ptr: self.ptr,
-          ptr_offset: aligned_offset as u32,
-          data_offset: (aligned_offset + SEGMENT_NODE_SIZE) as u32,
-          data_size: available_bytes,
-        })
-      }
+    let aligned_offset = align_offset::<AtomicU64>(offset) as usize;
+    let padding = aligned_offset - offset as usize;
+    let segmented_node_size = padding + SEGMENT_NODE_SIZE;
+    if segmented_node_size >= size as usize {
+      self.increase_discarded(size);
+      return None;
     }
-  }
 
-  #[inline]
-  fn discard(&self, size: u32) {
-    let header = self.header();
+    let available_bytes = size - segmented_node_size as u32;
+    if available_bytes < self.header().min_segment_size.load(Ordering::Acquire) {
+      self.increase_discarded(size);
+      return None;
+    }
 
-    #[cfg(feature = "tracing")]
-    tracing::debug!("discard {size} bytes");
-
-    header.discarded.fetch_add(size, Ordering::Release);
+    Some(Segment {
+      ptr: self.ptr,
+      ptr_offset: aligned_offset as u32,
+      data_offset: (aligned_offset + SEGMENT_NODE_SIZE) as u32,
+      data_size: available_bytes,
+    })
   }
 
   #[inline]
