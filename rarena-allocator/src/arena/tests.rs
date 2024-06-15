@@ -8,7 +8,7 @@ mod optimistic_slow_path;
 mod pessimistic_slow_path;
 
 const ARENA_SIZE: u32 = 1024;
-const MAX_SEGMENT_NODE_SIZE: u32 = (FULL_SEGMENT_NODE_SIZE + SEGMENT_NODE_SIZE - 1) as u32;
+const MAX_SEGMENT_NODE_SIZE: u32 = (SEGMENT_NODE_SIZE * 2 - 1) as u32;
 
 fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]
