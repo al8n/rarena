@@ -29,10 +29,12 @@ There are 3 kinds of main memory:
 
 There are 3 kinds of freelist:
 
-1. none
+1. None
+
    Disable freelist, once main memory is consumed out, then this ARENA cannot allocate anymore.
 
-2. optimistic
+2. Optimistic
+
    A lock-free linked list which ordered by segment size (descending), when allocating, pop the head segment.
 
    e.g.
@@ -44,7 +46,7 @@ There are 3 kinds of freelist:
 
    After this allocation, the freelist will be `96 -> 80 -> 50`.
 
-3. pessimistic
+3. Pessimistic
 
    A lock-free linked list which ordered by segment size (ascending), when allocating, find the most suitable segment.
 

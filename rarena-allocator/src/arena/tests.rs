@@ -657,3 +657,42 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
     std::thread::yield_now();
   }
 }
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn reopen() {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join("test_reopen");
+  let open_options = OpenOptions::default()
+    .create(Some(ARENA_SIZE))
+    .read(true)
+    .write(true);
+  let mmap_options = MmapOptions::default();
+  let l = Arena::map_mut(
+    p.clone(),
+    ArenaOptions::new(),
+    open_options.clone(),
+    mmap_options.clone(),
+  )
+  .unwrap();
+  let allocated = l.allocated();
+  let data_offset = l.data_offset();
+  drop(l);
+
+  let l = Arena::map_mut(
+    p.clone(),
+    ArenaOptions::new(),
+    open_options,
+    mmap_options.clone(),
+  )
+  .unwrap();
+  assert_eq!(l.allocated(), allocated);
+  assert_eq!(l.data_offset(), data_offset);
+  drop(l);
+
+  let l = Arena::map(p.clone(), OpenOptions::new().read(true), mmap_options, 0).unwrap();
+  assert_eq!(l.allocated(), allocated);
+  assert_eq!(l.data_offset(), data_offset);
+  drop(l);
+}

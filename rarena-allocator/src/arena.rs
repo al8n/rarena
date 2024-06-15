@@ -328,7 +328,7 @@ impl Memory {
         let freelist = Self::sanity_check(None, magic_version, &mmap)?;
 
         let ptr = mmap.as_ptr();
-        let header_ptr_offset = ptr.align_offset(mem::align_of::<Header>());
+        let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
@@ -649,7 +649,7 @@ impl Meta {
   fn align_bytes_to<T>(&mut self) {
     let align_offset = align_offset::<T>(self.memory_offset);
     self.ptr_offset = align_offset;
-    self.ptr_size = self.memory_size - self.ptr_offset;
+    self.ptr_size = self.memory_offset + self.memory_size - self.ptr_offset;
   }
 }
 
@@ -979,6 +979,22 @@ impl Arena {
       let allocated = self.header().allocated.load(Ordering::Acquire);
       slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
     }
+  }
+
+  /// Returns the whole main memory of the ARENA as a byte slice.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let memory = arena.memory();
+  /// ```
+  #[inline]
+  pub fn allocated_memory(&self) -> &[u8] {
+    let allocated = self.header().allocated.load(Ordering::Acquire);
+    unsafe { slice::from_raw_parts(self.ptr, allocated as usize) }
   }
 
   /// Returns the whole main memory of the ARENA as a byte slice.
