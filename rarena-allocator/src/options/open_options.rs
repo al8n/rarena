@@ -1,5 +1,3 @@
-#[cfg(not(miri))]
-use fs4::FileExt;
 use memmap2::MmapOptions as Mmap2Options;
 use std::{
   fs::{File, OpenOptions as StdOpenOptions},
@@ -13,9 +11,6 @@ pub struct OpenOptions {
   opts: StdOpenOptions,
   create: Option<u32>,
   create_new: Option<u32>,
-  shrink_on_drop: bool,
-  lock_shared: bool,
-  lock_exclusive: bool,
 }
 
 impl From<StdOpenOptions> for OpenOptions {
@@ -24,9 +19,6 @@ impl From<StdOpenOptions> for OpenOptions {
       opts,
       create_new: None,
       create: None,
-      shrink_on_drop: false,
-      lock_shared: false,
-      lock_exclusive: true,
     }
   }
 }
@@ -66,9 +58,6 @@ impl OpenOptions {
       opts: StdOpenOptions::new(),
       create: None,
       create_new: None,
-      shrink_on_drop: false,
-      lock_shared: false,
-      lock_exclusive: true,
     }
   }
 
@@ -263,118 +252,26 @@ impl OpenOptions {
     self
   }
 
-  /// Sets the option to make the file shrink to the used size when dropped.
-  ///
-  /// This option, when true, will indicate that the file should be shrunk to
-  /// the size of the data written to it when the file is dropped.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let opts = OpenOptions::new().shrink_on_drop(true);
-  /// ```
-  #[inline]
-  pub fn shrink_on_drop(mut self, shrink_on_drop: bool) -> Self {
-    self.shrink_on_drop = shrink_on_drop;
-    self
-  }
-
-  /// Sets the option to lock the file for shared read access.
-  ///
-  /// This option, when true, will indicate that the file should be locked for
-  /// shared read access.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let opts = OpenOptions::new().lock_shared(true);
-  /// ```
-  #[inline]
-  pub fn lock_shared(mut self, lock_shared: bool) -> Self {
-    self.lock_shared = lock_shared;
-    self
-  }
-
-  /// Sets the option to lock the file for exclusive write access.
-  ///
-  /// This option, when true, will indicate that the file should be locked for
-  /// exclusive write access.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let opts = OpenOptions::new().lock_exclusive(true);
-  /// ```
-  #[inline]
-  pub fn lock_exclusive(mut self, lock_exclusive: bool) -> Self {
-    self.lock_exclusive = lock_exclusive;
-    self
-  }
-
   pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
     if let Some(size) = self.create_new {
-      return self.opts.open(path).and_then(|f| {
-        #[cfg(not(miri))]
-        if self.lock_exclusive {
-          f.lock_exclusive()?;
-        } else if self.lock_shared {
-          f.lock_shared()?;
-        }
-
-        f.set_len(size as u64).map(|_| (true, f))
-      });
+      return self
+        .opts
+        .open(path)
+        .and_then(|f| f.set_len(size as u64).map(|_| (true, f)));
     }
 
     if let Some(size) = self.create {
       return if path.as_ref().exists() {
-        self.opts.open(path).and_then(|f| {
-          #[cfg(not(miri))]
-          if self.lock_exclusive {
-            f.lock_exclusive()?;
-          } else if self.lock_shared {
-            f.lock_shared()?;
-          }
-          Ok((false, f))
-        })
+        self.opts.open(path).map(|f| (false, f))
       } else {
-        self.opts.open(path).and_then(|f| {
-          #[cfg(not(miri))]
-          if self.lock_exclusive {
-            f.lock_exclusive()?;
-          } else if self.lock_shared {
-            f.lock_shared()?;
-          }
-
-          f.set_len(size as u64).map(|_| (true, f))
-        })
+        self
+          .opts
+          .open(path)
+          .and_then(|f| f.set_len(size as u64).map(|_| (true, f)))
       };
     }
 
-    self.opts.open(path).and_then(|f| {
-      #[cfg(not(miri))]
-      if self.lock_exclusive {
-        f.lock_exclusive()?;
-      } else if self.lock_shared {
-        f.lock_shared()?;
-      }
-      Ok((false, f))
-    })
-  }
-
-  #[inline]
-  pub(crate) const fn is_lock(&self) -> bool {
-    self.lock_shared || self.lock_exclusive
-  }
-
-  #[inline]
-  pub(crate) const fn is_shrink_on_drop(&self) -> bool {
-    self.shrink_on_drop
+    self.opts.open(path).map(|f| (false, f))
   }
 }
 
