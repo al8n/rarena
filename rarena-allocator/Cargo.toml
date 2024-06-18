@@ -14,7 +14,7 @@ keywords = ["arena", "lock-free", "allocator"]
 [features]
 default = ["std"]
 alloc = []
-std = ["byteorder", "either/default"]
+std = ["byteorder", "either/default", "crossbeam-utils/default", "either/default", "portable-atomic/std"]
 memmap = ["memmap2", "fs4", "std"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
@@ -22,7 +22,8 @@ loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 [dependencies]
 byteorder = { version = "1", optional = true }
 crossbeam-utils.workspace = true 
-either = { version = "1", default-features = false }
+either.workspace = true
+portable-atomic.workspace = true
 paste = "1"
 
 fs4 = { version = "0.8", optional = true }

@@ -1,0 +1,28 @@
+[package]
+name = "rarena-linkedlist"
+version = "0.0.0"
+edition.workspace = true
+repository.workspace = true
+homepage = "https://github.com/al8n/rarena/tree/main/rarena-linkedlist"
+documentation = "https://docs.rs/rarena-linkedlist"
+description = "Lock-free linked list implementation based on ARENA which can be used in both memory and on-disk."
+license.workspace = true
+rust-version.workspace = true
+categories = ["data-structures", "memory-management", "concurrency", "no-std"]
+keywords = ["arena", "lock-free", "linked-list", "lockfree"]
+
+[features]
+default = ["std"]
+alloc = ["rarena-allocator/alloc"]
+std = ["rarena-allocator/std", "crossbeam-utils/default", "portable-atomic/std", "either/default"]
+memmap = ["rarena-allocator/memmap", "std"]
+
+loom = ["rarena-allocator/loom", "dep:loom"]
+
+[dependencies]
+crossbeam-utils.workspace = true
+either.workspace = true
+portable-atomic = "1"
+rarena-allocator.workspace = true
+
+loom = { workspace = true, optional = true }

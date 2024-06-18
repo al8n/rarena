@@ -2661,6 +2661,32 @@ macro_rules! impl_bytes_mut_utils {
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
+    /// You may want to use [`put_aligned`] instead of this method.
+    ///
+    /// # Safety
+    ///
+    /// - The offset plus the current length of the buffer must be aligned to `T`.
+    /// - The padding plus `size_of::<T>()` must be less than the remaining space in the buffer.
+    /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
+    ///   then the caller must ensure that the `T` is dropped before the ARENA is dropped.
+    ///   Otherwise, it will lead to memory leaks.
+    ///
+    /// - If this is file backed ARENA, then `T` must be recoverable from bytes.
+    ///   1. Types require allocation are not recoverable.
+    ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
+    ///      although those types are on stack, but they cannot be recovered, when reopens the file.
+    pub unsafe fn put_unchecked<T>(&mut self, val: T) -> &mut T {
+      let size = core::mem::size_of::<T>();
+
+      // SAFETY: We have checked the buffer size.
+      let ptr = self.as_mut_ptr().add(self.len).cast::<T>();
+      ptr.write(val);
+      self.len += size;
+      &mut *ptr
+    }
+
+    /// Put `T` into the buffer, return an error if the buffer does not have enough space.
+    ///
     /// # Safety
     ///
     /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
@@ -2999,6 +3025,9 @@ pub use bytes::*;
 
 mod object;
 pub use object::*;
+
+mod linked_allocator;
+pub use linked_allocator::*;
 
 #[cfg(test)]
 mod tests;
