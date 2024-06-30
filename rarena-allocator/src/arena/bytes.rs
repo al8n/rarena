@@ -10,6 +10,9 @@ pub struct BytesMut {
   allocated: Meta,
 }
 
+unsafe impl Send for BytesMut {}
+unsafe impl Sync for BytesMut {}
+
 impl ops::Deref for BytesMut {
   type Target = [u8];
 

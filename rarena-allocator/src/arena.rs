@@ -99,18 +99,19 @@ enum MemoryBackend {
   Vec(AlignedVec),
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   MmapMut {
+    path: std::path::PathBuf,
     buf: *mut memmap2::MmapMut,
     file: std::fs::File,
-    lock: bool,
-    shrink_on_drop: bool,
+    shrink_on_drop: AtomicBool,
+    remove_on_drop: AtomicBool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   Mmap {
+    path: std::path::PathBuf,
     buf: *mut memmap2::Mmap,
     file: std::fs::File,
-    lock: bool,
-    #[allow(dead_code)]
-    shrink_on_drop: bool,
+    shrink_on_drop: AtomicBool,
+    remove_on_drop: AtomicBool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   AnonymousMmap {
@@ -156,6 +157,44 @@ struct Memory {
 }
 
 impl Memory {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  const fn path(&self) -> Option<&std::path::PathBuf> {
+    match &self.backend {
+      MemoryBackend::MmapMut { path, .. } => Some(path),
+      MemoryBackend::Mmap { path, .. } => Some(path),
+      _ => None,
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  fn set_remove_on_drop(&self, val: bool) {
+    match &self.backend {
+      MemoryBackend::MmapMut { remove_on_drop, .. } => {
+        remove_on_drop.store(val, Ordering::Release);
+      }
+      MemoryBackend::Mmap { remove_on_drop, .. } => {
+        remove_on_drop.store(val, Ordering::Release);
+      }
+      _ => {}
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  fn set_shrink_on_drop(&self, val: bool) {
+    match &self.backend {
+      MemoryBackend::MmapMut { shrink_on_drop, .. } => {
+        shrink_on_drop.store(val, Ordering::Release);
+      }
+      MemoryBackend::Mmap { shrink_on_drop, .. } => {
+        shrink_on_drop.store(val, Ordering::Release);
+      }
+      _ => {}
+    }
+  }
+
   unsafe fn clear(&mut self) {
     let header_ptr_offset = self.ptr.align_offset(mem::align_of::<Header>());
     let data_offset = header_ptr_offset + mem::size_of::<Header>();
@@ -197,7 +236,7 @@ impl Memory {
       let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
 
       let (header, data_offset) = if unify {
-        Self::write_sanify(
+        Self::write_sanity(
           opts.freelist() as u8,
           opts.magic_version(),
           slice::from_raw_parts_mut(ptr, 8),
@@ -256,7 +295,7 @@ impl Memory {
           // initialize the memory with 0
           ptr::write_bytes(ptr, 0, cap);
 
-          Self::write_sanify(
+          Self::write_sanity(
             freelist as u8,
             magic_version,
             slice::from_raw_parts_mut(ptr, header_ptr_offset),
@@ -280,10 +319,11 @@ impl Memory {
         let this = Self {
           cap: cap as u32,
           backend: MemoryBackend::MmapMut {
+            remove_on_drop: AtomicBool::new(false),
+            path: path.as_ref().to_path_buf(),
             buf: Box::into_raw(Box::new(mmap)),
             file,
-            lock: open_options.is_lock(),
-            shrink_on_drop: open_options.is_shrink_on_drop(),
+            shrink_on_drop: AtomicBool::new(false),
           },
           header_ptr: Either::Left(header_ptr as _),
           ptr,
@@ -334,10 +374,11 @@ impl Memory {
         let this = Self {
           cap: len as u32,
           backend: MemoryBackend::Mmap {
+            remove_on_drop: AtomicBool::new(false),
+            path: path.as_ref().to_path_buf(),
             buf: Box::into_raw(Box::new(mmap)),
             file,
-            lock: open_options.is_lock(),
-            shrink_on_drop: open_options.is_shrink_on_drop(),
+            shrink_on_drop: AtomicBool::new(false),
           },
           header_ptr: Either::Left(header_ptr),
           ptr: ptr as _,
@@ -385,7 +426,7 @@ impl Memory {
         let header_ptr = ptr.add(header_ptr_offset);
 
         let (header, data_offset) = if unify {
-          Self::write_sanify(
+          Self::write_sanity(
             freelist as u8,
             magic_version,
             slice::from_raw_parts_mut(ptr, header_ptr_offset),
@@ -417,8 +458,58 @@ impl Memory {
     })
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn lock_exclusive(&self) -> std::io::Result<()> {
+    use fs4::FileExt;
+    match &self.backend {
+      MemoryBackend::MmapMut { file, .. } => file.lock_exclusive(),
+      MemoryBackend::Mmap { file, .. } => file.lock_exclusive(),
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn lock_shared(&self) -> std::io::Result<()> {
+    use fs4::FileExt;
+    match &self.backend {
+      MemoryBackend::MmapMut { file, .. } => file.lock_shared(),
+      MemoryBackend::Mmap { file, .. } => file.lock_shared(),
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn try_lock_exclusive(&self) -> std::io::Result<()> {
+    use fs4::FileExt;
+    match &self.backend {
+      MemoryBackend::MmapMut { file, .. } => file.try_lock_exclusive(),
+      MemoryBackend::Mmap { file, .. } => file.try_lock_exclusive(),
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn try_lock_shared(&self) -> std::io::Result<()> {
+    use fs4::FileExt;
+    match &self.backend {
+      MemoryBackend::MmapMut { file, .. } => file.try_lock_shared(),
+      MemoryBackend::Mmap { file, .. } => file.try_lock_shared(),
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn unlock(&self) -> std::io::Result<()> {
+    use fs4::FileExt;
+    match &self.backend {
+      MemoryBackend::MmapMut { file, .. } => file.unlock(),
+      MemoryBackend::Mmap { file, .. } => file.unlock(),
+      _ => Ok(()),
+    }
+  }
+
   #[inline]
-  fn write_sanify(freelist: u8, magic_version: u16, data: &mut [u8]) {
+  fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
     data[FREELIST_OFFSET] = freelist;
     data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE]
       .copy_from_slice(MAGIC_TEXT.as_ref());
@@ -521,20 +612,33 @@ impl Memory {
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
   unsafe fn unmount(&mut self) {
+    // Any errors during unmapping/closing are ignored as the only way
+    // to report them would be through panicking which is highly discouraged
+    // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
+
     #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    match &self.backend {
+    match &mut self.backend {
       MemoryBackend::MmapMut {
         buf,
         file,
-        lock,
         shrink_on_drop,
+        path,
+        remove_on_drop,
         ..
       } => {
-        use fs4::FileExt;
+        if remove_on_drop.load(Ordering::Acquire) {
+          let _ = Box::from_raw(*buf);
+          core::ptr::drop_in_place(file);
+          let _ = std::fs::remove_file(path);
+          return;
+        }
 
         // we must trigger the drop of the mmap
-        let used = if *shrink_on_drop {
-          let header = self.header();
+        let used = if shrink_on_drop.load(Ordering::Acquire) {
+          let header = match &self.header_ptr {
+            Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
+            Either::Right(header) => header,
+          };
           Some(header.allocated.load(Ordering::Acquire))
         } else {
           None
@@ -549,26 +653,27 @@ impl Memory {
         }
 
         let _ = file.sync_all();
-
-        if *lock {
-          let _ = file.unlock();
-        }
       }
       MemoryBackend::Mmap {
-        lock,
+        path,
         file,
         shrink_on_drop,
         buf,
+        remove_on_drop,
         ..
       } => {
-        use fs4::FileExt;
+        if remove_on_drop.load(Ordering::Acquire) {
+          let _ = Box::from_raw(*buf);
+          core::ptr::drop_in_place(file);
+          let _ = std::fs::remove_file(path);
+          return;
+        }
 
-        // Any errors during unmapping/closing are ignored as the only way
-        // to report them would be through panicking which is highly discouraged
-        // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
-
-        let used = if *shrink_on_drop {
-          let header = self.header();
+        let used = if shrink_on_drop.load(Ordering::Acquire) {
+          let header = match &self.header_ptr {
+            Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
+            Either::Right(header) => header,
+          };
           Some(header.allocated.load(Ordering::Acquire))
         } else {
           None
@@ -581,12 +686,6 @@ impl Memory {
             let _ = file.set_len(used as u64);
             let _ = file.sync_all();
           }
-        }
-
-        // relaxed ordering is enough here as we're in a drop, no one else can
-        // access this memory anymore.
-        if *lock {
-          let _ = file.unlock();
         }
       }
       _ => {}
@@ -914,6 +1013,30 @@ impl Arena {
     self.header().discarded.fetch_add(size, Ordering::Release);
   }
 
+  /// Discards all freelist nodes in the ARENA.
+  ///
+  /// Returns the number of bytes discarded.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// arena.discard_freelist();
+  /// ```
+  #[inline]
+  pub fn discard_freelist(&self) -> Result<u32, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    Ok(match self.freelist {
+      Freelist::None => 0,
+      _ => self.discard_freelist_in(),
+    })
+  }
+
   /// Returns the minimum segment size of the ARENA.
   ///
   /// # Example
@@ -1027,10 +1150,77 @@ impl Arena {
     self.ro
   }
 
+  /// Sets remove on drop, only works on mmap with a file backend.
+  ///
+  /// Default is `false`.
+  ///
+  /// > **WARNING:** Once set to `true`, the backed file will be removed when the ARENA is dropped, even though the file is opened in
+  /// > read-only mode.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// arena.remove_on_drop(true);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn remove_on_drop(&self, remove_on_drop: bool) {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().set_remove_on_drop(remove_on_drop) }
+  }
+
+  /// Sets the option to make the file shrink to the used size when dropped.
+  ///
+  /// This option, when true, will indicate that the file should be shrunk to
+  /// the size of the data written to it when the file is dropped.
+  ///
+  /// Default is `false`.
+  ///
+  /// > **WARNING:** Once set to `true`, the backed file will be shrunk when the ARENA is dropped, even though the file is opened in
+  /// > read-only mode.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// arena.shrink_on_drop(true);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn shrink_on_drop(&self, shrink_on_drop: bool) {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().set_shrink_on_drop(shrink_on_drop) }
+  }
+
+  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// let path = arena.path();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub const fn path(&self) -> Option<&std::path::PathBuf> {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().path() }
+  }
+
   #[inline]
   fn header(&self) -> &Header {
     // Safety:
-    // The inner is always non-null, we only deallocate it when the ARENA is dropped.
+    // The inner is always non-null, we only deallocate it when the memory refs is 1.
     unsafe { (*self.inner.as_ptr()).header() }
   }
 }
@@ -1071,6 +1261,7 @@ impl Arena {
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   pub fn map_mut<P: AsRef<std::path::Path>>(
     path: P,
@@ -1113,6 +1304,7 @@ impl Arena {
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   pub fn map<P: AsRef<std::path::Path>>(
     path: P,
@@ -1135,6 +1327,7 @@ impl Arena {
   /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   pub fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
     Memory::map_anon(
@@ -1146,6 +1339,120 @@ impl Arena {
       opts.freelist(),
     )
     .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
+  }
+
+  /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_exclusive().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn lock_exclusive(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().lock_exclusive() }
+  }
+
+  /// Locks the underlying file for shared access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_shared().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn lock_shared(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().lock_shared() }
+  }
+
+  /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.try_lock_exclusive().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn try_lock_exclusive(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().try_lock_exclusive() }
+  }
+
+  /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.try_lock_shared().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn try_lock_shared(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().try_lock_shared() }
+  }
+
+  /// Unlocks the underlying file, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_exclusive().unwrap();
+  ///
+  /// // do some thing
+  /// arena.unlock().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn unlock(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().unlock() }
   }
 
   /// Flushes the memory-mapped file to disk.
@@ -1467,6 +1774,17 @@ impl Arena {
   /// - `offset + size` must be less than the [`Arena::allocated`].
   #[inline]
   pub unsafe fn dealloc(&self, offset: u32, size: u32) -> bool {
+    // first try to deallocate the memory back to the main memory.
+    let header = self.header();
+    // if the offset + size is the current allocated size, then we can deallocate the memory back to the main memory.
+    if header
+      .allocated
+      .compare_exchange(offset + size, offset, Ordering::SeqCst, Ordering::Relaxed)
+      .is_ok()
+    {
+      return true;
+    }
+
     match self.freelist {
       Freelist::None => {
         self.increase_discarded(size);
@@ -1639,7 +1957,8 @@ impl Arena {
             segment_node.ptr_offset
           );
 
-          break true;
+          self.increase_discarded(segment_node.data_offset - segment_node.ptr_offset);
+          return true;
         }
         Err(current) => {
           let (size, _) = decode_segment_node(current);
@@ -1699,7 +2018,8 @@ impl Arena {
             segment_node.ptr_offset
           );
 
-          break true;
+          self.increase_discarded(segment_node.data_offset - segment_node.ptr_offset);
+          return true;
         }
         Err(current) => {
           let (size, _) = decode_segment_node(current);
@@ -1846,7 +2166,6 @@ impl Arena {
     if size == 0 {
       return Ok(None);
     }
-
     let header = self.header();
     let mut allocated = header.allocated.load(Ordering::Acquire);
 
@@ -2282,6 +2601,89 @@ impl Arena {
             allocated.clear(self);
           }
           return Ok(allocated);
+        }
+        Err(current) => {
+          let (node_size, _) = decode_segment_node(current);
+          if node_size == REMOVED_SEGMENT_NODE {
+            // The current head is removed from the list, wait other thread to make progress.
+            backoff.snooze();
+          } else {
+            backoff.spin();
+          }
+        }
+      }
+    }
+  }
+
+  fn discard_freelist_in(&self) -> u32 {
+    let backoff = Backoff::new();
+    let header = self.header();
+    let mut discarded = 0;
+    loop {
+      let sentinel = header.sentinel.load(Ordering::Acquire);
+      let (sentinel_node_size, head_node_offset) = decode_segment_node(sentinel);
+
+      // free list is empty
+      if sentinel_node_size == SENTINEL_SEGMENT_NODE_SIZE
+        && head_node_offset == SENTINEL_SEGMENT_NODE_OFFSET
+      {
+        return discarded;
+      }
+
+      if head_node_offset == REMOVED_SEGMENT_NODE {
+        // the head node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      let head = self.get_segment_node(head_node_offset);
+      let head_node_size_and_next_node_offset = head.load(Ordering::Acquire);
+      let (head_node_size, next_node_offset) =
+        decode_segment_node(head_node_size_and_next_node_offset);
+
+      if head_node_size == REMOVED_SEGMENT_NODE {
+        // the head node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // Safety: the `next` and `node_size` are valid, because they just come from the sentinel.
+      let segment_node = unsafe { Segment::from_offset(self, head_node_offset, head_node_size) };
+
+      if head_node_size == REMOVED_SEGMENT_NODE {
+        // the head node is marked as removed, wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // CAS to remove the current head
+      let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
+      if head
+        .compare_exchange(
+          head_node_size_and_next_node_offset,
+          removed_head,
+          Ordering::AcqRel,
+          Ordering::Relaxed,
+        )
+        .is_err()
+      {
+        // wait other thread to make progress.
+        backoff.snooze();
+        continue;
+      }
+
+      // We have successfully mark the head is removed, then we need to let sentinel node points to the next node.
+      match header.sentinel.compare_exchange(
+        sentinel,
+        encode_segment_node(sentinel_node_size, next_node_offset),
+        Ordering::AcqRel,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => {
+          // incresase the discarded memory.
+          self.increase_discarded(segment_node.data_size);
+          discarded += segment_node.data_size;
+          continue;
         }
         Err(current) => {
           let (node_size, _) = decode_segment_node(current);

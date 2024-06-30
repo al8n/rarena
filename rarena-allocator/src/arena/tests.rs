@@ -535,6 +535,92 @@ fn check_data_offset_mmap_anon_unify() {
   });
 }
 
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+fn discard_freelist_in(l: Arena) {
+  use std::sync::{Arc, Barrier};
+
+  let b = Arc::new(Barrier::new(5));
+  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
+  let mut handles = std::vec::Vec::new();
+
+  // make some segments
+  for i in 1..=5 {
+    let l = l.clone();
+    let b = b.clone();
+    let allocated = allocated.clone();
+    handles.push(std::thread::spawn(move || {
+      b.wait();
+      let bytes = l.alloc_bytes_owned(i * 50).unwrap();
+      let _ = allocated.push(bytes);
+    }));
+  }
+
+  for handle in handles {
+    handle.join().unwrap();
+  }
+
+  let remaining = l.remaining();
+  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
+  remaining.detach();
+  drop(allocated);
+
+  l.discard_freelist().unwrap();
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+#[test]
+fn discard_freelist() {
+  run(|| {
+    discard_freelist_in(Arena::new(ArenaOptions::new()));
+  });
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+#[test]
+fn discard_freelist_unify() {
+  run(|| {
+    discard_freelist_in(Arena::new(ArenaOptions::new().with_unify(true)));
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn discard_freelist_mmap() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_discard_freelist_mmap");
+    let open_options = OpenOptions::default()
+      .create_new(Some(ARENA_SIZE))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    discard_freelist_in(
+      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn discard_freelist_mmap_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    discard_freelist_in(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn discard_freelist_mmap_anon_unify() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    discard_freelist_in(
+      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
+    );
+  });
+}
+
 #[cfg(not(feature = "loom"))]
 fn allocate_slow_path(l: Arena) {
   // make some segments
@@ -558,24 +644,29 @@ fn allocate_slow_path_concurrent_create_segments(l: Arena) {
   use std::sync::{Arc, Barrier};
 
   let b = Arc::new(Barrier::new(5));
+  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
+  let mut handles = std::vec::Vec::new();
+
   // make some segments
   for i in 1..=5 {
     let l = l.clone();
     let b = b.clone();
-    std::thread::spawn(move || {
+    let allocated = allocated.clone();
+    handles.push(std::thread::spawn(move || {
       b.wait();
-      let _ = l.alloc_bytes(i * 50).unwrap();
-      std::thread::yield_now();
-    });
+      let bytes = l.alloc_bytes_owned(i * 50).unwrap();
+      let _ = allocated.push(bytes);
+    }));
   }
 
-  while l.refs() > 1 {
-    std::thread::yield_now();
+  for handle in handles {
+    handle.join().unwrap();
   }
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
   remaining.detach();
+  drop(allocated);
 
   // allocate from segments
   for i in (1..=5).rev() {
@@ -593,14 +684,18 @@ fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
   use std::sync::{Arc, Barrier};
 
   let b = Arc::new(Barrier::new(5));
+  let mut allocated = std::vec::Vec::new();
+
   // make some segments
   for _ in 1..=5 {
-    let _ = l.alloc_bytes(50).unwrap();
+    let bytes = l.alloc_bytes(50).unwrap();
+    allocated.push(bytes);
   }
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
   remaining.detach();
+  drop(allocated);
 
   // allocate from segments
   for _ in (1..=5).rev() {
@@ -624,23 +719,29 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
   use std::sync::{Arc, Barrier};
 
   let b = Arc::new(Barrier::new(5));
+  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
+  let mut handles = std::vec::Vec::new();
+
   // make some segments
   for _ in 1..=5 {
     let l = l.clone();
     let b = b.clone();
-    std::thread::spawn(move || {
+    let allocated = allocated.clone();
+    handles.push(std::thread::spawn(move || {
       b.wait();
-      let _ = l.alloc_bytes(50).unwrap();
-    });
+      let bytes = l.alloc_bytes_owned(50).unwrap();
+      let _ = allocated.push(bytes);
+    }));
   }
 
-  while l.refs() > 1 {
-    std::thread::yield_now();
+  for handle in handles {
+    handle.join().unwrap();
   }
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
   remaining.detach();
+  drop(allocated);
 
   // allocate from segments
   for _ in (1..=5).rev() {
