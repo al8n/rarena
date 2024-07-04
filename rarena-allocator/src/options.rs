@@ -107,8 +107,8 @@ impl ArenaOptions {
     self
   }
 
-  /// Set the capacity of the ARENA. This configuration will be ignored if the ARENA is backed by a memory map,
-  /// see [`Arena::map_mut`](crate::alloc::Arena::map_mut), [`Arena::map`](crate::alloc::Arena::map) and [`Arena::map_anon`](crate::alloc::Arena::map_anon) for more details.
+  /// Set the capacity of the ARENA. If the ARENA is backed by a memory map and the original file size is less than the capacity,
+  /// then the file will be resized to the capacity.
   ///
   /// The capacity must be greater than the minimum capacity of the ARENA.
   ///

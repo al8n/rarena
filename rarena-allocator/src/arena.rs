@@ -266,14 +266,26 @@ impl Memory {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn map_mut<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    alignment: usize,
-    min_segment_size: u32,
-    magic_version: u16,
-    freelist: Freelist,
   ) -> std::io::Result<Self> {
     let (create_new, file) = open_options.open(path.as_ref())?;
+    let file_size = file.metadata()?.len() as u32;
+    let alignment = opts.maximum_alignment();
+    let min_segment_size = opts.minimum_segment_size();
+    let freelist = opts.freelist();
+    let magic_version = opts.magic_version();
+    let capacity = opts.capacity();
+
+    let size = file_size.max(capacity);
+    if size < OVERHEAD as u32 {
+      return Err(invalid_data(TooSmall::new(size as usize, OVERHEAD)));
+    }
+
+    if file_size < capacity {
+      file.set_len(capacity as u64)?;
+    }
 
     unsafe {
       mmap_options.map_mut(&file).and_then(|mut mmap| {
@@ -282,7 +294,7 @@ impl Memory {
           return Err(invalid_data(TooSmall::new(cap, OVERHEAD)));
         }
 
-        // TODO:  should we align the memory?
+        // TODO: should we align the memory?
         let _alignment = alignment.max(mem::align_of::<Header>());
 
         let ptr = mmap.as_mut_ptr();
@@ -1269,16 +1281,8 @@ impl Arena {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self> {
-    Memory::map_mut(
-      path,
-      open_options,
-      mmap_options,
-      opts.maximum_alignment(),
-      opts.minimum_segment_size(),
-      opts.magic_version(),
-      opts.freelist(),
-    )
-    .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+    Memory::map_mut(path, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
   }
 
   /// Opens a read only ARENA backed by a mmap with the given capacity.
