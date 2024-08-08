@@ -9,7 +9,7 @@ use core::{
 use crossbeam_utils::Backoff;
 use either::Either;
 
-use crate::{common::*, error::*, ArenaOptions, Freelist};
+use crate::{common::*, error::*, ArenaOptions, ArenaPosition, Freelist};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions};
@@ -1767,6 +1767,46 @@ impl Arena {
     memory.clear();
 
     Ok(())
+  }
+
+  /// Set back the ARENA's main memory cursor to the given position.
+  ///
+  /// # Safety
+  /// - If the current position is larger than the given position,
+  ///   then the memory between the current position and the given position will be reclaimed,
+  ///   so must ensure the memory chunk between the current position and the given position will not
+  ///   be accessed anymore.
+  /// - This method is not thread safe.
+  pub unsafe fn rewind(&self, pos: ArenaPosition) {
+    let header = self.header();
+    let allocated = header.allocated.load(Ordering::Acquire);
+    let data_offset = self.data_offset;
+    let cap = self.cap;
+    let final_offset = match pos {
+      ArenaPosition::Start(offset) => offset.max(data_offset).min(cap),
+      ArenaPosition::Current(offset) => {
+        let offset = allocated as i64 + offset;
+        #[allow(clippy::comparison_chain)]
+        if offset > 0 {
+          if offset >= (cap as i64) {
+            cap
+          } else {
+            let offset = offset as u32;
+            offset.max(data_offset).min(cap)
+          }
+        } else if offset < 0 {
+          data_offset
+        } else {
+          return;
+        }
+      }
+      ArenaPosition::End(offset) => match cap.checked_sub(offset) {
+        Some(val) => val.max(data_offset),
+        None => data_offset,
+      },
+    };
+
+    header.allocated.store(final_offset, Ordering::Release);
   }
 
   /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,

@@ -22,6 +22,24 @@ pub use error::*;
 mod options;
 pub use options::*;
 
+/// Enumeration of possible methods to seek within an [`Arena`] allocator.
+///
+#[derive(Copy, PartialEq, Eq, Clone, Debug)]
+pub enum ArenaPosition {
+  /// Sets the offset to the provided number of bytes.
+  Start(u32),
+
+  /// Sets the offset to the capacity of the ARENA minus the provided number of bytes.
+  End(u32),
+
+  /// Sets the offset to the current position plus the specified number of
+  /// bytes.
+  ///
+  /// It is possible to seek beyond the end of an object, but it's an error to
+  /// seek before byte 0.
+  Current(i64),
+}
+
 mod common {
   #[cfg(not(feature = "loom"))]
   pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};
