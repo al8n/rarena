@@ -99,7 +99,7 @@ enum MemoryBackend {
   Vec(AlignedVec),
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   MmapMut {
-    path: std::path::PathBuf,
+    path: std::sync::Arc<std::path::PathBuf>,
     buf: *mut memmap2::MmapMut,
     file: std::fs::File,
     shrink_on_drop: AtomicBool,
@@ -107,7 +107,7 @@ enum MemoryBackend {
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   Mmap {
-    path: std::path::PathBuf,
+    path: std::sync::Arc<std::path::PathBuf>,
     buf: *mut memmap2::Mmap,
     file: std::fs::File,
     shrink_on_drop: AtomicBool,
@@ -159,7 +159,7 @@ struct Memory {
 impl Memory {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
-  const fn path(&self) -> Option<&std::path::PathBuf> {
+  const fn path(&self) -> Option<&std::sync::Arc<std::path::PathBuf>> {
     match &self.backend {
       MemoryBackend::MmapMut { path, .. } => Some(path),
       MemoryBackend::Mmap { path, .. } => Some(path),
@@ -362,7 +362,7 @@ impl Memory {
           cap: cap as u32,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
-            path,
+            path: std::sync::Arc::new(path),
             buf: Box::into_raw(Box::new(mmap)),
             file,
             shrink_on_drop: AtomicBool::new(false),
@@ -447,7 +447,7 @@ impl Memory {
           cap: len as u32,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
-            path,
+            path: std::sync::Arc::new(path),
             buf: Box::into_raw(Box::new(mmap)),
             file,
             shrink_on_drop: AtomicBool::new(false),
@@ -701,7 +701,7 @@ impl Memory {
         if remove_on_drop.load(Ordering::Acquire) {
           let _ = Box::from_raw(*buf);
           core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path);
+          let _ = std::fs::remove_file(path.as_path());
           return;
         }
 
@@ -737,7 +737,7 @@ impl Memory {
         if remove_on_drop.load(Ordering::Acquire) {
           let _ = Box::from_raw(*buf);
           core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path);
+          let _ = std::fs::remove_file(path.as_path());
           return;
         }
 
@@ -1284,7 +1284,7 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  pub const fn path(&self) -> Option<&std::path::PathBuf> {
+  pub const fn path(&self) -> Option<&std::sync::Arc<std::path::PathBuf>> {
     // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
     unsafe { self.inner.as_ref().path() }
   }
