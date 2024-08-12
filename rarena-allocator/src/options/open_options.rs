@@ -419,6 +419,16 @@ impl MmapOptions {
   }
 
   #[inline]
+  pub(crate) unsafe fn map_copy(&self, file: &File) -> io::Result<memmap2::MmapMut> {
+    self.0.map_copy(file)
+  }
+
+  #[inline]
+  pub(crate) unsafe fn map_copy_read_only(&self, file: &File) -> io::Result<memmap2::Mmap> {
+    self.0.map_copy_read_only(file)
+  }
+
+  #[inline]
   pub(crate) fn map_anon(&self) -> io::Result<memmap2::MmapMut> {
     self.0.map_anon()
   }

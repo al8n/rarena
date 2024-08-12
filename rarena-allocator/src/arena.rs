@@ -156,6 +156,33 @@ struct Memory {
   freelist: Freelist,
 }
 
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn mmap_mut(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::MmapMut> {
+  unsafe { mmap_options.map_mut(file) }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn mmap_copy(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::MmapMut> {
+  unsafe { mmap_options.map_copy(file) }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn mmap(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::Mmap> {
+  unsafe { mmap_options.map(file) }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn mmap_copy_read_only(
+  mmap_options: MmapOptions,
+  file: &std::fs::File,
+) -> std::io::Result<memmap2::Mmap> {
+  unsafe { mmap_options.map_copy_read_only(file) }
+}
+
 impl Memory {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
@@ -275,6 +302,7 @@ impl Memory {
       opts,
       open_options,
       mmap_options,
+      mmap_mut,
     )
   }
 
@@ -290,7 +318,38 @@ impl Memory {
   {
     let path = path_builder().map_err(Either::Left)?;
 
-    Self::map_mut_in(path, opts, open_options, mmap_options).map_err(Either::Right)
+    Self::map_mut_in(path, opts, open_options, mmap_options, mmap_mut).map_err(Either::Right)
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map_copy<P: AsRef<std::path::Path>>(
+    path: P,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> std::io::Result<Self> {
+    Self::map_mut_in(
+      path.as_ref().to_path_buf(),
+      opts,
+      open_options,
+      mmap_options,
+      mmap_copy,
+    )
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map_copy_with_path_builder<PB, E>(
+    path_builder: PB,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    let path = path_builder().map_err(Either::Left)?;
+
+    Self::map_mut_in(path, opts, open_options, mmap_options, mmap_copy).map_err(Either::Right)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -299,6 +358,7 @@ impl Memory {
     opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
+    f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::MmapMut>,
   ) -> std::io::Result<Self> {
     let (create_new, file) = open_options.open(path.as_path())?;
     let file_size = file.metadata()?.len() as u32;
@@ -318,7 +378,7 @@ impl Memory {
     }
 
     unsafe {
-      mmap_options.map_mut(&file).and_then(|mut mmap| {
+      f(mmap_options, &file).and_then(|mut mmap| {
         let cap = mmap.len();
         if cap < OVERHEAD {
           return Err(invalid_data(TooSmall::new(cap, OVERHEAD)));
@@ -394,7 +454,7 @@ impl Memory {
   {
     let path = path_builder().map_err(Either::Left)?;
 
-    Self::map_in(path, open_options, mmap_options, magic_version).map_err(Either::Right)
+    Self::map_in(path, open_options, mmap_options, magic_version, mmap).map_err(Either::Right)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -409,6 +469,45 @@ impl Memory {
       open_options,
       mmap_options,
       magic_version,
+      mmap,
+    )
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map_copy_read_only_with_path_builder<PB, E>(
+    path_builder: PB,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    let path = path_builder().map_err(Either::Left)?;
+
+    Self::map_in(
+      path,
+      open_options,
+      mmap_options,
+      magic_version,
+      mmap_copy_read_only,
+    )
+    .map_err(Either::Right)
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map_copy_read_only<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> std::io::Result<Self> {
+    Self::map_in(
+      path.as_ref().to_path_buf(),
+      open_options,
+      mmap_options,
+      magic_version,
+      mmap_copy_read_only,
     )
   }
 
@@ -418,6 +517,7 @@ impl Memory {
     open_options: OpenOptions,
     mmap_options: MmapOptions,
     magic_version: u16,
+    f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::Mmap>,
   ) -> std::io::Result<Self> {
     use either::Either;
 
@@ -431,7 +531,7 @@ impl Memory {
     let (_, file) = open_options.open(&path)?;
 
     unsafe {
-      mmap_options.map(&file).and_then(|mmap| {
+      f(mmap_options, &file).and_then(|mmap| {
         let len = mmap.len();
         if len < OVERHEAD {
           return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
@@ -1377,6 +1477,71 @@ impl Arena {
       .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
   }
 
+  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file.
+  ///
+  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn map_copy<P: AsRef<std::path::Path>>(
+    path: P,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> std::io::Result<Self> {
+    Memory::map_copy(path, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
+  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file with the given path builder.
+  ///
+  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn map_copy_with_path_builder<PB, E>(
+    path_builder: PB,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_copy_with_path_builder(path_builder, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
   /// Opens a read only ARENA backed by a mmap with the given capacity.
   ///
   /// # Example
@@ -1448,6 +1613,84 @@ impl Arena {
   {
     Memory::map_with_path_builder(path_builder, open_options, mmap_options, magic_version)
       .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_read_only(&path, open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn map_copy_read_only<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> std::io::Result<Self> {
+    Memory::map_copy_read_only(path, open_options, mmap_options, magic_version)
+      .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file with the given path builder.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn map_copy_read_only_with_path_builder<PB, E>(
+    path_builder: PB,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_copy_read_only_with_path_builder(
+      path_builder,
+      open_options,
+      mmap_options,
+      magic_version,
+    )
+    .map(|memory| Self::new_in(memory, 0, true, true))
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
