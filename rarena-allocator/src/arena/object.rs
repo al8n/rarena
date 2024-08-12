@@ -87,6 +87,26 @@ impl<T> Owned<T> {
     self.allocated.memory_offset as usize
   }
 
+  /// Flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
+  }
+
+  /// Asynchronously flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
+  }
+
   /// Returns a shared reference to the value.
   ///
   /// # Safety
@@ -271,6 +291,26 @@ impl<'a, T> RefMut<'a, T> {
       Kind::Inline(ptr) => *ptr,
       Kind::Dangling(val) => *val,
     }
+  }
+
+  /// Flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
+  }
+
+  /// Asynchronously flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
   }
 
   #[inline]

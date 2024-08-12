@@ -119,6 +119,32 @@ impl BytesMut {
     }
   }
 
+  /// Flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    match self.arena.as_ref() {
+      Either::Left(arena) => arena.flush_range(
+        self.allocated.memory_offset as usize,
+        self.allocated.memory_size as usize,
+      ),
+      Either::Right(_) => Ok(()),
+    }
+  }
+
+  /// Asynchronously flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    match self.arena.as_ref() {
+      Either::Left(arena) => arena.flush_async_range(
+        self.allocated.memory_offset as usize,
+        self.allocated.memory_size as usize,
+      ),
+      Either::Right(_) => Ok(()),
+    }
+  }
+
   #[inline]
   pub(super) fn null(parent_ptr: *const u8) -> Self {
     Self {
@@ -282,6 +308,26 @@ impl<'a> BytesRefMut<'a> {
   pub fn as_ptr(&self) -> *const u8 {
     // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
     unsafe { self.arena.get_pointer(self.offset()) }
+  }
+
+  /// Flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
+  }
+
+  /// Asynchronously flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
   }
 
   /// SAFETY: `len` and `offset` must be valid.

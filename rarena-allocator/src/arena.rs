@@ -753,6 +753,26 @@ impl Memory {
     }
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    match &self.backend {
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_range(offset, len) },
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    match &self.backend {
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
+        (**mmap).flush_async_range(offset, len)
+      },
+      _ => Ok(()),
+    }
+  }
+
   #[allow(dead_code)]
   #[inline]
   const fn as_ptr(&self) -> *const u8 {
@@ -1849,6 +1869,7 @@ impl Arena {
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().flush() }
   }
@@ -1871,8 +1892,54 @@ impl Arena {
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async(&self) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().flush_async() }
+  }
+
+  /// Flushes outstanding memory map modifications in the range to disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.flush_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush_range(offset, len) }
+  }
+
+  /// Asynchronously flushes outstanding memory map modifications in the range to disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// arena.flush_async_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush_async_range(offset, len) }
   }
 
   /// Allocates an owned slice of memory in the ARENA.
