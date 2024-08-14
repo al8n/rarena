@@ -92,8 +92,8 @@ impl<T> Owned<T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     self.arena.flush_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
@@ -298,8 +298,8 @@ impl<'a, T> RefMut<'a, T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     self.arena.flush_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
@@ -308,8 +308,8 @@ impl<'a, T> RefMut<'a, T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async(&self) -> std::io::Result<()> {
     self.arena.flush_async_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 

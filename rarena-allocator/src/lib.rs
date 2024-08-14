@@ -22,6 +22,9 @@ pub use error::*;
 mod options;
 pub use options::*;
 
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+static PAGE_SIZE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| rustix::param::page_size() as u32);
+
 /// Enumeration of possible methods to seek within an [`Arena`] allocator.
 ///
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]

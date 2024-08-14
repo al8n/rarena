@@ -15,7 +15,7 @@ keywords = ["arena", "lock-free", "allocator"]
 default = ["std"]
 alloc = []
 std = ["byteorder", "either/default"]
-memmap = ["memmap2", "fs4", "std"]
+memmap = ["memmap2", "fs4", "std", "rustix"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 
@@ -27,6 +27,7 @@ paste = "1"
 
 fs4 = { version = "0.8", optional = true }
 memmap2 = { version = "0.9", optional = true }
+rustix = { version = "0.38", optional = true, features = ["mm", "param"] }
 
 loom = { workspace = true, optional = true }
 

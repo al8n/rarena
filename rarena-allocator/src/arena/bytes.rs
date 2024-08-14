@@ -125,8 +125,8 @@ impl BytesMut {
   pub fn flush(&self) -> std::io::Result<()> {
     match self.arena.as_ref() {
       Either::Left(arena) => arena.flush_range(
-        self.allocated.memory_offset as usize,
-        self.allocated.memory_size as usize,
+        self.allocated.ptr_offset as usize,
+        self.allocated.ptr_size as usize,
       ),
       Either::Right(_) => Ok(()),
     }
@@ -138,8 +138,8 @@ impl BytesMut {
   pub fn flush_async(&self) -> std::io::Result<()> {
     match self.arena.as_ref() {
       Either::Left(arena) => arena.flush_async_range(
-        self.allocated.memory_offset as usize,
-        self.allocated.memory_size as usize,
+        self.allocated.ptr_offset as usize,
+        self.allocated.ptr_size as usize,
       ),
       Either::Right(_) => Ok(()),
     }
@@ -315,8 +315,8 @@ impl<'a> BytesRefMut<'a> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     self.arena.flush_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
@@ -325,8 +325,8 @@ impl<'a> BytesRefMut<'a> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async(&self) -> std::io::Result<()> {
     self.arena.flush_async_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 

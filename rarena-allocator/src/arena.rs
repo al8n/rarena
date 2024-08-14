@@ -12,7 +12,7 @@ use either::Either;
 use crate::{common::*, error::*, ArenaOptions, ArenaPosition, Freelist};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-use crate::{MmapOptions, OpenOptions};
+use crate::{MmapOptions, OpenOptions, PAGE_SIZE};
 
 #[allow(unused_imports)]
 use std::boxed::Box;
@@ -680,6 +680,76 @@ impl Memory {
     }
   }
 
+  /// # Safety
+  /// - offset and len must be valid and in bounds.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    match &self.backend {
+      MemoryBackend::MmapMut { buf, .. } => {
+        let buf_len = (**buf).len();
+        if offset + len > buf_len {
+          return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "offset and len must be valid and in bounds",
+          ));
+        }
+
+        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        rustix::mm::mlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      MemoryBackend::Mmap { buf, .. } => {
+        let buf_len = (**buf).len();
+        if offset + len > buf_len {
+          return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "offset and len must be valid and in bounds",
+          ));
+        }
+
+        let ptr = (**buf).as_ref().as_ptr();
+        rustix::mm::mlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      _ => Ok(()),
+    }
+  }
+
+  /// # Safety
+  /// - offset and len must be valid and in bounds.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    match &self.backend {
+      MemoryBackend::MmapMut { buf, .. } => {
+        let buf_len = (**buf).len();
+        if offset + len > buf_len {
+          return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "offset and len must be valid and in bounds",
+          ));
+        }
+
+        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        rustix::mm::munlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      MemoryBackend::Mmap { buf, .. } => {
+        let buf_len = (**buf).len();
+        if offset + len > buf_len {
+          return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "offset and len must be valid and in bounds",
+          ));
+        }
+
+        let ptr = (**buf).as_ref().as_ptr();
+        rustix::mm::munlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      _ => Ok(()),
+    }
+  }
+
   #[inline]
   fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
     data[FREELIST_OFFSET] = freelist;
@@ -1032,6 +1102,8 @@ pub struct Arena {
   ro: bool,
   cap: u32,
   freelist: Freelist,
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  page_size: u32,
 }
 
 impl fmt::Debug for Arena {
@@ -1075,6 +1147,8 @@ impl Clone for Arena {
         unify: self.unify,
         cap: self.cap,
         freelist: self.freelist,
+        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+        page_size: self.page_size,
       }
     }
   }
@@ -1852,6 +1926,86 @@ impl Arena {
     unsafe { self.inner.as_ref().unlock() }
   }
 
+  /// `mlock(ptr, len)`—Lock memory into RAM.
+  ///
+  /// # Safety
+  ///
+  /// This function operates on raw pointers, but it should only be used on
+  /// memory which the caller owns. Technically, locking memory shouldn't violate
+  /// any invariants, but since unlocking it can violate invariants, this
+  /// function is also unsafe for symmetry.
+  ///
+  /// Some implementations implicitly round the memory region out to the nearest
+  /// page boundaries, so this function may lock more memory than explicitly
+  /// requested if the memory isn't page-aligned. Other implementations fail if
+  /// the memory isn't page-aligned.
+  ///
+  /// # References
+  ///  - [POSIX]
+  ///  - [Linux]
+  ///  - [Apple]
+  ///  - [FreeBSD]
+  ///  - [NetBSD]
+  ///  - [OpenBSD]
+  ///  - [DragonFly BSD]
+  ///  - [illumos]
+  ///  - [glibc]
+  ///
+  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/mlock.html
+  /// [Linux]: https://man7.org/linux/man-pages/man2/mlock.2.html
+  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/mlock.2.html
+  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=mlock&sektion=2
+  /// [NetBSD]: https://man.netbsd.org/mlock.2
+  /// [OpenBSD]: https://man.openbsd.org/mlock.2
+  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=mlock&section=2
+  /// [illumos]: https://illumos.org/man/3C/mlock
+  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().mlock(offset, len) }
+  }
+
+  /// `munlock(ptr, len)`—Unlock memory.
+  ///
+  /// # Safety
+  ///
+  /// This function operates on raw pointers, but it should only be used on
+  /// memory which the caller owns, to avoid compromising the `mlock` invariants
+  /// of other unrelated code in the process.
+  ///
+  /// Some implementations implicitly round the memory region out to the nearest
+  /// page boundaries, so this function may unlock more memory than explicitly
+  /// requested if the memory isn't page-aligned.
+  ///
+  /// # References
+  ///  - [POSIX]
+  ///  - [Linux]
+  ///  - [Apple]
+  ///  - [FreeBSD]
+  ///  - [NetBSD]
+  ///  - [OpenBSD]
+  ///  - [DragonFly BSD]
+  ///  - [illumos]
+  ///  - [glibc]
+  ///
+  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/munlock.html
+  /// [Linux]: https://man7.org/linux/man-pages/man2/munlock.2.html
+  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/munlock.2.html
+  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=munlock&sektion=2
+  /// [NetBSD]: https://man.netbsd.org/munlock.2
+  /// [OpenBSD]: https://man.openbsd.org/munlock.2
+  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=munlock&section=2
+  /// [illumos]: https://illumos.org/man/3C/munlock
+  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().munlock(offset, len) }
+  }
+
   /// Flushes the memory-mapped file to disk.
   ///
   /// # Example
@@ -1963,6 +2117,39 @@ impl Arena {
     })
   }
 
+  /// Allocates an owned slice of memory in the ARENA in the same page.
+  /// 
+  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
+  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  /// this method will still return an error.
+  /// 
+  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut, Error> {
+    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
+  }
+
+  /// Allocates a slice of memory in the ARENA in the same page.
+  ///
+  /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
+  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  /// this method will still return an error.
+  /// 
+  /// The [`BytesRefMut`] is zeroed out.
+  ///
+  /// If you want a [`BytesMut`], see [`alloc_bytes_owned_within_page`](Self::alloc_bytes_owned_within_page).
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut, Error> {
+    self.alloc_bytes_within_page_in(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+    })
+  }
+
   /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
   ///
   /// The layout of the allocated memory is:
@@ -2001,6 +2188,53 @@ impl Arena {
   #[inline]
   pub fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
     self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+    })
+  }
+
+  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut, Error> {
+    self
+      .alloc_aligned_bytes_within_page::<T>(size)
+      .map(|mut b| b.to_owned())
+  }
+
+  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
+    self.alloc_aligned_bytes_within_page_in::<T>(size).map(|a| match a {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
     })
@@ -2163,6 +2397,46 @@ impl Arena {
   #[inline]
   pub unsafe fn alloc_owned<T>(&self) -> Result<Owned<T>, Error> {
     self.alloc::<T>().map(|mut r| r.to_owned())
+  }
+
+  /// Allocates a `T` in the ARENA in the same page.
+  /// 
+  /// # Safety
+  /// 
+  /// - See [`alloc`](Self::alloc) for safety.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T>, Error> {
+    if mem::size_of::<T>() == 0 {
+      return Ok(RefMut::new_zst(self));
+    }
+
+    let allocated = self
+      .alloc_within_page_in::<T>()?
+      .expect("allocated size is not zero, but get None");
+    let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.memory_offset as usize) };
+    if mem::needs_drop::<T>() {
+      unsafe {
+        let ptr: *mut MaybeUninit<T> = ptr.as_ptr().cast();
+        ptr::write(ptr, MaybeUninit::uninit());
+
+        Ok(RefMut::new(ptr::read(ptr), allocated, self))
+      }
+    } else {
+      Ok(RefMut::new_inline(ptr, allocated, self))
+    }
+  }
+
+  /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
+  /// 
+  /// # Safety
+  /// - See [`alloc`](Self::alloc) for safety.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T>, Error> {
+    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
   }
 
   /// Clear the ARENA.
@@ -2710,6 +2984,80 @@ impl Arena {
     }
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn alloc_bytes_within_page_in(&self, size: u32) -> Result<Option<Meta>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    if size == 0 {
+      return Ok(None);
+    }
+
+    if size > self.page_size {
+      return Err(Error::larger_than_page_size(size, self.page_size));
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+    let mut padding_to_next_page = 0;    
+    let want = loop {
+      let page_boundary = self.nearest_page_boundary(allocated);
+      let mut want = allocated + size;
+
+      // Ensure that the allocation will fit within page
+      if want > page_boundary {
+        // Adjust the allocation to start at the next page boundary
+        padding_to_next_page = page_boundary - allocated;
+        want += padding_to_next_page;
+      }
+
+      if want > self.cap {
+        break want;
+      }
+
+      match header.allocated.compare_exchange_weak(
+        allocated,
+        want,
+        Ordering::SeqCst,
+        Ordering::Acquire,
+      ) {
+        Ok(offset) => {
+          #[cfg(feature = "tracing")]
+          tracing::debug!("allocate {} bytes at offset {} from memory", size + padding_to_next_page, offset);
+
+          let mut allocated = Meta::new(self.ptr as _, offset, size + padding_to_next_page);
+          allocated.ptr_offset = allocated.memory_offset + padding_to_next_page;
+          allocated.ptr_size = size;
+          unsafe { allocated.clear(self) };
+
+          #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+          self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+
+          return Ok(Some(allocated));
+        }
+        Err(x) => allocated = x,
+      }
+    };
+
+    Err(Error::InsufficientSpace {
+      requested: want - allocated,
+      available: self.remaining() as u32,
+    })
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  fn nearest_page_boundary(&self, offset: u32) -> u32 {
+    // Calculate the nearest page boundary after the offset
+    let remainder = offset % self.page_size;
+    if remainder == 0 {
+        offset // Already at a page boundary
+    } else {
+        offset + (self.page_size - remainder)
+    }
+  }
+
   fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -2792,12 +3140,82 @@ impl Arena {
     }
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn alloc_aligned_bytes_within_page_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    let t_size = mem::size_of::<T>();
+
+    if t_size == 0 {
+      return self.alloc_bytes_within_page_in(extra);
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+    let want = loop {
+      let page_boundary = self.nearest_page_boundary(allocated);
+      let mut aligned_offset = align_offset::<T>(allocated);
+      let size = t_size as u32;
+      let mut want = aligned_offset + size + extra;
+      let mut estimated_size = want - allocated;
+
+      // Ensure that the allocation will fit within page
+      if want > page_boundary {
+        aligned_offset = align_offset::<T>(page_boundary);
+        want = aligned_offset + size + extra;
+        estimated_size = (aligned_offset - page_boundary) + size + extra;
+      }
+
+      if estimated_size > self.page_size {
+        return Err(Error::larger_than_page_size(estimated_size, self.page_size));
+      }
+
+      if want > self.cap {
+        break want;
+      }
+
+      match header.allocated.compare_exchange_weak(
+        allocated,
+        want,
+        Ordering::SeqCst,
+        Ordering::Acquire,
+      ) {
+        Ok(offset) => {
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
+          allocated.ptr_offset = aligned_offset;
+          allocated.ptr_size = size + extra;
+          unsafe { allocated.clear(self) };
+
+          #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+          self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            "allocate {} bytes at offset {} from memory",
+            want - offset,
+            offset
+          );
+          return Ok(Some(allocated));
+        }
+        Err(x) => allocated = x,
+      }
+    };
+
+    Err(Error::InsufficientSpace {
+      requested: want,
+      available: self.remaining() as u32,
+    })
+  }
+
   fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
 
-    if mem::size_of::<T>() == 0 {
+    let t_size = mem::size_of::<T>();
+    if t_size == 0 {
       return Ok(None);
     }
 
@@ -2805,7 +3223,7 @@ impl Arena {
     let mut allocated = header.allocated.load(Ordering::Acquire);
     let want = loop {
       let align_offset = align_offset::<T>(allocated);
-      let size = mem::size_of::<T>() as u32;
+      let size = t_size as u32;
       let want = align_offset + size;
       if want > self.cap {
         break size;
@@ -2872,6 +3290,81 @@ impl Arena {
 
       i += 1;
     }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn alloc_within_page_in<T>(&self) -> Result<Option<Meta>, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    let t_size = mem::size_of::<T>();
+
+    if t_size == 0 {
+      return Ok(None);
+    }
+
+    if t_size as u32 > self.page_size {
+      return Err(Error::larger_than_page_size(t_size as u32, self.page_size));
+    }
+
+    let header = self.header();
+    let mut allocated = header.allocated.load(Ordering::Acquire);
+    let want = loop {
+      let page_boundary = self.nearest_page_boundary(allocated);
+      let mut aligned_offset = align_offset::<T>(allocated);
+      let size = mem::size_of::<T>() as u32;
+      let mut want = aligned_offset + size;
+      let mut estimated_size = want - allocated;
+
+      // Ensure that the allocation will fit within page
+      if want > page_boundary {
+        aligned_offset = align_offset::<T>(page_boundary);
+        want = aligned_offset + size;
+        estimated_size = (aligned_offset - page_boundary) + size;
+      }
+
+      if estimated_size > self.page_size {
+        return Err(Error::larger_than_page_size(estimated_size, self.page_size));
+      }
+
+      if want > self.cap {
+        break want;
+      }
+
+      match header.allocated.compare_exchange_weak(
+        allocated,
+        want,
+        Ordering::SeqCst,
+        Ordering::Acquire,
+      ) {
+        Ok(offset) => {
+          let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
+          allocated.ptr_offset = aligned_offset;
+          allocated.ptr_size = size;
+          unsafe { allocated.clear(self) };
+
+          #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+          self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            "allocate {} bytes at offset {} from memory",
+            want - offset,
+            offset
+          );
+
+          unsafe { allocated.clear(self) };
+          return Ok(Some(allocated));
+        }
+        Err(x) => allocated = x,
+      }
+    };
+
+    Err(Error::InsufficientSpace {
+      requested: want,
+      available: self.remaining() as u32,
+    })
   }
 
   fn alloc_slow_path_pessimistic(&self, size: u32) -> Result<Meta, Error> {
@@ -3256,6 +3749,8 @@ impl Arena {
       max_retries,
       data_offset: memory.data_offset as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      page_size: *PAGE_SIZE,
     }
   }
 
@@ -3264,6 +3759,21 @@ impl Arena {
     let size = mem::size_of::<T>();
     let align = mem::align_of::<T>();
     size + align - 1
+  }
+
+  #[cfg(test)]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[inline]
+  fn check_page_boundary(&self, offset: u32, len: u32) {
+    if len == 0 {
+      return; // A zero-length range is trivially within the same "page"
+    }
+
+    // Calculate the page boundary of the start and end of the range
+    let start_page = offset / self.page_size;
+    let end_page = (offset + len - 1) / self.page_size;
+
+    assert_eq!(start_page, end_page, "start and end of range must be in the same page"); 
   }
 
   #[cfg(test)]
