@@ -24,7 +24,25 @@ pub use options::*;
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 static PAGE_SIZE: std::sync::LazyLock<u32> =
-  std::sync::LazyLock::new(|| rustix::param::page_size() as u32);
+  std::sync::LazyLock::new(|| {
+    #[cfg(not(windows))]
+    {
+      rustix::param::page_size() as u32
+    }
+    
+  
+    #[cfg(windows)]
+    {
+      use winapi::um::sysinfoapi::GetSystemInfo;
+      use winapi::um::winbase::SYSTEM_INFO;
+
+      unsafe {
+        let mut system_info: SYSTEM_INFO = std::mem::zeroed();
+        GetSystemInfo(&mut system_info);
+        system_info.dwPageSize
+      }
+    }
+  });
 
 /// Enumeration of possible methods to seek within an [`Arena`] allocator.
 ///
