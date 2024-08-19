@@ -1195,6 +1195,7 @@ impl Arena {
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let is_on_disk = arena.is_on_disk();
+  /// assert_eq!(is_on_disk, false);
   /// ```
   #[inline]
   pub const fn is_on_disk(&self) -> bool {
@@ -1209,7 +1210,8 @@ impl Arena {
   /// use rarena_allocator::{Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_on_disk = arena.is_on_disk();
+  /// let is_mmap = arena.is_mmap();
+  /// assert_eq!(is_mmap, false);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
