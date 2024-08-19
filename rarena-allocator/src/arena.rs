@@ -34,6 +34,15 @@ const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 const REMOVED_SEGMENT_NODE: u32 = 0;
 
+bitflags::bitflags! {
+  #[derive(Clone, Copy)]
+  struct MemoryFlags: u8 {
+    const ON_DISK = 0b0000_0001;
+    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+    const MMAP = 0b0000_0010;
+  }
+}
+
 #[derive(Debug)]
 struct AlignedVec {
   ptr: ptr::NonNull<u8>,
@@ -146,7 +155,7 @@ struct Memory {
   refs: AtomicUsize,
   cap: u32,
   data_offset: usize,
-  on_disk: bool,
+  flag: MemoryFlags,
   header_ptr: Either<*mut u8, Header>,
   ptr: *mut u8,
   #[allow(dead_code)]
@@ -279,7 +288,7 @@ impl Memory {
       Self {
         cap: cap as u32,
         refs: AtomicUsize::new(1),
-        on_disk: false,
+        flag: MemoryFlags::empty(),
         ptr,
         header_ptr: header,
         backend: MemoryBackend::Vec(vec),
@@ -422,7 +431,7 @@ impl Memory {
 
         let this = Self {
           cap: cap as u32,
-          on_disk: true,
+          flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
             path: std::sync::Arc::new(path),
@@ -548,7 +557,7 @@ impl Memory {
         let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
           cap: len as u32,
-          on_disk: true,
+          flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
             path: std::sync::Arc::new(path),
@@ -617,7 +626,7 @@ impl Memory {
         };
 
         let this = Self {
-          on_disk: false,
+          flag: MemoryFlags::MMAP,
           cap: mmap.len() as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
           refs: AtomicUsize::new(1),
@@ -1099,7 +1108,7 @@ impl Segment {
 pub struct Arena {
   ptr: *mut u8,
   data_offset: u32,
-  on_disk: bool,
+  flag: MemoryFlags,
   max_retries: u8,
   inner: NonNull<Memory>,
   unify: bool,
@@ -1144,7 +1153,7 @@ impl Clone for Arena {
       // last Arena is dropped.
       Self {
         max_retries: self.max_retries,
-        on_disk: self.on_disk,
+        flag: self.flag,
         magic_version: self.magic_version,
         version: self.version,
         ptr: self.ptr,
@@ -1189,16 +1198,33 @@ impl Arena {
   /// ```
   #[inline]
   pub const fn is_on_disk(&self) -> bool {
-    self.on_disk
+    self.flag.contains(MemoryFlags::ON_DISK)
+  }
+
+  /// Returns `true` if the ARENA is created through memory map.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_on_disk = arena.is_on_disk();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub const fn is_mmap(&self) -> bool {
+    self.flag.contains(MemoryFlags::MMAP)
   }
 
   /// Returns the page size.
   ///
   /// # Example
-  /// 
+  ///
   /// ```rust
   /// use rarena_allocator::{Arena, ArenaOptions};
-  /// 
+  ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let page_size = arena.page_size();
   /// ```
@@ -3834,7 +3860,7 @@ impl Arena {
     Self {
       freelist: memory.freelist,
       cap: memory.cap(),
-      on_disk: memory.on_disk,
+      flag: memory.flag,
       unify,
       magic_version: memory.magic_version,
       version: memory.version,

@@ -15,11 +15,12 @@ keywords = ["arena", "lock-free", "allocator"]
 default = ["std"]
 alloc = []
 std = ["byteorder", "either/default"]
-memmap = ["memmap2", "fs4", "std", "rustix"]
+memmap = ["memmap2", "fs4", "std", "rustix", "bitflags/std"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 
 [dependencies]
+bitflags = { version = "2", default-features = false }
 byteorder = { version = "1", optional = true }
 crossbeam-utils.workspace = true 
 either = { version = "1", default-features = false }
