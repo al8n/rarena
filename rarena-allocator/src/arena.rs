@@ -1192,6 +1192,23 @@ impl Arena {
     self.on_disk
   }
 
+  /// Returns the page size.
+  ///
+  /// # Example
+  /// 
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// 
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let page_size = arena.page_size();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub const fn page_size(&self) -> usize {
+    self.page_size as usize
+  }
+
   /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
   /// [`Arena`].
   ///
