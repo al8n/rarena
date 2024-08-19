@@ -1170,6 +1170,30 @@ impl Arena {
     self.version
   }
 
+  /// Returns `true` if the ARENA is on disk.
+  /// 
+  /// # Example
+  /// 
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// 
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_on_disk = arena.is_on_disk();
+  /// ```
+  #[inline]
+  pub fn is_on_disk(&self) -> bool {
+    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+    {
+      // Safety: the inner is always non-null.
+      unsafe { matches!(self.inner.as_ref().backend, MemoryBackend::Mmap { .. } | MemoryBackend::MmapMut { .. }) }
+    }
+
+    #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
+    { 
+      false
+    }
+  }
+
   /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
   /// [`Arena`].
   ///
