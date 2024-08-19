@@ -146,6 +146,7 @@ struct Memory {
   refs: AtomicUsize,
   cap: u32,
   data_offset: usize,
+  on_disk: bool,
   header_ptr: Either<*mut u8, Header>,
   ptr: *mut u8,
   #[allow(dead_code)]
@@ -278,6 +279,7 @@ impl Memory {
       Self {
         cap: cap as u32,
         refs: AtomicUsize::new(1),
+        on_disk: false,
         ptr,
         header_ptr: header,
         backend: MemoryBackend::Vec(vec),
@@ -420,6 +422,7 @@ impl Memory {
 
         let this = Self {
           cap: cap as u32,
+          on_disk: true,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
             path: std::sync::Arc::new(path),
@@ -545,6 +548,7 @@ impl Memory {
         let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
           cap: len as u32,
+          on_disk: true,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
             path: std::sync::Arc::new(path),
@@ -613,6 +617,7 @@ impl Memory {
         };
 
         let this = Self {
+          on_disk: false,
           cap: mmap.len() as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
           refs: AtomicUsize::new(1),
@@ -1094,6 +1099,7 @@ impl Segment {
 pub struct Arena {
   ptr: *mut u8,
   data_offset: u32,
+  on_disk: bool,
   max_retries: u8,
   inner: NonNull<Memory>,
   unify: bool,
@@ -1138,6 +1144,7 @@ impl Clone for Arena {
       // last Arena is dropped.
       Self {
         max_retries: self.max_retries,
+        on_disk: self.on_disk,
         magic_version: self.magic_version,
         version: self.version,
         ptr: self.ptr,
@@ -1171,27 +1178,18 @@ impl Arena {
   }
 
   /// Returns `true` if the ARENA is on disk.
-  /// 
+  ///
   /// # Example
-  /// 
+  ///
   /// ```rust
   /// use rarena_allocator::{Arena, ArenaOptions};
-  /// 
+  ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let is_on_disk = arena.is_on_disk();
   /// ```
   #[inline]
-  pub fn is_on_disk(&self) -> bool {
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    {
-      // Safety: the inner is always non-null.
-      unsafe { matches!(self.inner.as_ref().backend, MemoryBackend::Mmap { .. } | MemoryBackend::MmapMut { .. }) }
-    }
-
-    #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
-    { 
-      false
-    }
+  pub const fn is_on_disk(&self) -> bool {
+    self.on_disk
   }
 
   /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
@@ -2027,7 +2025,10 @@ impl Arena {
   /// [illumos]: https://illumos.org/man/3C/mlock
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
   #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))))]
+  #[cfg_attr(
+    docsrs,
+    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
+  )]
   #[inline]
   pub unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().mlock(offset, len) }
@@ -2066,7 +2067,10 @@ impl Arena {
   /// [illumos]: https://illumos.org/man/3C/munlock
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
   #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))))]
+  #[cfg_attr(
+    docsrs,
+    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
+  )]
   #[inline]
   pub unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().munlock(offset, len) }
@@ -3813,6 +3817,7 @@ impl Arena {
     Self {
       freelist: memory.freelist,
       cap: memory.cap(),
+      on_disk: memory.on_disk,
       unify,
       magic_version: memory.magic_version,
       version: memory.version,
