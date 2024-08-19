@@ -1201,6 +1201,48 @@ impl Arena {
     self.header().allocated.load(Ordering::Acquire) as usize
   }
 
+  /// Calculates the aligned offset for a given type `T` starting from `current_offset`.
+  ///
+  /// This function aligns the given `current_offset` to the next boundary that satisfies the alignment requirements of type `T`.
+  ///
+  /// # Parameters
+  ///
+  /// - `current_offset`: The initial offset that needs to be aligned.
+  ///
+  /// # Returns
+  ///
+  /// The aligned offset that is the next multiple of the alignment requirement of type `T`.
+  ///
+  /// # Examples
+  ///
+  /// ```ignore
+  /// use std::mem;
+  ///
+  /// #[repr(C, align(8))]
+  /// struct Meta {
+  ///     a: u64,
+  ///     b: u64,
+  /// }
+  ///
+  /// let initial_offset: u32 = 1;
+  /// let aligned_offset = align_offset::<Meta>(initial_offset);
+  /// assert_eq!(aligned_offset, 8);
+  /// ```
+  ///
+  /// # Explanation
+  ///
+  /// - Given an `alignment` of type `T`, this function calculates the next aligned offset from `current_offset`.
+  /// - It ensures that the result is a multiple of `alignment` by adding `alignment - 1` to `current_offset` and then clearing the lower bits using bitwise AND with the negation of `alignment - 1`.
+  ///
+  /// ```ignore
+  /// let alignment = mem::align_of::<T>() as u32;
+  /// (current_offset + alignment - 1) & !(alignment - 1)
+  /// ```
+  #[inline]
+  pub const fn align_offset<T>(offset: u32) -> u32 {
+    align_offset::<T>(offset)
+  }
+
   /// Returns the capacity of the ARENA.
   ///
   /// # Example
@@ -2118,11 +2160,11 @@ impl Arena {
   }
 
   /// Allocates an owned slice of memory in the ARENA in the same page.
-  /// 
+  ///
   /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
   /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
   /// this method will still return an error.
-  /// 
+  ///
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
@@ -2136,7 +2178,7 @@ impl Arena {
   /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
   /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
   /// this method will still return an error.
-  /// 
+  ///
   /// The [`BytesRefMut`] is zeroed out.
   ///
   /// If you want a [`BytesMut`], see [`alloc_bytes_owned_within_page`](Self::alloc_bytes_owned_within_page).
@@ -2234,10 +2276,12 @@ impl Arena {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   pub fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
-    self.alloc_aligned_bytes_within_page_in::<T>(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-    })
+    self
+      .alloc_aligned_bytes_within_page_in::<T>(size)
+      .map(|a| match a {
+        None => BytesRefMut::null(self),
+        Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      })
   }
 
   /// Allocates a `T` in the ARENA.
@@ -2400,9 +2444,9 @@ impl Arena {
   }
 
   /// Allocates a `T` in the ARENA in the same page.
-  /// 
+  ///
   /// # Safety
-  /// 
+  ///
   /// - See [`alloc`](Self::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
@@ -2429,7 +2473,7 @@ impl Arena {
   }
 
   /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
-  /// 
+  ///
   /// # Safety
   /// - See [`alloc`](Self::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -3000,7 +3044,7 @@ impl Arena {
 
     let header = self.header();
     let mut allocated = header.allocated.load(Ordering::Acquire);
-    let mut padding_to_next_page = 0;    
+    let mut padding_to_next_page = 0;
     let want = loop {
       let page_boundary = self.nearest_page_boundary(allocated);
       let mut want = allocated + size;
@@ -3024,7 +3068,11 @@ impl Arena {
       ) {
         Ok(offset) => {
           #[cfg(feature = "tracing")]
-          tracing::debug!("allocate {} bytes at offset {} from memory", size + padding_to_next_page, offset);
+          tracing::debug!(
+            "allocate {} bytes at offset {} from memory",
+            size + padding_to_next_page,
+            offset
+          );
 
           let mut allocated = Meta::new(self.ptr as _, offset, size + padding_to_next_page);
           allocated.ptr_offset = allocated.memory_offset + padding_to_next_page;
@@ -3052,9 +3100,9 @@ impl Arena {
     // Calculate the nearest page boundary after the offset
     let remainder = offset % self.page_size;
     if remainder == 0 {
-        offset // Already at a page boundary
+      offset // Already at a page boundary
     } else {
-        offset + (self.page_size - remainder)
+      offset + (self.page_size - remainder)
     }
   }
 
@@ -3773,7 +3821,10 @@ impl Arena {
     let start_page = offset / self.page_size;
     let end_page = (offset + len - 1) / self.page_size;
 
-    assert_eq!(start_page, end_page, "start and end of range must be in the same page"); 
+    assert_eq!(
+      start_page, end_page,
+      "start and end of range must be in the same page"
+    );
   }
 
   #[cfg(test)]
