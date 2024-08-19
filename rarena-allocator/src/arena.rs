@@ -682,7 +682,7 @@ impl Memory {
 
   /// # Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
   unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
@@ -717,7 +717,7 @@ impl Memory {
 
   /// # Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
   unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
@@ -2002,8 +2002,8 @@ impl Arena {
   /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=mlock&section=2
   /// [illumos]: https://illumos.org/man/3C/mlock
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))))]
   #[inline]
   pub unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().mlock(offset, len) }
@@ -2041,8 +2041,8 @@ impl Arena {
   /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=munlock&section=2
   /// [illumos]: https://illumos.org/man/3C/munlock
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))))]
   #[inline]
   pub unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     unsafe { self.inner.as_ref().munlock(offset, len) }
