@@ -1220,6 +1220,26 @@ impl Arena {
     self.flag.contains(MemoryFlags::MMAP)
   }
 
+  /// Returns `true` if the ARENA is on-disk and created through memory map.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{Arena, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_on_disk_and_mmap = arena.is_mmap();
+  /// assert_eq!(is_mmap, false);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub const fn is_on_disk_and_mmap(&self) -> bool {
+    self
+      .flag
+      .contains(MemoryFlags::ON_DISK.union(MemoryFlags::MMAP))
+  }
+
   /// Returns the page size.
   ///
   /// # Example
@@ -2331,7 +2351,7 @@ impl Arena {
       .map(|mut b| b.to_owned())
   }
 
-  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
   ///
   /// The layout of the allocated memory is:
   ///

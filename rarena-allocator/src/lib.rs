@@ -31,8 +31,7 @@ static PAGE_SIZE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
 
   #[cfg(windows)]
   {
-    use winapi::um::sysinfoapi::GetSystemInfo;
-    use winapi::um::sysinfoapi::SYSTEM_INFO;
+    use winapi::um::sysinfoapi::{GetSystemInfo, SYSTEM_INFO};
 
     unsafe {
       let mut system_info: SYSTEM_INFO = std::mem::zeroed();
