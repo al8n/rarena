@@ -2205,11 +2205,35 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let page_size = (*PAGE_SIZE) as usize;
+
+    // Calculate start page
+    let start_page_offset = (offset / page_size) * page_size;
+
+    // Calculate end page. The end offset is the last byte that needs to be flushed.
+    let end_offset = offset + len - 1;
+    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
+
+    // Check if the end of the last page exceeds the capacity of the memory map
+    let end_flush_offset = end_page_offset.min(self.cap as usize);
+
+    // Ensure that the flush does not start beyond the capacity
+    if start_page_offset >= self.cap as usize {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Offset is out of bounds",
+      ));
+    }
+
     unsafe {
       self
         .inner
         .as_ref()
-        .flush_range(offset, len.min(self.cap as usize))
+        .flush_range(start_page_offset, end_flush_offset - start_page_offset)
     }
   }
 
@@ -2233,11 +2257,35 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let page_size = (*PAGE_SIZE) as usize;
+
+    // Calculate start page
+    let start_page_offset = (offset / page_size) * page_size;
+
+    // Calculate end page. The end offset is the last byte that needs to be flushed.
+    let end_offset = offset + len - 1;
+    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
+
+    // Check if the end of the last page exceeds the capacity of the memory map
+    let end_flush_offset = end_page_offset.min(self.cap as usize);
+
+    // Ensure that the flush does not start beyond the capacity
+    if start_page_offset >= self.cap as usize {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Offset is out of bounds",
+      ));
+    }
+
     unsafe {
       self
         .inner
         .as_ref()
-        .flush_async_range(offset, len.min(self.cap as usize))
+        .flush_async_range(start_page_offset, end_flush_offset - start_page_offset)
     }
   }
 
