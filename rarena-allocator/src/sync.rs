@@ -9,7 +9,7 @@ use core::{
 use crossbeam_utils::Backoff;
 use either::Either;
 
-use crate::{common::*, error::*, ArenaOptions, ArenaPosition, Freelist};
+use crate::{common::*, error::*, ArenaOptions, ArenaPosition, Freelist, MemoryFlags};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions, PAGE_SIZE};
@@ -33,75 +33,6 @@ const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
 const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 const REMOVED_SEGMENT_NODE: u32 = 0;
-
-bitflags::bitflags! {
-  #[derive(Clone, Copy)]
-  struct MemoryFlags: u8 {
-    const ON_DISK = 0b0000_0001;
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    const MMAP = 0b0000_0010;
-  }
-}
-
-#[derive(Debug)]
-struct AlignedVec {
-  ptr: ptr::NonNull<u8>,
-  cap: usize,
-  align: usize,
-}
-
-impl Drop for AlignedVec {
-  #[inline]
-  fn drop(&mut self) {
-    if self.cap != 0 {
-      unsafe {
-        dealloc(self.ptr.as_ptr(), self.layout());
-      }
-    }
-  }
-}
-
-impl AlignedVec {
-  #[inline]
-  fn new(capacity: usize, align: usize) -> Self {
-    let align = align.max(mem::align_of::<Header>());
-    assert!(
-      capacity <= Self::max_capacity(align),
-      "`capacity` cannot exceed isize::MAX - {}",
-      align - 1
-    );
-
-    let ptr = unsafe {
-      let layout = Layout::from_size_align_unchecked(capacity, align);
-      let ptr = alloc_zeroed(layout);
-      if ptr.is_null() {
-        std::alloc::handle_alloc_error(layout);
-      }
-      ptr::NonNull::new_unchecked(ptr)
-    };
-
-    Self {
-      ptr,
-      cap: capacity,
-      align,
-    }
-  }
-
-  #[inline]
-  const fn max_capacity(align: usize) -> usize {
-    isize::MAX as usize - (align - 1)
-  }
-
-  #[inline]
-  const fn layout(&self) -> std::alloc::Layout {
-    unsafe { std::alloc::Layout::from_size_align_unchecked(self.cap, self.align) }
-  }
-
-  #[inline]
-  fn as_mut_ptr(&mut self) -> *mut u8 {
-    self.ptr.as_ptr()
-  }
-}
 
 enum MemoryBackend {
   #[allow(dead_code)]
@@ -262,7 +193,7 @@ impl Memory {
       cap.saturating_add(alignment as u32)
     } as usize;
 
-    let mut vec = AlignedVec::new(cap, alignment);
+    let mut vec = AlignedVec::new::<Header>(cap, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.as_mut_ptr();
@@ -1176,7 +1107,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let version = arena.version();
@@ -1191,7 +1122,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let is_on_disk = arena.is_on_disk();
@@ -1207,7 +1138,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let is_mmap = arena.is_mmap();
@@ -1225,7 +1156,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let is_on_disk_and_mmap = arena.is_on_disk_and_mmap();
@@ -1245,7 +1176,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let page_size = arena.page_size();
@@ -1263,7 +1194,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let magic_version = arena.magic_version();
@@ -1278,7 +1209,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let allocated = arena.allocated();
@@ -1335,7 +1266,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let capacity = arena.capacity();
@@ -1350,7 +1281,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let remaining = arena.remaining();
@@ -1365,7 +1296,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let refs = arena.refs();
@@ -1380,7 +1311,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let discarded = arena.discarded();
@@ -1395,7 +1326,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// arena.increase_discarded(100);
@@ -1415,7 +1346,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// arena.discard_freelist();
@@ -1437,7 +1368,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let min_segment_size = arena.minimum_segment_size();
@@ -1452,7 +1383,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// arena.set_minimum_segment_size(100);
@@ -1470,7 +1401,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let data_offset = arena.data_offset();
@@ -1485,7 +1416,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let data = arena.data();
@@ -1504,7 +1435,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let memory = arena.memory();
@@ -1520,7 +1451,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let memory = arena.memory();
@@ -1535,7 +1466,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// let read_only = arena.read_only();
@@ -1555,7 +1486,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// # use rarena_allocator::{Arena, ArenaOptions};
+  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// # let arena = Arena::new(ArenaOptions::new());
   /// arena.remove_on_drop(true);
@@ -1581,7 +1512,7 @@ impl Arena {
   /// # Examples
   ///
   /// ```rust
-  /// # use rarena_allocator::{Arena, ArenaOptions};
+  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// # let arena = Arena::new(ArenaOptions::new());
   /// arena.shrink_on_drop(true);
@@ -1599,7 +1530,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// # use rarena_allocator::{Arena, ArenaOptions};
+  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// # let arena = Arena::new(ArenaOptions::new());
   /// let path = arena.path();
@@ -1629,7 +1560,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// ```
@@ -1644,7 +1575,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1673,7 +1604,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1707,7 +1638,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1738,7 +1669,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1770,7 +1701,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1805,7 +1736,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1843,7 +1774,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1878,7 +1809,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -1921,7 +1852,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, MmapOptions};
   ///
   /// let mmap_options = MmapOptions::new().len(100);
   /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
@@ -1946,7 +1877,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -1968,7 +1899,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -1990,7 +1921,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -2012,7 +1943,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -2034,7 +1965,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -2146,7 +2077,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -2168,7 +2099,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -2191,7 +2122,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
@@ -2242,7 +2173,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions, OpenOptions, MmapOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -2578,7 +2509,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   ///
@@ -2655,7 +2586,7 @@ impl Arena {
   /// Good practice:
   ///
   /// ```rust
-  /// use rarena_allocator::{Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   ///
