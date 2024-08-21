@@ -2205,7 +2205,7 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush_range(offset, len) }
+    unsafe { self.inner.as_ref().flush_range(offset, len.min(self.cap as usize)) }
   }
 
   /// Asynchronously flushes outstanding memory map modifications in the range to disk.
@@ -2228,7 +2228,7 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush_async_range(offset, len) }
+    unsafe { self.inner.as_ref().flush_async_range(offset, len.min(self.cap as usize)) }
   }
 
   /// Allocates an owned slice of memory in the ARENA.
