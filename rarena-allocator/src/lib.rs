@@ -84,10 +84,9 @@ mod common {
   use core::{mem, ptr};
 
   #[cfg(not(feature = "loom"))]
-  pub(crate) use std::{
-    alloc::{alloc_zeroed, dealloc, Layout},
-    cell::UnsafeCell,
-  };
+  pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};
+  #[cfg(not(feature = "loom"))]
+  pub(crate) use core::cell::UnsafeCell;
 
   #[cfg(feature = "loom")]
   pub(crate) use loom::{
