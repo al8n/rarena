@@ -109,9 +109,11 @@ fn alloc_offset_and_size(a: Arena) {
   let meta_offset = (offset + alignment - 1) & !(alignment - 1);
   let meta_end = meta_offset + mem::size_of::<Meta>();
 
-  let meta = unsafe { a.alloc::<Meta>().unwrap() };
-  assert_eq!(meta.offset(), meta_offset);
-  assert_eq!(meta.size() + meta.offset(), meta_end);
+  {
+    let meta = unsafe { a.alloc::<Meta>().unwrap() };
+    assert_eq!(meta.offset(), meta_offset);
+    assert_eq!(meta.size() + meta.offset(), meta_end);
+  }
 
   let head = a
     .alloc_aligned_bytes::<Node<u64>>(20 * mem::size_of::<Link>() as u32)
@@ -285,11 +287,13 @@ fn alloc_inlined_mmap_anon_unify() {
 }
 
 fn alloc_zst(a: Arena) {
-  let mut b = unsafe { a.alloc::<()>().unwrap() };
+  {
+    let mut b = unsafe { a.alloc::<()>().unwrap() };
 
-  unsafe {
-    assert_eq!(b.as_ref(), &());
-    assert_eq!(b.as_mut(), &mut ());
+    unsafe {
+      assert_eq!(b.as_ref(), &());
+      assert_eq!(b.as_mut(), &mut ());
+    }
   }
 
   let mut c = unsafe { a.alloc::<core::marker::PhantomData<Vec<u8>>>().unwrap() };
@@ -636,126 +640,6 @@ fn allocate_slow_path(l: Arena) {
   // allocate from segments
   for i in (1..=5).rev() {
     l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-  }
-}
-
-#[cfg(all(not(feature = "loom"), feature = "std"))]
-fn allocate_slow_path_concurrent_create_segments(l: Arena) {
-  use std::sync::{Arc, Barrier};
-
-  let b = Arc::new(Barrier::new(5));
-  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
-  let mut handles = std::vec::Vec::new();
-
-  // make some segments
-  for i in 1..=5 {
-    let l = l.clone();
-    let b = b.clone();
-    let allocated = allocated.clone();
-    handles.push(std::thread::spawn(move || {
-      b.wait();
-      let bytes = l.alloc_bytes_owned(i * 50).unwrap();
-      let _ = allocated.push(bytes);
-    }));
-  }
-
-  for handle in handles {
-    handle.join().unwrap();
-  }
-
-  let remaining = l.remaining();
-  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
-  drop(allocated);
-
-  // allocate from segments
-  for i in (1..=5).rev() {
-    let mut b = l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-    b.detach();
-  }
-
-  while l.refs() > 1 {
-    std::thread::yield_now();
-  }
-}
-
-#[cfg(all(not(feature = "loom"), feature = "std"))]
-fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
-  use std::sync::{Arc, Barrier};
-
-  let b = Arc::new(Barrier::new(5));
-  let mut allocated = std::vec::Vec::new();
-
-  // make some segments
-  for _ in 1..=5 {
-    let bytes = l.alloc_bytes(50).unwrap();
-    allocated.push(bytes);
-  }
-
-  let remaining = l.remaining();
-  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
-  drop(allocated);
-
-  // allocate from segments
-  for _ in (1..=5).rev() {
-    let l = l.clone();
-    let b = b.clone();
-    std::thread::spawn(move || {
-      b.wait();
-      let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
-      std::thread::yield_now();
-    });
-  }
-
-  while l.refs() > 1 {
-    std::thread::yield_now();
-  }
-}
-
-#[cfg(all(not(feature = "loom"), feature = "std"))]
-fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Arena) {
-  use std::sync::{Arc, Barrier};
-
-  let b = Arc::new(Barrier::new(5));
-  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
-  let mut handles = std::vec::Vec::new();
-
-  // make some segments
-  for _ in 1..=5 {
-    let l = l.clone();
-    let b = b.clone();
-    let allocated = allocated.clone();
-    handles.push(std::thread::spawn(move || {
-      b.wait();
-      let bytes = l.alloc_bytes_owned(50).unwrap();
-      let _ = allocated.push(bytes);
-    }));
-  }
-
-  for handle in handles {
-    handle.join().unwrap();
-  }
-
-  let remaining = l.remaining();
-  let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
-  drop(allocated);
-
-  // allocate from segments
-  for _ in (1..=5).rev() {
-    let l = l.clone();
-    let b = b.clone();
-    std::thread::spawn(move || {
-      b.wait();
-      let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
-    });
-  }
-
-  while l.refs() > 1 {
-    std::thread::yield_now();
   }
 }
 

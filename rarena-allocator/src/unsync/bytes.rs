@@ -10,9 +10,6 @@ pub struct BytesMut {
   allocated: Meta,
 }
 
-unsafe impl Send for BytesMut {}
-unsafe impl Sync for BytesMut {}
-
 impl ops::Deref for BytesMut {
   type Target = [u8];
 
@@ -194,7 +191,7 @@ impl Drop for BytesMut {
 
 /// A buffer that allocated by the ARENA
 pub struct BytesRefMut<'a> {
-  arena: &'a mut Arena,
+  arena: &'a Arena,
   len: usize,
   pub(super) allocated: Meta,
   pub(super) detach: bool,
@@ -336,7 +333,7 @@ impl<'a> BytesRefMut<'a> {
 
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
-  pub(super) unsafe fn new(arena: &'a mut Arena, allocated: Meta) -> Self {
+  pub(super) unsafe fn new(arena: &'a Arena, allocated: Meta) -> Self {
     Self {
       arena,
       len: 0,
@@ -346,7 +343,7 @@ impl<'a> BytesRefMut<'a> {
   }
 
   #[inline]
-  pub(super) fn null(arena: &'a mut Arena) -> Self {
+  pub(super) fn null(arena: &'a Arena) -> Self {
     Self {
       allocated: Meta::null(arena.ptr as _),
       arena,

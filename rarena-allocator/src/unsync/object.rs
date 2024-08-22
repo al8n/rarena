@@ -190,7 +190,7 @@ impl<T> Drop for Owned<T> {
 #[must_use = "The `T` is uninitialized, and must be initialized by `write` before it is used, if `T` is not zero sized type."]
 pub struct RefMut<'a, T> {
   kind: Kind<T>,
-  arena: &'a mut Arena,
+  arena: &'a Arena,
   detached: bool,
   pub(super) allocated: Meta,
 }
@@ -314,7 +314,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a mut Arena) -> Self {
+  pub(super) fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Slot(slot),
       arena,
@@ -324,7 +324,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a mut Arena) -> Self {
+  pub(super) fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Inline(value),
       arena,
@@ -334,7 +334,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) fn new_zst(arena: &'a mut Arena) -> Self {
+  pub(super) fn new_zst(arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Dangling(NonNull::dangling()),
       allocated: Meta::null(arena.ptr as _),
