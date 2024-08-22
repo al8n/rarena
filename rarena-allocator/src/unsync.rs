@@ -1353,7 +1353,7 @@ impl Arena {
   /// arena.discard_freelist();
   /// ```
   #[inline]
-  pub fn discard_freelist(&mut self) -> Result<u32, Error> {
+  pub fn discard_freelist(&self) -> Result<u32, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }

@@ -541,26 +541,12 @@ fn check_data_offset_mmap_anon_unify() {
 
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn discard_freelist_in(l: Arena) {
-  use std::sync::{Arc, Barrier};
-
-  let b = Arc::new(Barrier::new(5));
-  let allocated = Arc::new(crossbeam_queue::ArrayQueue::new(5));
-  let mut handles = std::vec::Vec::new();
+  let mut allocated = std::vec::Vec::new();
 
   // make some segments
   for i in 1..=5 {
-    let l = l.clone();
-    let b = b.clone();
-    let allocated = allocated.clone();
-    handles.push(std::thread::spawn(move || {
-      b.wait();
-      let bytes = l.alloc_bytes_owned(i * 50).unwrap();
-      let _ = allocated.push(bytes);
-    }));
-  }
-
-  for handle in handles {
-    handle.join().unwrap();
+    let bytes = l.alloc_bytes_owned(i * 50).unwrap();
+    let _ = allocated.push(bytes);
   }
 
   let remaining = l.remaining();
