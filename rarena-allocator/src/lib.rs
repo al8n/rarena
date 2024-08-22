@@ -114,7 +114,7 @@ mod common {
     }
   }
 
-  impl<T> UnsafeCellExt<T> for std::cell::UnsafeCell<T> {
+  impl<T> UnsafeCellExt<T> for core::cell::UnsafeCell<T> {
     #[inline]
     fn as_inner_ptr(&self) -> *const T {
       self.get()
