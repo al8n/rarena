@@ -1,5 +1,4 @@
 use core::{
-  cell::RefCell,
   fmt,
   mem::{self, MaybeUninit},
   ops,
@@ -70,7 +69,7 @@ impl Header {
 }
 
 struct Memory {
-  refs: RefCell<usize>,
+  refs: UnsafeCell<usize>,
   cap: u32,
   data_offset: usize,
   flag: MemoryFlags,
@@ -205,7 +204,7 @@ impl Memory {
 
       Self {
         cap: cap as u32,
-        refs: RefCell::new(1),
+        refs: UnsafeCell::new(1),
         flag: MemoryFlags::empty(),
         ptr,
         header_ptr: header,
@@ -359,7 +358,7 @@ impl Memory {
           },
           header_ptr: Either::Left(header_ptr as _),
           ptr,
-          refs: RefCell::new(1),
+          refs: UnsafeCell::new(1),
           data_offset,
           unify: true,
           magic_version,
@@ -485,7 +484,7 @@ impl Memory {
           },
           header_ptr: Either::Left(header_ptr),
           ptr: ptr as _,
-          refs: RefCell::new(1),
+          refs: UnsafeCell::new(1),
           data_offset,
           unify: true,
           magic_version,
@@ -547,7 +546,7 @@ impl Memory {
           flag: MemoryFlags::MMAP,
           cap: mmap.len() as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
-          refs: RefCell::new(1),
+          refs: UnsafeCell::new(1),
           data_offset,
           header_ptr: header,
           ptr,
@@ -1072,7 +1071,7 @@ impl Clone for Arena {
     unsafe {
       let memory = self.inner.as_ref();
 
-      let mut refs = memory.refs.borrow_mut();
+      let refs = memory.refs.as_inner_ref_mut();
       let old_refs = *refs;
       if old_refs > usize::MAX >> 1 {
         abort();
@@ -1304,7 +1303,7 @@ impl Arena {
   /// ```
   #[inline]
   pub fn refs(&self) -> usize {
-    unsafe { *self.inner.as_ref().refs.borrow() }
+    unsafe { *self.inner.as_ref().refs.as_inner_ref() }
   }
 
   /// Returns the number of bytes discarded by the ARENA.
@@ -3592,7 +3591,7 @@ impl Drop for Arena {
       let memory_ptr = self.inner.as_ptr();
       let memory = &*memory_ptr;
       // `Memory` storage... follow the drop steps from Arc.
-      let mut refs = memory.refs.borrow_mut();
+      let refs = memory.refs.as_inner_ref_mut();
 
       if *refs != 1 {
         return;
