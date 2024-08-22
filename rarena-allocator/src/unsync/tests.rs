@@ -81,17 +81,17 @@ fn alloc_offset_and_size(a: Arena) {
   #[repr(C)]
   struct Meta {
     /// The maximum MVCC version of the skiplist. CAS.
-    max_version: AtomicU64,
+    max_version: u64,
     /// The minimum MVCC version of the skiplist. CAS.
-    min_version: AtomicU64,
+    min_version: u64,
     /// Current height. 1 <= height <= kMaxHeight. CAS.
-    height: AtomicU32,
-    len: AtomicU32,
+    height: u32,
+    len: u32,
   }
 
   #[repr(C)]
   struct Node<T> {
-    value: AtomicU64,
+    value: u64,
     key_offset: u32,
     key_size_and_height: u32,
     trailer: PhantomData<T>,
@@ -100,8 +100,8 @@ fn alloc_offset_and_size(a: Arena) {
   #[derive(Debug)]
   #[repr(C)]
   struct Link {
-    next_offset: AtomicU32,
-    prev_offset: AtomicU32,
+    next_offset: u32,
+    prev_offset: u32,
   }
 
   let offset = a.data_offset();
@@ -109,11 +109,9 @@ fn alloc_offset_and_size(a: Arena) {
   let meta_offset = (offset + alignment - 1) & !(alignment - 1);
   let meta_end = meta_offset + mem::size_of::<Meta>();
 
-  {
-    let meta = unsafe { a.alloc::<Meta>().unwrap() };
-    assert_eq!(meta.offset(), meta_offset);
-    assert_eq!(meta.size() + meta.offset(), meta_end);
-  }
+  let meta = unsafe { a.alloc::<Meta>().unwrap() };
+  assert_eq!(meta.offset(), meta_offset);
+  assert_eq!(meta.size() + meta.offset(), meta_end);
 
   let head = a
     .alloc_aligned_bytes::<Node<u64>>(20 * mem::size_of::<Link>() as u32)

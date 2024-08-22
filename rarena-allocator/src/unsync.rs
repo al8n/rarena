@@ -1386,7 +1386,7 @@ impl Arena {
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let mut arena = Arena::new(ArenaOptions::new());
   /// arena.set_minimum_segment_size(100);
   /// ```
   #[inline]
@@ -2600,7 +2600,7 @@ impl Arena {
   /// }
   ///
   /// ```
-  pub unsafe fn clear(&mut self) -> Result<(), Error> {
+  pub unsafe fn clear(&self) -> Result<(), Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -3182,7 +3182,7 @@ impl Arena {
       return Ok(None);
     }
 
-    let header = self.header();
+    let header = self.header_mut();
     let allocated = header.allocated;
     let align_offset = align_offset::<T>(allocated);
     let size = t_size as u32;
@@ -3190,6 +3190,7 @@ impl Arena {
 
     if want <= self.cap {
       let offset = header.allocated;
+      header.allocated = want;
       let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
       allocated.align_to::<T>();
 
@@ -3243,7 +3244,7 @@ impl Arena {
       return Err(Error::larger_than_page_size(t_size as u32, self.page_size));
     }
 
-    let header = self.header();
+    let header = self.header_mut();
     let allocated = header.allocated;
     let page_boundary = self.nearest_page_boundary(allocated);
     let mut aligned_offset = align_offset::<T>(allocated);
@@ -3264,6 +3265,7 @@ impl Arena {
 
     if want <= self.cap {
       let offset = header.allocated;
+      header.allocated = want;
       let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
       allocated.ptr_offset = aligned_offset;
       allocated.ptr_size = size;
