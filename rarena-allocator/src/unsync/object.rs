@@ -92,8 +92,8 @@ impl<T> Owned<T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     self.arena.flush_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
@@ -298,8 +298,8 @@ impl<'a, T> RefMut<'a, T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush(&self) -> std::io::Result<()> {
     self.arena.flush_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
@@ -308,13 +308,13 @@ impl<'a, T> RefMut<'a, T> {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   pub fn flush_async(&self) -> std::io::Result<()> {
     self.arena.flush_async_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
     )
   }
 
   #[inline]
-  pub(super) const fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a Arena) -> Self {
+  pub(super) fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Slot(slot),
       arena,
@@ -324,7 +324,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) const fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a Arena) -> Self {
+  pub(super) fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Inline(value),
       arena,
@@ -334,7 +334,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) const fn new_zst(arena: &'a Arena) -> Self {
+  pub(super) fn new_zst(arena: &'a Arena) -> Self {
     Self {
       kind: Kind::Dangling(NonNull::dangling()),
       allocated: Meta::null(arena.ptr as _),

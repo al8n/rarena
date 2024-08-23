@@ -175,6 +175,24 @@ pub enum Error {
   },
   /// The arena is read-only
   ReadOnly,
+
+  /// The requested size is larger than the page size
+  LargerThanPageSize {
+    /// The requested size
+    requested: u32,
+    /// The page size
+    page_size: u32,
+  },
+}
+
+impl Error {
+  #[inline]
+  pub(crate) const fn larger_than_page_size(requested: u32, page_size: u32) -> Self {
+    Self::LargerThanPageSize {
+      requested,
+      page_size,
+    }
+  }
 }
 
 impl core::fmt::Display for Error {
@@ -189,6 +207,14 @@ impl core::fmt::Display for Error {
         requested, available
       ),
       Error::ReadOnly => write!(f, "Arena is read-only"),
+      Error::LargerThanPageSize {
+        requested,
+        page_size,
+      } => write!(
+        f,
+        "Allocation failed: cannot allocate in the same page, requested size is {}, but the page size is {}",
+        requested, page_size
+      ),
     }
   }
 }
