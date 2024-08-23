@@ -952,7 +952,7 @@ impl Meta {
   }
 }
 
-#[repr(align(8))]
+#[repr(transparent)]
 struct SegmentNode {
   /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
