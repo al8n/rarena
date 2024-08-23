@@ -69,7 +69,7 @@ impl Header {
 }
 
 struct Memory {
-  refs: UnsafeCell<usize>,
+  refs: usize,
   cap: u32,
   data_offset: usize,
   flag: MemoryFlags,
@@ -204,7 +204,7 @@ impl Memory {
 
       Self {
         cap: cap as u32,
-        refs: UnsafeCell::new(1),
+        refs: 1,
         flag: MemoryFlags::empty(),
         ptr,
         header_ptr: header,
@@ -358,7 +358,7 @@ impl Memory {
           },
           header_ptr: Either::Left(header_ptr as _),
           ptr,
-          refs: UnsafeCell::new(1),
+          refs: 1,
           data_offset,
           unify: true,
           magic_version,
@@ -484,7 +484,7 @@ impl Memory {
           },
           header_ptr: Either::Left(header_ptr),
           ptr: ptr as _,
-          refs: UnsafeCell::new(1),
+          refs: 1,
           data_offset,
           unify: true,
           magic_version,
@@ -546,7 +546,7 @@ impl Memory {
           flag: MemoryFlags::MMAP,
           cap: mmap.len() as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
-          refs: UnsafeCell::new(1),
+          refs: 1,
           data_offset,
           header_ptr: header,
           ptr,
@@ -1069,15 +1069,14 @@ impl fmt::Debug for Arena {
 impl Clone for Arena {
   fn clone(&self) -> Self {
     unsafe {
-      let memory = self.inner.as_ref();
+      let memory = &mut *self.inner.as_ptr();
 
-      let refs = memory.refs.as_inner_ref_mut();
-      let old_refs = *refs;
-      if old_refs > usize::MAX >> 1 {
+      let refs = memory.refs;
+      if refs > usize::MAX >> 1 {
         abort();
       }
 
-      *refs += 1;
+      memory.refs += 1;
 
       // Safety:
       // The ptr is always non-null, and the data is only deallocated when the
@@ -1303,7 +1302,7 @@ impl Arena {
   /// ```
   #[inline]
   pub fn refs(&self) -> usize {
-    unsafe { *self.inner.as_ref().refs.as_inner_ref() }
+    unsafe { self.inner.as_ref().refs }
   }
 
   /// Returns the number of bytes discarded by the ARENA.
@@ -3589,12 +3588,10 @@ impl Drop for Arena {
   fn drop(&mut self) {
     unsafe {
       let memory_ptr = self.inner.as_ptr();
-      let memory = &*memory_ptr;
+      let memory = &mut *memory_ptr;
       // `Memory` storage... follow the drop steps from Arc.
-      let refs = memory.refs.as_inner_ref_mut();
-
-      if *refs != 1 {
-        *refs -= 1;
+      if memory.refs != 1 {
+        memory.refs -= 1;
         return;
       }
 
