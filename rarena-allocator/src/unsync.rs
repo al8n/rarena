@@ -47,7 +47,7 @@ enum MemoryBackend {
 }
 
 #[derive(Debug)]
-#[repr(C)]
+#[repr(C, align(8))]
 struct Header {
   /// The sentinel node for the ordered free list.
   sentinel: SegmentNode,
@@ -952,7 +952,7 @@ impl Meta {
   }
 }
 
-#[repr(transparent)]
+#[repr(align(8))]
 struct SegmentNode {
   /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
