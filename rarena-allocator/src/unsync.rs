@@ -3594,10 +3594,9 @@ impl Drop for Arena {
       let refs = memory.refs.as_inner_ref_mut();
 
       if *refs != 1 {
+        *refs -= 1;
         return;
       }
-
-      *refs -= 1;
 
       // This fence is needed to prevent reordering of use of the data and
       // deletion of the data.  Because it is marked `Release`, the decreasing
