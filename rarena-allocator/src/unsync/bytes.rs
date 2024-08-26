@@ -155,7 +155,7 @@ impl BytesMut {
   }
 
   #[inline]
-  const fn buffer(&self) -> &[u8] {
+  fn buffer(&self) -> &[u8] {
     match self.arena {
       // SAFETY: The buffer is allocated by the ARENA, and the len and offset are valid.
       Either::Left(ref arena) => unsafe { arena.get_bytes(self.offset(), self.capacity()) },
@@ -369,7 +369,7 @@ impl<'a> BytesRefMut<'a> {
   }
 
   #[inline]
-  const fn buffer(&self) -> &[u8] {
+  fn buffer(&self) -> &[u8] {
     if self.allocated.ptr_size == 0 {
       return &[];
     }

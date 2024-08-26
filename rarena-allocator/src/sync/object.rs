@@ -240,7 +240,7 @@ impl<'a, T> RefMut<'a, T> {
   ///
   /// If this value is `0`, then the `T` is ZST (zero sized type).
   #[inline]
-  pub const fn memory_size(&self) -> usize {
+  pub const fn memory_capacity(&self) -> usize {
     self.allocated.memory_size as usize
   }
 
