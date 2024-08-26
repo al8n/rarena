@@ -35,6 +35,9 @@ pub struct Owned<T, A: Allocator> {
   pub(super) allocated: Meta,
 }
 
+unsafe impl<A: Allocator + Send, T> Send for Owned<T, A> {}
+unsafe impl<A: Allocator + Sync, T> Sync for Owned<T, A> {}
+
 impl<T, A: Allocator> crate::Memory for Owned<T, A> {
   /// Returns how many bytes of `T` occupies.
   ///

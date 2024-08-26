@@ -551,7 +551,9 @@ fn discard_freelist_in(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   l.discard_freelist().unwrap();

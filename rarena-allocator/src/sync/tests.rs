@@ -565,7 +565,9 @@ fn discard_freelist_in(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   l.discard_freelist().unwrap();
@@ -669,13 +671,17 @@ fn allocate_slow_path_concurrent_create_segments(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
   for i in (1..=5).rev() {
     let mut b = l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-    b.detach();
+    unsafe {
+      b.detach();
+    }
   }
 
   while l.refs() > 1 {
@@ -698,7 +704,9 @@ fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
@@ -708,7 +716,9 @@ fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
     std::thread::spawn(move || {
       b.wait();
       let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
+      unsafe {
+        b.detach();
+      }
       std::thread::yield_now();
     });
   }
@@ -744,7 +754,9 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
@@ -754,7 +766,9 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
     std::thread::spawn(move || {
       b.wait();
       let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
+      unsafe {
+        b.detach();
+      }
     });
   }
 

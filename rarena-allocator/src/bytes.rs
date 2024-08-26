@@ -12,6 +12,9 @@ pub struct BytesMut<A: Allocator> {
   allocated: Meta,
 }
 
+unsafe impl<A: Allocator + Send> Send for BytesMut<A> {}
+unsafe impl<A: Allocator + Sync> Sync for BytesMut<A> {}
+
 impl<A: Allocator> ops::Deref for BytesMut<A> {
   type Target = [u8];
 

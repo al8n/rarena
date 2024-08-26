@@ -1028,7 +1028,9 @@ impl Clone for Arena {
   }
 }
 
-impl Sealed for Arena {
+impl Sealed for Arena {}
+
+impl Allocator for Arena {
   /// Allocates a `T` in the ARENA.
   ///
   /// # Safety
@@ -1880,8 +1882,8 @@ impl Sealed for Arena {
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_on_disk = arena.is_on_disk();
-  /// assert_eq!(is_on_disk, false);
+  /// let is_ondisk = arena.is_ondisk();
+  /// assert_eq!(is_ondisk, false);
   /// ```
   #[inline]
   fn is_ondisk(&self) -> bool {
@@ -1896,8 +1898,8 @@ impl Sealed for Arena {
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_on_disk_and_mmap = arena.is_on_disk_and_mmap();
-  /// assert_eq!(is_on_disk_and_mmap, false);
+  /// let is_ondisk_and_mmap = arena.is_ondisk_and_mmap();
+  /// assert_eq!(is_ondisk_and_mmap, false);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
