@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use crate::Memory as _;
+
 use super::*;
 
 mod optimistic_slow_path;
@@ -111,7 +113,7 @@ fn alloc_offset_and_size(a: Arena) {
 
   let meta = unsafe { a.alloc::<Meta>().unwrap() };
   assert_eq!(meta.offset(), meta_offset);
-  assert_eq!(meta.size() + meta.offset(), meta_end);
+  assert_eq!(meta.capacity() + meta.offset(), meta_end);
 
   let head = a
     .alloc_aligned_bytes::<Node<u64>>(20 * mem::size_of::<Link>() as u32)
@@ -414,6 +416,8 @@ fn carefully_alloc_mmap_anon_unify() {
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn recoverable_in() {
+  use crate::Memory as _;
+
   struct Recoverable {
     field1: u64,
     field2: AtomicU32,

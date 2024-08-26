@@ -1,7 +1,6 @@
 use core::{
   fmt,
   mem::{self, MaybeUninit},
-  ops,
   ptr::{self, NonNull},
   slice,
 };
@@ -9,8 +8,7 @@ use core::{
 use crossbeam_utils::Backoff;
 use either::Either;
 
-use super::*;
-use crate::{common::*, ArenaOptions, ArenaPosition, Freelist, MemoryFlags};
+use super::{common::*, sealed::Sealed, *};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions, PAGE_SIZE};
@@ -888,65 +886,6 @@ impl Memory {
   }
 }
 
-/// The metadata of the structs allocated from ARENA.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Meta {
-  parent_ptr: *const u8,
-  memory_offset: u32,
-  memory_size: u32,
-  ptr_offset: u32,
-  ptr_size: u32,
-}
-
-unsafe impl Send for Meta {}
-unsafe impl Sync for Meta {}
-
-impl Meta {
-  #[inline]
-  const fn null(parent_ptr: *const u8) -> Self {
-    Self {
-      parent_ptr,
-      memory_offset: 0,
-      memory_size: 0,
-      ptr_offset: 0,
-      ptr_size: 0,
-    }
-  }
-
-  #[inline]
-  const fn new(parent_ptr: *const u8, memory_offset: u32, memory_size: u32) -> Self {
-    Self {
-      parent_ptr,
-      memory_offset,
-      memory_size,
-      // just set the ptr_offset to the memory_offset, and ptr_size to the memory_size.
-      // we will align the ptr_offset and ptr_size when it should be aligned.
-      ptr_offset: memory_offset,
-      ptr_size: memory_size,
-    }
-  }
-
-  #[inline]
-  unsafe fn clear(&self, arena: &Arena) {
-    let ptr = arena.ptr.add(self.ptr_offset as usize);
-    ptr::write_bytes(ptr, 0, self.ptr_size as usize);
-  }
-
-  #[inline]
-  fn align_to<T>(&mut self) {
-    let align_offset = align_offset::<T>(self.memory_offset);
-    self.ptr_offset = align_offset;
-    self.ptr_size = mem::size_of::<T>() as u32;
-  }
-
-  #[inline]
-  fn align_bytes_to<T>(&mut self) {
-    let align_offset = align_offset::<T>(self.memory_offset);
-    self.ptr_offset = align_offset;
-    self.ptr_size = self.memory_offset + self.memory_size - self.ptr_offset;
-  }
-}
-
 #[repr(transparent)]
 struct SegmentNode {
   /// The first 32 bits are the size of the memory,
@@ -1089,1271 +1028,7 @@ impl Clone for Arena {
   }
 }
 
-impl Arena {
-  /// Returns the version of the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let version = arena.version();
-  /// ```
-  #[inline]
-  pub const fn version(&self) -> u16 {
-    self.version
-  }
-
-  /// Returns `true` if the ARENA is on disk.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_on_disk = arena.is_on_disk();
-  /// assert_eq!(is_on_disk, false);
-  /// ```
-  #[inline]
-  pub const fn is_on_disk(&self) -> bool {
-    self.flag.contains(MemoryFlags::ON_DISK)
-  }
-
-  /// Returns `true` if the ARENA is created through memory map.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_mmap = arena.is_mmap();
-  /// assert_eq!(is_mmap, false);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub const fn is_mmap(&self) -> bool {
-    self.flag.contains(MemoryFlags::MMAP)
-  }
-
-  /// Returns `true` if the ARENA is on-disk and created through memory map.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let is_on_disk_and_mmap = arena.is_on_disk_and_mmap();
-  /// assert_eq!(is_on_disk_and_mmap, false);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub const fn is_on_disk_and_mmap(&self) -> bool {
-    self
-      .flag
-      .contains(MemoryFlags::ON_DISK.union(MemoryFlags::MMAP))
-  }
-
-  /// Returns the page size.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let page_size = arena.page_size();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub const fn page_size(&self) -> usize {
-    self.page_size as usize
-  }
-
-  /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
-  /// [`Arena`].
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let magic_version = arena.magic_version();
-  /// ```
-  #[inline]
-  pub const fn magic_version(&self) -> u16 {
-    self.magic_version
-  }
-
-  /// Returns the number of bytes allocated by the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let allocated = arena.allocated();
-  /// ```
-  #[inline]
-  pub fn allocated(&self) -> usize {
-    self.header().allocated.load(Ordering::Acquire) as usize
-  }
-
-  /// Calculates the aligned offset for a given type `T` starting from `current_offset`.
-  ///
-  /// This function aligns the given `current_offset` to the next boundary that satisfies the alignment requirements of type `T`.
-  ///
-  /// # Parameters
-  ///
-  /// - `current_offset`: The initial offset that needs to be aligned.
-  ///
-  /// # Returns
-  ///
-  /// The aligned offset that is the next multiple of the alignment requirement of type `T`.
-  ///
-  /// # Examples
-  ///
-  /// ```ignore
-  /// use std::mem;
-  ///
-  /// #[repr(C, align(8))]
-  /// struct Meta {
-  ///     a: u64,
-  ///     b: u64,
-  /// }
-  ///
-  /// let initial_offset: u32 = 1;
-  /// let aligned_offset = align_offset::<Meta>(initial_offset);
-  /// assert_eq!(aligned_offset, 8);
-  /// ```
-  ///
-  /// # Explanation
-  ///
-  /// - Given an `alignment` of type `T`, this function calculates the next aligned offset from `current_offset`.
-  /// - It ensures that the result is a multiple of `alignment` by adding `alignment - 1` to `current_offset` and then clearing the lower bits using bitwise AND with the negation of `alignment - 1`.
-  ///
-  /// ```ignore
-  /// let alignment = mem::align_of::<T>() as u32;
-  /// (current_offset + alignment - 1) & !(alignment - 1)
-  /// ```
-  #[inline]
-  pub const fn align_offset<T>(offset: u32) -> u32 {
-    align_offset::<T>(offset)
-  }
-
-  /// Returns the capacity of the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let capacity = arena.capacity();
-  /// ```
-  #[inline]
-  pub const fn capacity(&self) -> usize {
-    self.cap as usize
-  }
-
-  /// Returns the number of bytes remaining bytes can be allocated by the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let remaining = arena.remaining();
-  /// ```
-  #[inline]
-  pub fn remaining(&self) -> usize {
-    (self.cap as usize).saturating_sub(self.allocated())
-  }
-
-  /// Returns the number of references to the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let refs = arena.refs();
-  /// ```
-  #[inline]
-  pub fn refs(&self) -> usize {
-    unsafe { self.inner.as_ref().refs.load(Ordering::Acquire) }
-  }
-
-  /// Returns the number of bytes discarded by the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let discarded = arena.discarded();
-  /// ```
-  #[inline]
-  pub fn discarded(&self) -> u32 {
-    self.header().discarded.load(Ordering::Acquire)
-  }
-
-  /// Forcelly increases the discarded bytes.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// arena.increase_discarded(100);
-  /// ```
-  #[inline]
-  pub fn increase_discarded(&self, size: u32) {
-    #[cfg(feature = "tracing")]
-    tracing::debug!("discard {size} bytes");
-
-    self.header().discarded.fetch_add(size, Ordering::Release);
-  }
-
-  /// Discards all freelist nodes in the ARENA.
-  ///
-  /// Returns the number of bytes discarded.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// arena.discard_freelist();
-  /// ```
-  #[inline]
-  pub fn discard_freelist(&self) -> Result<u32, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
-
-    Ok(match self.freelist {
-      Freelist::None => 0,
-      _ => self.discard_freelist_in(),
-    })
-  }
-
-  /// Returns the minimum segment size of the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let min_segment_size = arena.minimum_segment_size();
-  /// ```
-  #[inline]
-  pub fn minimum_segment_size(&self) -> u32 {
-    self.header().min_segment_size.load(Ordering::Acquire)
-  }
-
-  /// Sets the minimum segment size of the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// arena.set_minimum_segment_size(100);
-  /// ```
-  #[inline]
-  pub fn set_minimum_segment_size(&self, size: u32) {
-    self
-      .header()
-      .min_segment_size
-      .store(size, Ordering::Release);
-  }
-
-  /// Returns the data offset of the ARENA. The offset is the end of the reserved bytes of the ARENA.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let data_offset = arena.data_offset();
-  /// ```
-  #[inline]
-  pub const fn data_offset(&self) -> usize {
-    self.data_offset as usize
-  }
-
-  /// Returns the data section of the ARENA as a byte slice, header is not included.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let data = arena.data();
-  /// ```
-  #[inline]
-  pub fn data(&self) -> &[u8] {
-    unsafe {
-      let ptr = self.ptr.add(self.data_offset as usize);
-      let allocated = self.header().allocated.load(Ordering::Acquire);
-      slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
-    }
-  }
-
-  /// Returns the whole main memory of the ARENA as a byte slice.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let memory = arena.memory();
-  /// ```
-  #[inline]
-  pub fn allocated_memory(&self) -> &[u8] {
-    let allocated = self.header().allocated.load(Ordering::Acquire);
-    unsafe { slice::from_raw_parts(self.ptr, allocated as usize) }
-  }
-
-  /// Returns the whole main memory of the ARENA as a byte slice.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let memory = arena.memory();
-  /// ```
-  #[inline]
-  pub const fn memory(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.ptr, self.cap as usize) }
-  }
-
-  /// Returns `true` if the arena is read-only.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// let read_only = arena.read_only();
-  /// ```
-  #[inline]
-  pub const fn read_only(&self) -> bool {
-    self.ro
-  }
-
-  /// Sets remove on drop, only works on mmap with a file backend.
-  ///
-  /// Default is `false`.
-  ///
-  /// > **WARNING:** Once set to `true`, the backed file will be removed when the ARENA is dropped, even though the file is opened in
-  /// > read-only mode.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// # let arena = Arena::new(ArenaOptions::new());
-  /// arena.remove_on_drop(true);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn remove_on_drop(&self, remove_on_drop: bool) {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().set_remove_on_drop(remove_on_drop) }
-  }
-
-  /// Sets the option to make the file shrink to the used size when dropped.
-  ///
-  /// This option, when true, will indicate that the file should be shrunk to
-  /// the size of the data written to it when the file is dropped.
-  ///
-  /// Default is `false`.
-  ///
-  /// > **WARNING:** Once set to `true`, the backed file will be shrunk when the ARENA is dropped, even though the file is opened in
-  /// > read-only mode.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// # let arena = Arena::new(ArenaOptions::new());
-  /// arena.shrink_on_drop(true);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn shrink_on_drop(&self, shrink_on_drop: bool) {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().set_shrink_on_drop(shrink_on_drop) }
-  }
-
-  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// # let arena = Arena::new(ArenaOptions::new());
-  /// let path = arena.path();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub const fn path(&self) -> Option<&std::sync::Arc<std::path::PathBuf>> {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().path() }
-  }
-
-  #[inline]
-  fn header(&self) -> &Header {
-    // Safety:
-    // The inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { (*self.inner.as_ptr()).header() }
-  }
-}
-
-unsafe impl Send for Arena {}
-unsafe impl Sync for Arena {}
-
-impl Arena {
-  /// Creates a new ARENA with the given options.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  /// ```
-  #[inline]
-  pub fn new(opts: ArenaOptions) -> Self {
-    let memory = Memory::new_vec(opts);
-    Self::new_in(memory, opts.maximum_retries(), opts.unify(), false)
-  }
-
-  /// Creates a new ARENA backed by a mmap with the given options.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_mut<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self> {
-    Memory::map_mut(path, opts, open_options, mmap_options)
-      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
-  }
-
-  /// Creates a new ARENA backed by a mmap with the given options.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_mut_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    Memory::map_mut_with_path_builder(path_builder, opts, open_options, mmap_options)
-      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
-  }
-
-  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file.
-  ///
-  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_copy<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self> {
-    Memory::map_copy(path, opts, open_options, mmap_options)
-      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
-  }
-
-  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file with the given path builder.
-  ///
-  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_copy_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    Memory::map_copy_with_path_builder(path_builder, opts, open_options, mmap_options)
-      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
-  }
-
-  /// Opens a read only ARENA backed by a mmap with the given capacity.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map(&path, open_options, mmap_options, 0).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map<P: AsRef<std::path::Path>>(
-    path: P,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> std::io::Result<Self> {
-    Memory::map(path, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
-  }
-
-  /// Opens a read only ARENA backed by a mmap with the given capacity.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_with_path_builder<PB, E>(
-    path_builder: PB,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    Memory::map_with_path_builder(path_builder, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
-  }
-
-  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only(&path, open_options, mmap_options, 0).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_copy_read_only<P: AsRef<std::path::Path>>(
-    path: P,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> std::io::Result<Self> {
-    Memory::map_copy_read_only(path, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
-  }
-
-  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file with the given path builder.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_copy_read_only_with_path_builder<PB, E>(
-    path_builder: PB,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    Memory::map_copy_read_only_with_path_builder(
-      path_builder,
-      open_options,
-      mmap_options,
-      magic_version,
-    )
-    .map(|memory| Self::new_in(memory, 0, true, true))
-  }
-
-  /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, MmapOptions};
-  ///
-  /// let mmap_options = MmapOptions::new().len(100);
-  /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
-    Memory::map_anon(
-      mmap_options,
-      opts.maximum_alignment(),
-      opts.minimum_segment_size(),
-      opts.unify(),
-      opts.magic_version(),
-      opts.freelist(),
-    )
-    .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
-  }
-
-  /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.lock_exclusive().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn lock_exclusive(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().lock_exclusive() }
-  }
-
-  /// Locks the underlying file for shared access, only works on mmap with a file backend.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.lock_shared().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn lock_shared(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().lock_shared() }
-  }
-
-  /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.try_lock_exclusive().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn try_lock_exclusive(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().try_lock_exclusive() }
-  }
-
-  /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.try_lock_shared().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn try_lock_shared(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().try_lock_shared() }
-  }
-
-  /// Unlocks the underlying file, only works on mmap with a file backend.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.lock_exclusive().unwrap();
-  ///
-  /// // do some thing
-  /// arena.unlock().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn unlock(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().unlock() }
-  }
-
-  /// `mlock(ptr, len)`—Lock memory into RAM.
-  ///
-  /// # Safety
-  ///
-  /// This function operates on raw pointers, but it should only be used on
-  /// memory which the caller owns. Technically, locking memory shouldn't violate
-  /// any invariants, but since unlocking it can violate invariants, this
-  /// function is also unsafe for symmetry.
-  ///
-  /// Some implementations implicitly round the memory region out to the nearest
-  /// page boundaries, so this function may lock more memory than explicitly
-  /// requested if the memory isn't page-aligned. Other implementations fail if
-  /// the memory isn't page-aligned.
-  ///
-  /// # References
-  ///  - [POSIX]
-  ///  - [Linux]
-  ///  - [Apple]
-  ///  - [FreeBSD]
-  ///  - [NetBSD]
-  ///  - [OpenBSD]
-  ///  - [DragonFly BSD]
-  ///  - [illumos]
-  ///  - [glibc]
-  ///
-  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/mlock.html
-  /// [Linux]: https://man7.org/linux/man-pages/man2/mlock.2.html
-  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/mlock.2.html
-  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=mlock&sektion=2
-  /// [NetBSD]: https://man.netbsd.org/mlock.2
-  /// [OpenBSD]: https://man.openbsd.org/mlock.2
-  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=mlock&section=2
-  /// [illumos]: https://illumos.org/man/3C/mlock
-  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
-  #[inline]
-  pub unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().mlock(offset, len) }
-  }
-
-  /// `munlock(ptr, len)`—Unlock memory.
-  ///
-  /// # Safety
-  ///
-  /// This function operates on raw pointers, but it should only be used on
-  /// memory which the caller owns, to avoid compromising the `mlock` invariants
-  /// of other unrelated code in the process.
-  ///
-  /// Some implementations implicitly round the memory region out to the nearest
-  /// page boundaries, so this function may unlock more memory than explicitly
-  /// requested if the memory isn't page-aligned.
-  ///
-  /// # References
-  ///  - [POSIX]
-  ///  - [Linux]
-  ///  - [Apple]
-  ///  - [FreeBSD]
-  ///  - [NetBSD]
-  ///  - [OpenBSD]
-  ///  - [DragonFly BSD]
-  ///  - [illumos]
-  ///  - [glibc]
-  ///
-  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/munlock.html
-  /// [Linux]: https://man7.org/linux/man-pages/man2/munlock.2.html
-  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/munlock.2.html
-  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=munlock&sektion=2
-  /// [NetBSD]: https://man.netbsd.org/munlock.2
-  /// [OpenBSD]: https://man.openbsd.org/munlock.2
-  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=munlock&section=2
-  /// [illumos]: https://illumos.org/man/3C/munlock
-  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
-  #[inline]
-  pub unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().munlock(offset, len) }
-  }
-
-  /// Flushes the memory-mapped file to disk.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.flush().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush() }
-  }
-
-  /// Flushes the memory-mapped file to disk asynchronously.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// arena.flush_async().unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush_async() }
-  }
-
-  /// Flushes outstanding memory map modifications in the range to disk.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  /// arena.flush_range(0, 100).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    if len == 0 {
-      return Ok(());
-    }
-
-    let page_size = (*PAGE_SIZE) as usize;
-
-    // Calculate start page
-    let start_page_offset = (offset / page_size) * page_size;
-
-    // Calculate end page. The end offset is the last byte that needs to be flushed.
-    let end_offset = offset + len - 1;
-    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-
-    // Check if the end of the last page exceeds the capacity of the memory map
-    let end_flush_offset = end_page_offset.min(self.cap as usize);
-
-    // Ensure that the flush does not start beyond the capacity
-    if start_page_offset >= self.cap as usize {
-      return Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        "Offset is out of bounds",
-      ));
-    }
-
-    unsafe {
-      self
-        .inner
-        .as_ref()
-        .flush_range(start_page_offset, end_flush_offset - start_page_offset)
-    }
-  }
-
-  /// Asynchronously flushes outstanding memory map modifications in the range to disk.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
-  ///
-  /// arena.flush_async_range(0, 100).unwrap();
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    if len == 0 {
-      return Ok(());
-    }
-
-    let page_size = (*PAGE_SIZE) as usize;
-
-    // Calculate start page
-    let start_page_offset = (offset / page_size) * page_size;
-
-    // Calculate end page. The end offset is the last byte that needs to be flushed.
-    let end_offset = offset + len - 1;
-    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-
-    // Check if the end of the last page exceeds the capacity of the memory map
-    let end_flush_offset = end_page_offset.min(self.cap as usize);
-
-    // Ensure that the flush does not start beyond the capacity
-    if start_page_offset >= self.cap as usize {
-      return Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidInput,
-        "Offset is out of bounds",
-      ));
-    }
-
-    unsafe {
-      self
-        .inner
-        .as_ref()
-        .flush_async_range(start_page_offset, end_flush_offset - start_page_offset)
-    }
-  }
-
-  /// Allocates an owned slice of memory in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
-  #[inline]
-  pub fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, Error> {
-    self.alloc_bytes(size).map(|mut b| b.to_owned())
-  }
-
-  /// Allocates a slice of memory in the ARENA.
-  ///
-  /// The [`BytesRefMut`] is zeroed out.
-  ///
-  /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
-  #[inline]
-  pub fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, Error> {
-    self.alloc_bytes_in(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-    })
-  }
-
-  /// Allocates an owned slice of memory in the ARENA in the same page.
-  ///
-  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut, Error> {
-    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
-  }
-
-  /// Allocates a slice of memory in the ARENA in the same page.
-  ///
-  /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The [`BytesRefMut`] is zeroed out.
-  ///
-  /// If you want a [`BytesMut`], see [`alloc_bytes_owned_within_page`](Self::alloc_bytes_owned_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut, Error> {
-    self.alloc_bytes_within_page_in(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-    })
-  }
-
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[inline]
-  pub fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut, Error> {
-    self
-      .alloc_aligned_bytes::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
-  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[inline]
-  pub fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
-    self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-    })
-  }
-
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut, Error> {
-    self
-      .alloc_aligned_bytes_within_page::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
-  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
-    self
-      .alloc_aligned_bytes_within_page_in::<T>(size)
-      .map(|a| match a {
-        None => BytesRefMut::null(self),
-        Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-      })
-  }
-
+impl Sealed for Arena {
   /// Allocates a `T` in the ARENA.
   ///
   /// # Safety
@@ -2465,7 +1140,7 @@ impl Arena {
   /// assert_eq!(foo.field2.load(Ordering::Acquire), 20);
   /// ```
   #[inline]
-  pub unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, Error> {
+  unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -2486,6 +1161,152 @@ impl Arena {
     }
   }
 
+  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[inline]
+  fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
+    self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+    })
+  }
+
+  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[inline]
+  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self
+      .alloc_aligned_bytes::<T>(size)
+      .map(|mut b| b.to_owned())
+  }
+
+  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self
+      .alloc_aligned_bytes_within_page::<T>(size)
+      .map(|mut b| b.to_owned())
+  }
+
+  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
+  ///
+  /// The layout of the allocated memory is:
+  ///
+  /// ```text
+  /// | T | [u8; size] |
+  /// ```
+  ///
+  /// # Example
+  ///
+  /// ```ignore
+  /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
+  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
+    self
+      .alloc_aligned_bytes_within_page_in::<T>(size)
+      .map(|a| match a {
+        None => BytesRefMut::null(self),
+        Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      })
+  }
+
+  /// Allocates a slice of memory in the ARENA.
+  ///
+  /// The [`BytesRefMut`] is zeroed out.
+  ///
+  /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
+  #[inline]
+  fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
+    self.alloc_bytes_in(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+    })
+  }
+
+  /// Allocates an owned slice of memory in the ARENA.
+  ///
+  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
+  #[inline]
+  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self.alloc_bytes(size).map(|mut b| b.to_owned())
+  }
+
+  /// Allocates an owned slice of memory in the ARENA in the same page.
+  ///
+  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
+  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  /// this method will still return an error.
+  ///
+  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
+  }
+
+  /// Allocates a slice of memory in the ARENA in the same page.
+  ///
+  /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
+  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  /// this method will still return an error.
+  ///
+  /// The [`BytesRefMut`] is zeroed out.
+  ///
+  /// If you want a [`BytesMut`], see [`alloc_bytes_owned_within_page`](Self::alloc_bytes_owned_within_page).
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
+    self.alloc_bytes_within_page_in(size).map(|a| match a {
+      None => BytesRefMut::null(self),
+      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+    })
+  }
+
   /// Allocates a `T` in the ARENA. Like [`alloc`](Self::alloc), but returns an `Owned`.
   ///
   /// The cost is one more atomic operation than [`alloc`](Self::alloc).
@@ -2497,7 +1318,7 @@ impl Arena {
   /// # Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   ///
@@ -2509,8 +1330,19 @@ impl Arena {
   /// }
   /// ```
   #[inline]
-  pub unsafe fn alloc_owned<T>(&self) -> Result<Owned<T>, Error> {
+  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error> {
     self.alloc::<T>().map(|mut r| r.to_owned())
+  }
+
+  /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
+  ///
+  /// # Safety
+  /// - See [`alloc`](Self::alloc) for safety.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
+    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
   }
 
   /// Allocates a `T` in the ARENA in the same page.
@@ -2521,7 +1353,7 @@ impl Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  pub unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T>, Error> {
+  unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -2542,15 +1374,58 @@ impl Arena {
     }
   }
 
-  /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
+  /// Returns the number of bytes allocated by the ARENA.
   ///
-  /// # Safety
-  /// - See [`alloc`](Self::alloc) for safety.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let allocated = arena.allocated();
+  /// ```
   #[inline]
-  pub unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T>, Error> {
-    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
+  fn allocated(&self) -> usize {
+    self.header().allocated.load(Ordering::Acquire) as usize
+  }
+
+  /// Returns the whole main memory of the ARENA as a byte slice.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let memory = arena.memory();
+  /// ```
+  #[inline]
+  fn allocated_memory(&self) -> &[u8] {
+    let allocated = self.header().allocated.load(Ordering::Acquire);
+    unsafe { slice::from_raw_parts(self.ptr, allocated as usize) }
+  }
+
+  fn raw_mut_ptr(&self) -> *mut u8 {
+    self.ptr
+  }
+
+  fn raw_ptr(&self) -> *const u8 {
+    self.ptr
+  }
+
+  /// Returns the capacity of the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let capacity = arena.capacity();
+  /// ```
+  #[inline]
+  fn capacity(&self) -> usize {
+    self.cap as usize
   }
 
   /// Clear the ARENA.
@@ -2574,7 +1449,7 @@ impl Arena {
   /// Good practice:
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   ///
@@ -2586,7 +1461,7 @@ impl Arena {
   /// }
   ///
   /// ```
-  pub unsafe fn clear(&self) -> Result<(), Error> {
+  unsafe fn clear(&self) -> Result<(), Error> {
     if self.ro {
       return Err(Error::ReadOnly);
     }
@@ -2597,6 +1472,1048 @@ impl Arena {
     Ok(())
   }
 
+  /// Returns the data offset of the ARENA. The offset is the end of the reserved bytes of the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let data_offset = arena.data_offset();
+  /// ```
+  #[inline]
+  fn data_offset(&self) -> usize {
+    self.data_offset as usize
+  }
+
+  /// Returns the data section of the ARENA as a byte slice, header is not included.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let data = arena.data();
+  /// ```
+  #[inline]
+  fn data(&self) -> &[u8] {
+    unsafe {
+      let ptr = self.ptr.add(self.data_offset as usize);
+      let allocated = self.header().allocated.load(Ordering::Acquire);
+      slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
+    }
+  }
+
+  /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
+  /// returns `true` if the deallocation is successful.
+  ///
+  /// # Safety
+  /// - you must ensure the same `offset..offset + size` is not deallocated twice.
+  /// - `offset` must be larger than the [`Arena::data_offset`].
+  /// - `offset + size` must be less than the [`Arena::allocated`].
+  #[inline]
+  unsafe fn dealloc(&self, offset: u32, size: u32) -> bool {
+    // first try to deallocate the memory back to the main memory.
+    let header = self.header();
+    // if the offset + size is the current allocated size, then we can deallocate the memory back to the main memory.
+    if header
+      .allocated
+      .compare_exchange(offset + size, offset, Ordering::SeqCst, Ordering::Relaxed)
+      .is_ok()
+    {
+      return true;
+    }
+
+    match self.freelist {
+      Freelist::None => {
+        self.increase_discarded(size);
+        true
+      }
+      Freelist::Optimistic => self.optimistic_dealloc(offset, size),
+      Freelist::Pessimistic => self.pessimistic_dealloc(offset, size),
+    }
+  }
+
+  /// Discards all freelist nodes in the ARENA.
+  ///
+  /// Returns the number of bytes discarded.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// arena.discard_freelist();
+  /// ```
+  #[inline]
+  fn discard_freelist(&self) -> Result<u32, Error> {
+    if self.ro {
+      return Err(Error::ReadOnly);
+    }
+
+    Ok(match self.freelist {
+      Freelist::None => 0,
+      _ => self.discard_freelist_in(),
+    })
+  }
+
+  /// Returns the number of bytes discarded by the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let discarded = arena.discarded();
+  /// ```
+  #[inline]
+  fn discarded(&self) -> u32 {
+    self.header().discarded.load(Ordering::Acquire)
+  }
+
+  /// Flushes the memory-mapped file to disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.flush().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn flush(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush() }
+  }
+
+  /// Flushes the memory-mapped file to disk asynchronously.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// arena.flush_async().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn flush_async(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().flush_async() }
+  }
+
+  /// Flushes outstanding memory map modifications in the range to disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.flush_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let page_size = (*PAGE_SIZE) as usize;
+
+    // Calculate start page
+    let start_page_offset = (offset / page_size) * page_size;
+
+    // Calculate end page. The end offset is the last byte that needs to be flushed.
+    let end_offset = offset + len - 1;
+    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
+
+    // Check if the end of the last page exceeds the capacity of the memory map
+    let end_flush_offset = end_page_offset.min(self.cap as usize);
+
+    // Ensure that the flush does not start beyond the capacity
+    if start_page_offset >= self.cap as usize {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Offset is out of bounds",
+      ));
+    }
+
+    unsafe {
+      self
+        .inner
+        .as_ref()
+        .flush_range(start_page_offset, end_flush_offset - start_page_offset)
+    }
+  }
+
+  /// Asynchronously flushes outstanding memory map modifications in the range to disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// arena.flush_async_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    if len == 0 {
+      return Ok(());
+    }
+
+    let page_size = (*PAGE_SIZE) as usize;
+
+    // Calculate start page
+    let start_page_offset = (offset / page_size) * page_size;
+
+    // Calculate end page. The end offset is the last byte that needs to be flushed.
+    let end_offset = offset + len - 1;
+    let end_page_offset = ((end_offset / page_size) + 1) * page_size;
+
+    // Check if the end of the last page exceeds the capacity of the memory map
+    let end_flush_offset = end_page_offset.min(self.cap as usize);
+
+    // Ensure that the flush does not start beyond the capacity
+    if start_page_offset >= self.cap as usize {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Offset is out of bounds",
+      ));
+    }
+
+    unsafe {
+      self
+        .inner
+        .as_ref()
+        .flush_async_range(start_page_offset, end_flush_offset - start_page_offset)
+    }
+  }
+
+  /// Returns a pointer to the memory at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be less than the capacity of the ARENA.
+  #[inline]
+  unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
+    if offset == 0 {
+      return self.ptr;
+    }
+    self.ptr.add(offset)
+  }
+
+  /// Returns a pointer to the memory at the given offset.
+  /// If the ARENA is read-only, then this method will return a null pointer.
+  ///
+  /// # Safety
+  /// - `offset` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
+  #[inline]
+  unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
+    assert!(!self.ro, "ARENA is read-only");
+
+    if offset == 0 {
+      return self.ptr;
+    }
+
+    self.ptr.add(offset)
+  }
+
+  /// Returns an aligned pointer to the memory at the given offset.
+  ///
+  /// # Safety
+  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
+  /// - `offset` must be less than the capacity of the ARENA.
+  #[inline]
+  unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
+    if offset == 0 {
+      return ptr::null();
+    }
+
+    let align_offset = align_offset::<T>(offset as u32) as usize;
+    self.ptr.add(align_offset).cast()
+  }
+
+  /// Returns an aligned pointer to the memory at the given offset.
+  /// If the ARENA is read-only, then this method will return a null pointer.
+  ///
+  /// # Safety
+  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
+  /// - `offset` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
+  #[inline]
+  unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
+    assert!(!self.ro, "ARENA is read-only");
+
+    if offset == 0 {
+      return NonNull::dangling();
+    }
+
+    let align_offset = align_offset::<T>(offset as u32) as usize;
+    let ptr = self.ptr.add(align_offset).cast();
+    NonNull::new_unchecked(ptr)
+  }
+
+  /// Returns a bytes slice from the ARENA.
+  ///
+  /// # Safety
+  /// - `offset..offset + size` must be allocated memory.
+  /// - `offset` must be less than the capacity of the ARENA.
+  /// - `size` must be less than the capacity of the ARENA.
+  /// - `offset + size` must be less than the capacity of the ARENA.
+  #[inline]
+  unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
+    if offset == 0 {
+      return &[];
+    }
+
+    let ptr = self.get_pointer(offset);
+    slice::from_raw_parts(ptr, size)
+  }
+
+  /// Returns a mutable bytes slice from the ARENA.
+  /// If the ARENA is read-only, then this method will return an empty slice.
+  ///
+  /// # Safety
+  /// - `offset..offset + size` must be allocated memory.
+  /// - `offset` must be less than the capacity of the ARENA.
+  /// - `size` must be less than the capacity of the ARENA.
+  /// - `offset + size` must be less than the capacity of the ARENA.
+  ///
+  /// # Panic
+  /// - If the ARENA is read-only, then this method will panic.
+  #[allow(clippy::mut_from_ref)]
+  #[inline]
+  unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
+    assert!(!self.ro, "ARENA is read-only");
+
+    if offset == 0 {
+      return &mut [];
+    }
+
+    let ptr = self.get_pointer_mut(offset);
+    if ptr.is_null() {
+      return &mut [];
+    }
+
+    slice::from_raw_parts_mut(ptr, size)
+  }
+
+  /// Forcelly increases the discarded bytes.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// arena.increase_discarded(100);
+  /// ```
+  #[inline]
+  fn increase_discarded(&self, size: u32) {
+    #[cfg(feature = "tracing")]
+    tracing::debug!("discard {size} bytes");
+
+    self.header().discarded.fetch_add(size, Ordering::Release);
+  }
+
+  /// Returns `true` if the ARENA is created through memory map.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_mmap = arena.is_mmap();
+  /// assert_eq!(is_mmap, false);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn is_mmap(&self) -> bool {
+    self.flag.contains(MemoryFlags::MMAP)
+  }
+
+  /// Returns `true` if the ARENA is on disk.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_on_disk = arena.is_on_disk();
+  /// assert_eq!(is_on_disk, false);
+  /// ```
+  #[inline]
+  fn is_ondisk(&self) -> bool {
+    self.flag.contains(MemoryFlags::ON_DISK)
+  }
+
+  /// Returns `true` if the ARENA is on-disk and created through memory map.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let is_on_disk_and_mmap = arena.is_on_disk_and_mmap();
+  /// assert_eq!(is_on_disk_and_mmap, false);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn is_ondisk_and_mmap(&self) -> bool {
+    self
+      .flag
+      .contains(MemoryFlags::ON_DISK.union(MemoryFlags::MMAP))
+  }
+
+  /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_exclusive().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn lock_exclusive(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().lock_exclusive() }
+  }
+
+  /// Locks the underlying file for shared access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_shared().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn lock_shared(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().lock_shared() }
+  }
+
+  /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
+  /// [`Arena`].
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let magic_version = arena.magic_version();
+  /// ```
+  #[inline]
+  fn magic_version(&self) -> u16 {
+    self.magic_version
+  }
+
+  /// Opens a read only ARENA backed by a mmap with the given capacity.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map(&path, open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> std::io::Result<Self> {
+    Memory::map(path, open_options, mmap_options, magic_version)
+      .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Opens a read only ARENA backed by a mmap with the given capacity.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_with_path_builder<PB, E>(
+    path_builder: PB,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_with_path_builder(path_builder, open_options, mmap_options, magic_version)
+      .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, MmapOptions};
+  ///
+  /// let mmap_options = MmapOptions::new().len(100);
+  /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self> {
+    Memory::map_anon(
+      mmap_options,
+      opts.maximum_alignment(),
+      opts.minimum_segment_size(),
+      opts.unify(),
+      opts.magic_version(),
+      opts.freelist(),
+    )
+    .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
+  }
+
+  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file.
+  ///
+  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_copy<P: AsRef<std::path::Path>>(
+    path: P,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> std::io::Result<Self> {
+    Memory::map_copy(path, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
+  /// Creates a new ARENA backed by a copy-on-write memory map backed by a file with the given path builder.
+  ///
+  /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_copy_with_path_builder<PB, E>(
+    path_builder: PB,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_copy_with_path_builder(path_builder, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
+  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_read_only(&path, open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_copy_read_only<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> std::io::Result<Self> {
+    Memory::map_copy_read_only(path, open_options, mmap_options, magic_version)
+      .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file with the given path builder.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  ///   # let mmap_options = MmapOptions::new();
+  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// # }
+  ///
+  /// let open_options = OpenOptions::default().read(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_copy_read_only_with_path_builder<PB, E>(
+    path_builder: PB,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    magic_version: u16,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_copy_read_only_with_path_builder(
+      path_builder,
+      open_options,
+      mmap_options,
+      magic_version,
+    )
+    .map(|memory| Self::new_in(memory, 0, true, true))
+  }
+
+  /// Creates a new ARENA backed by a mmap with the given options.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_mut<P: AsRef<std::path::Path>>(
+    path: P,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> std::io::Result<Self> {
+    Memory::map_mut(path, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
+  /// Creates a new ARENA backed by a mmap with the given options.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let arena = Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn map_mut_with_path_builder<PB, E>(
+    path_builder: PB,
+    opts: ArenaOptions,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    Memory::map_mut_with_path_builder(path_builder, opts, open_options, mmap_options)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), true, false))
+  }
+
+  /// Returns the whole main memory of the ARENA as a byte slice.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let memory = arena.memory();
+  /// ```
+  #[inline]
+  fn memory(&self) -> &[u8] {
+    unsafe { slice::from_raw_parts(self.ptr, self.cap as usize) }
+  }
+
+  /// Returns the minimum segment size of the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let min_segment_size = arena.minimum_segment_size();
+  /// ```
+  #[inline]
+  fn minimum_segment_size(&self) -> u32 {
+    self.header().min_segment_size.load(Ordering::Acquire)
+  }
+
+  /// Sets the minimum segment size of the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// arena.set_minimum_segment_size(100);
+  /// ```
+  #[inline]
+  fn set_minimum_segment_size(&self, size: u32) {
+    self
+      .header()
+      .min_segment_size
+      .store(size, Ordering::Release);
+  }
+
+  /// `mlock(ptr, len)`—Lock memory into RAM.
+  ///
+  /// # Safety
+  ///
+  /// This function operates on raw pointers, but it should only be used on
+  /// memory which the caller owns. Technically, locking memory shouldn't violate
+  /// any invariants, but since unlocking it can violate invariants, this
+  /// function is also unsafe for symmetry.
+  ///
+  /// Some implementations implicitly round the memory region out to the nearest
+  /// page boundaries, so this function may lock more memory than explicitly
+  /// requested if the memory isn't page-aligned. Other implementations fail if
+  /// the memory isn't page-aligned.
+  ///
+  /// # References
+  ///  - [POSIX]
+  ///  - [Linux]
+  ///  - [Apple]
+  ///  - [FreeBSD]
+  ///  - [NetBSD]
+  ///  - [OpenBSD]
+  ///  - [DragonFly BSD]
+  ///  - [illumos]
+  ///  - [glibc]
+  ///
+  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/mlock.html
+  /// [Linux]: https://man7.org/linux/man-pages/man2/mlock.2.html
+  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/mlock.2.html
+  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=mlock&sektion=2
+  /// [NetBSD]: https://man.netbsd.org/mlock.2
+  /// [OpenBSD]: https://man.openbsd.org/mlock.2
+  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=mlock&section=2
+  /// [illumos]: https://illumos.org/man/3C/mlock
+  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg_attr(
+    docsrs,
+    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
+  )]
+  #[inline]
+  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().mlock(offset, len) }
+  }
+
+  /// `munlock(ptr, len)`—Unlock memory.
+  ///
+  /// # Safety
+  ///
+  /// This function operates on raw pointers, but it should only be used on
+  /// memory which the caller owns, to avoid compromising the `mlock` invariants
+  /// of other unrelated code in the process.
+  ///
+  /// Some implementations implicitly round the memory region out to the nearest
+  /// page boundaries, so this function may unlock more memory than explicitly
+  /// requested if the memory isn't page-aligned.
+  ///
+  /// # References
+  ///  - [POSIX]
+  ///  - [Linux]
+  ///  - [Apple]
+  ///  - [FreeBSD]
+  ///  - [NetBSD]
+  ///  - [OpenBSD]
+  ///  - [DragonFly BSD]
+  ///  - [illumos]
+  ///  - [glibc]
+  ///
+  /// [POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/munlock.html
+  /// [Linux]: https://man7.org/linux/man-pages/man2/munlock.2.html
+  /// [Apple]: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/munlock.2.html
+  /// [FreeBSD]: https://man.freebsd.org/cgi/man.cgi?query=munlock&sektion=2
+  /// [NetBSD]: https://man.netbsd.org/munlock.2
+  /// [OpenBSD]: https://man.openbsd.org/munlock.2
+  /// [DragonFly BSD]: https://man.dragonflybsd.org/?command=munlock&section=2
+  /// [illumos]: https://illumos.org/man/3C/munlock
+  /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
+  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg_attr(
+    docsrs,
+    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
+  )]
+  #[inline]
+  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().munlock(offset, len) }
+  }
+
+  /// Creates a new ARENA with the given options.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// ```
+  #[inline]
+  fn new(opts: ArenaOptions) -> Self {
+    let memory = Memory::new_vec(opts);
+    Self::new_in(memory, opts.maximum_retries(), opts.unify(), false)
+  }
+
+  /// Returns the offset to the start of the ARENA.
+  ///
+  /// # Safety
+  /// - `ptr` must be allocated by this ARENA.
+  #[inline]
+  unsafe fn offset(&self, ptr: *const u8) -> usize {
+    let offset = ptr.offset_from(self.ptr);
+    offset as usize
+  }
+
+  /// Returns the page size.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let page_size = arena.page_size();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn page_size(&self) -> usize {
+    self.page_size as usize
+  }
+
+  /// Returns `true` if the arena is read-only.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let read_only = arena.read_only();
+  /// ```
+  #[inline]
+  fn read_only(&self) -> bool {
+    self.ro
+  }
+
+  /// Returns the number of references to the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let refs = arena.refs();
+  /// ```
+  #[inline]
+  fn refs(&self) -> usize {
+    unsafe { self.inner.as_ref().refs.load(Ordering::Acquire) }
+  }
+
+  /// Returns the number of bytes remaining bytes can be allocated by the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let remaining = arena.remaining();
+  /// ```
+  #[inline]
+  fn remaining(&self) -> usize {
+    (self.cap as usize).saturating_sub(self.allocated())
+  }
+
+  /// Sets remove on drop, only works on mmap with a file backend.
+  ///
+  /// Default is `false`.
+  ///
+  /// > **WARNING:** Once set to `true`, the backed file will be removed when the ARENA is dropped, even though the file is opened in
+  /// > read-only mode.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// arena.remove_on_drop(true);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn remove_on_drop(&self, remove_on_drop: bool) {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().set_remove_on_drop(remove_on_drop) }
+  }
+
   /// Set back the ARENA's main memory cursor to the given position.
   ///
   /// # Safety
@@ -2605,7 +2522,7 @@ impl Arena {
   ///   so must ensure the memory chunk between the current position and the given position will not
   ///   be accessed anymore.
   /// - This method is not thread safe.
-  pub unsafe fn rewind(&self, pos: ArenaPosition) {
+  unsafe fn rewind(&self, pos: ArenaPosition) {
     let header = self.header();
     let allocated = header.allocated.load(Ordering::Acquire);
     let data_offset = self.data_offset;
@@ -2637,36 +2554,149 @@ impl Arena {
     header.allocated.store(final_offset, Ordering::Release);
   }
 
-  /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
-  /// returns `true` if the deallocation is successful.
+  /// Sets the option to make the file shrink to the used size when dropped.
   ///
-  /// # Safety
-  /// - you must ensure the same `offset..offset + size` is not deallocated twice.
-  /// - `offset` must be larger than the [`Arena::data_offset`].
-  /// - `offset + size` must be less than the [`Arena::allocated`].
+  /// This option, when true, will indicate that the file should be shrunk to
+  /// the size of the data written to it when the file is dropped.
+  ///
+  /// Default is `false`.
+  ///
+  /// > **WARNING:** Once set to `true`, the backed file will be shrunk when the ARENA is dropped, even though the file is opened in
+  /// > read-only mode.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// arena.shrink_on_drop(true);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  pub unsafe fn dealloc(&self, offset: u32, size: u32) -> bool {
-    // first try to deallocate the memory back to the main memory.
-    let header = self.header();
-    // if the offset + size is the current allocated size, then we can deallocate the memory back to the main memory.
-    if header
-      .allocated
-      .compare_exchange(offset + size, offset, Ordering::SeqCst, Ordering::Relaxed)
-      .is_ok()
-    {
-      return true;
-    }
-
-    match self.freelist {
-      Freelist::None => {
-        self.increase_discarded(size);
-        true
-      }
-      Freelist::Optimistic => self.optimistic_dealloc(offset, size),
-      Freelist::Pessimistic => self.pessimistic_dealloc(offset, size),
-    }
+  fn shrink_on_drop(&self, shrink_on_drop: bool) {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().set_shrink_on_drop(shrink_on_drop) }
   }
 
+  /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.try_lock_exclusive().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn try_lock_exclusive(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().try_lock_exclusive() }
+  }
+
+  /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.try_lock_shared().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn try_lock_shared(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().try_lock_shared() }
+  }
+
+  /// Unlocks the underlying file, only works on mmap with a file backend.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  /// let mmap_options = MmapOptions::new();
+  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// arena.lock_exclusive().unwrap();
+  ///
+  /// // do some thing
+  /// arena.unlock().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn unlock(&self) -> std::io::Result<()> {
+    unsafe { self.inner.as_ref().unlock() }
+  }
+
+  /// Returns the version of the ARENA.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// let arena = Arena::new(ArenaOptions::new());
+  /// let version = arena.version();
+  /// ```
+  #[inline]
+  fn version(&self) -> u16 {
+    self.version
+  }
+}
+
+unsafe impl Send for Arena {}
+unsafe impl Sync for Arena {}
+
+impl Arena {
+  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  ///
+  /// # let arena = Arena::new(ArenaOptions::new());
+  /// let path = arena.path();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub const fn path(&self) -> Option<&std::sync::Arc<std::path::PathBuf>> {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().path() }
+  }
+
+  #[inline]
+  fn header(&self) -> &Header {
+    // Safety:
+    // The inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { (*self.inner.as_ptr()).header() }
+  }
+}
+
+impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
@@ -2905,129 +2935,6 @@ impl Arena {
         }
       }
     }
-  }
-
-  /// Returns a bytes slice from the ARENA.
-  ///
-  /// # Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  #[inline]
-  pub const unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
-    if offset == 0 {
-      return &[];
-    }
-
-    let ptr = self.get_pointer(offset);
-    slice::from_raw_parts(ptr, size)
-  }
-
-  /// Returns a mutable bytes slice from the ARENA.
-  /// If the ARENA is read-only, then this method will return an empty slice.
-  ///
-  /// # Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[allow(clippy::mut_from_ref)]
-  #[inline]
-  pub unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return &mut [];
-    }
-
-    let ptr = self.get_pointer_mut(offset);
-    if ptr.is_null() {
-      return &mut [];
-    }
-
-    slice::from_raw_parts_mut(ptr, size)
-  }
-
-  /// Returns a pointer to the memory at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be less than the capacity of the ARENA.
-  #[inline]
-  pub const unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
-    if offset == 0 {
-      return self.ptr;
-    }
-    self.ptr.add(offset)
-  }
-
-  /// Returns a pointer to the memory at the given offset.
-  /// If the ARENA is read-only, then this method will return a null pointer.
-  ///
-  /// # Safety
-  /// - `offset` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[inline]
-  pub unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return self.ptr;
-    }
-
-    self.ptr.add(offset)
-  }
-
-  /// Returns an aligned pointer to the memory at the given offset.
-  ///
-  /// # Safety
-  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  #[inline]
-  pub unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
-    if offset == 0 {
-      return ptr::null();
-    }
-
-    let align_offset = align_offset::<T>(offset as u32) as usize;
-    self.ptr.add(align_offset).cast()
-  }
-
-  /// Returns an aligned pointer to the memory at the given offset.
-  /// If the ARENA is read-only, then this method will return a null pointer.
-  ///
-  /// # Safety
-  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[inline]
-  pub unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return NonNull::dangling();
-    }
-
-    let align_offset = align_offset::<T>(offset as u32) as usize;
-    let ptr = self.ptr.add(align_offset).cast();
-    NonNull::new_unchecked(ptr)
-  }
-
-  /// Returns the offset to the start of the ARENA.
-  ///
-  /// # Safety
-  /// - `ptr` must be allocated by this ARENA.
-  #[inline]
-  pub unsafe fn offset(&self, ptr: *const u8) -> usize {
-    let offset = ptr.offset_from(self.ptr);
-    offset as usize
   }
 
   fn alloc_bytes_in(&self, size: u32) -> Result<Option<Meta>, Error> {
@@ -3968,12 +3875,6 @@ impl Drop for Arena {
     }
   }
 }
-
-mod bytes;
-pub use bytes::*;
-
-mod object;
-pub use object::*;
 
 #[cfg(test)]
 mod tests;

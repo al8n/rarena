@@ -1,16 +1,18 @@
+use core::{ops, ptr::NonNull};
+
 use either::Either;
 
 use super::*;
 
 /// A owned buffer that allocated by the ARENA
-pub struct BytesMut {
-  arena: Either<Arena, NonNull<u8>>,
+pub struct BytesMut<A: Allocator> {
+  arena: Either<A, NonNull<u8>>,
   detach: bool,
   len: usize,
   allocated: Meta,
 }
 
-impl ops::Deref for BytesMut {
+impl<A: Allocator> ops::Deref for BytesMut<A> {
   type Target = [u8];
 
   #[inline]
@@ -23,7 +25,7 @@ impl ops::Deref for BytesMut {
   }
 }
 
-impl ops::DerefMut for BytesMut {
+impl<A: Allocator> ops::DerefMut for BytesMut<A> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     let offset = self.offset();
@@ -35,23 +37,72 @@ impl ops::DerefMut for BytesMut {
   }
 }
 
-impl AsRef<[u8]> for BytesMut {
+impl<A: Allocator> AsRef<[u8]> for BytesMut<A> {
   #[inline]
   fn as_ref(&self) -> &[u8] {
     self
   }
 }
 
-impl AsMut<[u8]> for BytesMut {
+impl<A: Allocator> AsMut<[u8]> for BytesMut<A> {
   #[inline]
   fn as_mut(&mut self) -> &mut [u8] {
     self
   }
 }
 
-impl_write!(BytesMut);
+impl_write!(BytesMut<A>);
 
-impl BytesMut {
+impl<A: Allocator> crate::Memory for BytesMut<A> {
+  #[inline]
+  fn capacity(&self) -> usize {
+    self.allocated.ptr_size as usize
+  }
+
+  #[inline]
+  fn offset(&self) -> usize {
+    self.allocated.ptr_offset as usize
+  }
+
+  #[inline]
+  fn memory_offset(&self) -> usize {
+    self.allocated.memory_offset as usize
+  }
+
+  #[inline]
+  fn memory_capacity(&self) -> usize {
+    self.allocated.memory_size as usize
+  }
+
+  #[inline]
+  unsafe fn detach(&mut self) {
+    self.detach = true;
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush(&self) -> std::io::Result<()> {
+    match self.arena.as_ref() {
+      Either::Left(arena) => arena.flush_range(
+        self.allocated.ptr_offset as usize,
+        self.allocated.ptr_size as usize,
+      ),
+      Either::Right(_) => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_async(&self) -> std::io::Result<()> {
+    match self.arena.as_ref() {
+      Either::Left(arena) => arena.flush_async_range(
+        self.allocated.ptr_offset as usize,
+        self.allocated.ptr_size as usize,
+      ),
+      Either::Right(_) => Ok(()),
+    }
+  }
+}
+
+impl<A: Allocator> BytesMut<A> {
   impl_bytes_mut_utils!(8);
 
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
@@ -66,38 +117,7 @@ impl BytesMut {
 
   impl_bytes_utils!(slice);
 
-  /// Returns the capacity of the buffer, without the padding.
-  #[inline]
-  pub const fn capacity(&self) -> usize {
-    self.allocated.ptr_size as usize
-  }
-
-  /// Returns the offset to the pointer of the ARENA.
-  #[inline]
-  pub const fn offset(&self) -> usize {
-    self.allocated.ptr_offset as usize
-  }
-
-  /// Returns the offset to the pointer of the ARENA. Including the padding.
-  #[inline]
-  pub const fn memory_offset(&self) -> usize {
-    self.allocated.memory_offset as usize
-  }
-
-  /// Returns how many bytes of memory the value occupies. Including the padding.
-  #[inline]
-  pub const fn memory_capacity(&self) -> usize {
-    self.allocated.memory_size as usize
-  }
-
-  /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
-  /// which means the space used by the buffer will never be reclaimed.
-  #[inline]
-  pub fn detach(&mut self) {
-    self.detach = true;
-  }
-
-  /// Returns the pointer to the buffer.
+  /// Returns the mutable pointer to the buffer.
   #[inline]
   pub fn as_mut_ptr(&mut self) -> *mut u8 {
     let offset = self.offset();
@@ -115,32 +135,6 @@ impl BytesMut {
     match self.arena.as_ref() {
       Either::Left(arena) => unsafe { arena.get_pointer(self.offset()) },
       Either::Right(ptr) => ptr.as_ptr(),
-    }
-  }
-
-  /// Flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    match self.arena.as_ref() {
-      Either::Left(arena) => arena.flush_range(
-        self.allocated.ptr_offset as usize,
-        self.allocated.ptr_size as usize,
-      ),
-      Either::Right(_) => Ok(()),
-    }
-  }
-
-  /// Asynchronously flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    match self.arena.as_ref() {
-      Either::Left(arena) => arena.flush_async_range(
-        self.allocated.ptr_offset as usize,
-        self.allocated.ptr_size as usize,
-      ),
-      Either::Right(_) => Ok(()),
     }
   }
 
@@ -175,7 +169,7 @@ impl BytesMut {
   }
 }
 
-impl Drop for BytesMut {
+impl<A: Allocator> Drop for BytesMut<A> {
   #[inline]
   fn drop(&mut self) {
     match self.arena {
@@ -190,14 +184,14 @@ impl Drop for BytesMut {
 }
 
 /// A buffer that allocated by the ARENA
-pub struct BytesRefMut<'a> {
-  arena: &'a Arena,
+pub struct BytesRefMut<'a, A: Allocator> {
+  arena: &'a A,
   len: usize,
   pub(super) allocated: Meta,
   pub(super) detach: bool,
 }
 
-impl<'a> ops::Deref for BytesRefMut<'a> {
+impl<'a, A: Allocator> ops::Deref for BytesRefMut<'a, A> {
   type Target = [u8];
 
   #[inline]
@@ -211,7 +205,7 @@ impl<'a> ops::Deref for BytesRefMut<'a> {
   }
 }
 
-impl<'a> ops::DerefMut for BytesRefMut<'a> {
+impl<'a, A: Allocator> ops::DerefMut for BytesRefMut<'a, A> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     if self.allocated.ptr_size == 0 {
@@ -223,23 +217,66 @@ impl<'a> ops::DerefMut for BytesRefMut<'a> {
   }
 }
 
-impl<'a> AsRef<[u8]> for BytesRefMut<'a> {
+impl<'a, A: Allocator> AsRef<[u8]> for BytesRefMut<'a, A> {
   #[inline]
   fn as_ref(&self) -> &[u8] {
     self
   }
 }
 
-impl<'a> AsMut<[u8]> for BytesRefMut<'a> {
+impl<'a, A: Allocator> AsMut<[u8]> for BytesRefMut<'a, A> {
   #[inline]
   fn as_mut(&mut self) -> &mut [u8] {
     self
   }
 }
 
-impl_write!(BytesRefMut<'a>);
+impl_write!(BytesRefMut<'a, A>);
 
-impl<'a> BytesRefMut<'a> {
+impl<'a, A: Allocator> crate::Memory for BytesRefMut<'a, A> {
+  #[inline]
+  fn capacity(&self) -> usize {
+    self.allocated.ptr_size as usize
+  }
+
+  #[inline]
+  fn offset(&self) -> usize {
+    self.allocated.ptr_offset as usize
+  }
+
+  #[inline]
+  fn memory_offset(&self) -> usize {
+    self.allocated.memory_offset as usize
+  }
+
+  #[inline]
+  fn memory_capacity(&self) -> usize {
+    self.allocated.memory_size as usize
+  }
+
+  #[inline]
+  unsafe fn detach(&mut self) {
+    self.detach = true;
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
+    )
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
+    )
+  }
+}
+
+impl<'a, A: Allocator> BytesRefMut<'a, A> {
   impl_bytes_mut_utils!(8);
 
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
@@ -254,28 +291,18 @@ impl<'a> BytesRefMut<'a> {
 
   impl_bytes_utils!(slice);
 
-  /// Returns the capacity of the buffer, without the padding.
+  /// Returns the mutable pointer to the buffer.
   #[inline]
-  pub const fn capacity(&self) -> usize {
-    self.allocated.ptr_size as usize
+  pub fn as_mut_ptr(&mut self) -> *mut u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    unsafe { self.arena.get_pointer_mut(self.offset()) }
   }
 
-  /// Returns the offset to the pointer of the ARENA.
+  /// Returns the pointer to the buffer.
   #[inline]
-  pub const fn offset(&self) -> usize {
-    self.allocated.ptr_offset as usize
-  }
-
-  /// Returns the offset to the pointer of the ARENA. Including the padding.
-  #[inline]
-  pub const fn memory_offset(&self) -> usize {
-    self.allocated.memory_offset as usize
-  }
-
-  /// Returns how many bytes of memory the value occupies. Including the padding.
-  #[inline]
-  pub const fn memory_capacity(&self) -> usize {
-    self.allocated.memory_size as usize
+  pub fn as_ptr(&self) -> *const u8 {
+    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
+    unsafe { self.arena.get_pointer(self.offset()) }
   }
 
   /// Returns the length of the buffer.
@@ -290,50 +317,9 @@ impl<'a> BytesRefMut<'a> {
     self.len == 0
   }
 
-  /// Detach the buffer from the ARENA, and the buffer will not be collected by ARENA when dropped,
-  /// which means the space used by the buffer will never be reclaimed.
-  #[inline]
-  pub fn detach(&mut self) {
-    self.detach = true;
-  }
-
-  /// Returns the pointer to the buffer.
-  #[inline]
-  pub fn as_mut_ptr(&mut self) -> *mut u8 {
-    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { self.arena.get_pointer_mut(self.offset()) }
-  }
-
-  /// Returns the pointer to the buffer.
-  #[inline]
-  pub fn as_ptr(&self) -> *const u8 {
-    // SAFETY: The buffer is allocated by the ARENA, and the offset is valid.
-    unsafe { self.arena.get_pointer(self.offset()) }
-  }
-
-  /// Flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    self.arena.flush_range(
-      self.allocated.ptr_offset as usize,
-      self.allocated.ptr_size as usize,
-    )
-  }
-
-  /// Asynchronously flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    self.arena.flush_async_range(
-      self.allocated.ptr_offset as usize,
-      self.allocated.ptr_size as usize,
-    )
-  }
-
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
-  pub(super) unsafe fn new(arena: &'a Arena, allocated: Meta) -> Self {
+  pub(super) unsafe fn new(arena: &'a A, allocated: Meta) -> Self {
     Self {
       arena,
       len: 0,
@@ -343,9 +329,9 @@ impl<'a> BytesRefMut<'a> {
   }
 
   #[inline]
-  pub(super) fn null(arena: &'a Arena) -> Self {
+  pub(super) fn null(arena: &'a A) -> Self {
     Self {
-      allocated: Meta::null(arena.ptr as _),
+      allocated: Meta::null(arena.raw_ptr() as _),
       arena,
       len: 0,
       detach: false,
@@ -354,9 +340,9 @@ impl<'a> BytesRefMut<'a> {
 
   #[allow(clippy::wrong_self_convention)]
   #[inline]
-  pub(super) fn to_owned(&mut self) -> BytesMut {
+  pub(super) fn to_owned(&mut self) -> BytesMut<A> {
     if self.allocated.memory_size == 0 {
-      return BytesMut::null(self.arena.ptr as _);
+      return BytesMut::null(self.arena.raw_ptr() as _);
     }
     self.detach = true;
 
@@ -389,7 +375,7 @@ impl<'a> BytesRefMut<'a> {
   }
 }
 
-impl<'a> Drop for BytesRefMut<'a> {
+impl<'a, A: Allocator> Drop for BytesRefMut<'a, A> {
   #[inline]
   fn drop(&mut self) {
     if self.detach {

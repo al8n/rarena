@@ -1,15 +1,13 @@
 use core::{
   fmt,
   mem::{self, MaybeUninit},
-  ops,
   ptr::{self, NonNull},
   slice,
 };
 
 use either::Either;
 
-use super::{sealed::SealedAllocator, *};
-use crate::{common::*, ArenaOptions, ArenaPosition, Freelist, MemoryFlags};
+use super::{common::*, sealed::Sealed, *};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use crate::{MmapOptions, OpenOptions, PAGE_SIZE};
@@ -896,62 +894,6 @@ impl Memory {
   }
 }
 
-/// The metadata of the structs allocated from ARENA.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Meta {
-  parent_ptr: *const u8,
-  memory_offset: u32,
-  memory_size: u32,
-  ptr_offset: u32,
-  ptr_size: u32,
-}
-
-impl Meta {
-  #[inline]
-  const fn null(parent_ptr: *const u8) -> Self {
-    Self {
-      parent_ptr,
-      memory_offset: 0,
-      memory_size: 0,
-      ptr_offset: 0,
-      ptr_size: 0,
-    }
-  }
-
-  #[inline]
-  const fn new(parent_ptr: *const u8, memory_offset: u32, memory_size: u32) -> Self {
-    Self {
-      parent_ptr,
-      memory_offset,
-      memory_size,
-      // just set the ptr_offset to the memory_offset, and ptr_size to the memory_size.
-      // we will align the ptr_offset and ptr_size when it should be aligned.
-      ptr_offset: memory_offset,
-      ptr_size: memory_size,
-    }
-  }
-
-  #[inline]
-  unsafe fn clear(&self, arena: &Arena) {
-    let ptr = arena.ptr.add(self.ptr_offset as usize);
-    ptr::write_bytes(ptr, 0, self.ptr_size as usize);
-  }
-
-  #[inline]
-  fn align_to<T>(&mut self) {
-    let align_offset = align_offset::<T>(self.memory_offset);
-    self.ptr_offset = align_offset;
-    self.ptr_size = mem::size_of::<T>() as u32;
-  }
-
-  #[inline]
-  fn align_bytes_to<T>(&mut self) {
-    let align_offset = align_offset::<T>(self.memory_offset);
-    self.ptr_offset = align_offset;
-    self.ptr_size = self.memory_offset + self.memory_size - self.ptr_offset;
-  }
-}
-
 #[repr(transparent)]
 struct SegmentNode {
   /// The first 32 bits are the size of the memory,
@@ -1100,11 +1042,14 @@ impl Clone for Arena {
   }
 }
 
-impl SealedAllocator for Arena {
-  type RefMut<'a, T>  = RefMut<'a, T> where Self: 'a;
-  type Owned<T> = Owned<T>;
-  type BytesRefMut<'a> = BytesRefMut<'a> where Self: 'a;
-  type BytesMut = BytesMut;
+impl Sealed for Arena {
+  fn raw_mut_ptr(&self) -> *mut u8 {
+    self.ptr
+  }
+
+  fn raw_ptr(&self) -> *const u8 {
+    self.ptr
+  }
 
   /// Allocates a `T` in the ARENA.
   ///
@@ -1217,7 +1162,7 @@ impl SealedAllocator for Arena {
   /// assert_eq!(foo.field2, 20);
   /// ```
   #[inline]
-  unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T>, Error> {
+  unsafe fn alloc<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -1253,7 +1198,7 @@ impl SealedAllocator for Arena {
   /// bytes.put(val).unwrap(); // write `T` to the byte slice.
   /// ```
   #[inline]
-  fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
+  fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
     self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
@@ -1275,7 +1220,7 @@ impl SealedAllocator for Arena {
   /// bytes.put(val).unwrap(); // write `T` to the byte slice.
   /// ```
   #[inline]
-  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut, Error> {
+  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
     self
       .alloc_aligned_bytes::<T>(size)
       .map(|mut b| b.to_owned())
@@ -1298,7 +1243,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut, Error> {
+  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
     self
       .alloc_aligned_bytes_within_page::<T>(size)
       .map(|mut b| b.to_owned())
@@ -1321,7 +1266,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut, Error> {
+  fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
     self
       .alloc_aligned_bytes_within_page_in::<T>(size)
       .map(|a| match a {
@@ -1336,7 +1281,7 @@ impl SealedAllocator for Arena {
   ///
   /// If you want a [`BytesMut`], see [`alloc_bytes_owned`](Self::alloc_bytes_owned).
   #[inline]
-  fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut, Error> {
+  fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
     self.alloc_bytes_in(size).map(|a| match a {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
@@ -1347,7 +1292,7 @@ impl SealedAllocator for Arena {
   ///
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
   #[inline]
-  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut, Error> {
+  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error> {
     self.alloc_bytes(size).map(|mut b| b.to_owned())
   }
 
@@ -1361,7 +1306,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut, Error> {
+  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
     self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
   }
 
@@ -1377,7 +1322,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut, Error> {
+  fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<Self>, Error> {
     self.alloc_bytes_within_page_in(size).map(|a| match a {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
@@ -1407,7 +1352,7 @@ impl SealedAllocator for Arena {
   /// }
   /// ```
   #[inline]
-  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T>, Error> {
+  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error> {
     self.alloc::<T>().map(|mut r| r.to_owned())
   }
 
@@ -1418,7 +1363,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T>, Error> {
+  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
     self.alloc_within_page::<T>().map(|mut r| r.to_owned())
   }
 
@@ -1430,7 +1375,7 @@ impl SealedAllocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T>, Error> {
+  unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
     if mem::size_of::<T>() == 0 {
       return Ok(RefMut::new_zst(self));
     }
@@ -3504,35 +3449,6 @@ impl Arena {
     );
   }
 
-  /// Returns a bytes slice from the ARENA.
-  ///
-  /// # Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  #[inline]
-  unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
-    if offset == 0 {
-      return &[];
-    }
-
-    let ptr = self.get_pointer(offset);
-    slice::from_raw_parts(ptr, size)
-  }
-
-  /// Returns a pointer to the memory at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be less than the capacity of the ARENA.
-  #[inline]
-  unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
-    if offset == 0 {
-      return self.ptr;
-    }
-    self.ptr.add(offset)
-  }
-
   #[cfg(test)]
   #[cfg(feature = "std")]
   #[allow(dead_code)]
@@ -3603,12 +3519,6 @@ impl Drop for Arena {
     }
   }
 }
-
-mod bytes;
-pub use bytes::*;
-
-mod object;
-pub use object::*;
 
 #[cfg(test)]
 mod tests;

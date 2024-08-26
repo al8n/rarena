@@ -1,3 +1,8 @@
+use core::{
+  mem::MaybeUninit,
+  ptr::{self, NonNull},
+};
+
 use super::*;
 
 #[derive(Debug)]
@@ -23,24 +28,69 @@ impl<T> Default for Kind<T> {
 /// An owned to a value `T` in the ARENA.
 #[derive(Debug)]
 #[must_use = "The `T` is uninitialized, and must be initialized by `write` before it is used, if `T` is not zero sized type."]
-pub struct Owned<T> {
+pub struct Owned<T, A: Allocator> {
   kind: Kind<T>,
-  arena: Arena,
+  arena: A,
   detached: bool,
   pub(super) allocated: Meta,
 }
 
-impl<T> Owned<T> {
-  /// Detach the value from the ARENA, which means when the value is dropped,
-  /// the underlying memory will not be collected for futhur allocation.
+impl<T, A: Allocator> crate::Memory for Owned<T, A> {
+  /// Returns how many bytes of `T` occupies.
   ///
-  /// # Safety
-  /// - If `T` is not inlined ([`core::mem::needs_drop::<T>()`](core::mem::needs_drop) returns `true`), then users should take care of dropping the value by themselves.
+  /// If this value is `0`, then the `T` is ZST (zero sized type).
   #[inline]
-  pub unsafe fn detach(&mut self) {
+  fn capacity(&self) -> usize {
+    self.allocated.ptr_size as usize
+  }
+
+  /// Returns the offset of `T` to the pointer of the ARENA.
+  ///
+  /// If this value is `0`, then the `T` is ZST (zero sized type).
+  #[inline]
+  fn offset(&self) -> usize {
+    self.allocated.ptr_offset as usize
+  }
+
+  /// Returns how many bytes of memory the value occupies.
+  ///
+  /// If this value is `0`, then the `T` is ZST (zero sized type).
+  #[inline]
+  fn memory_capacity(&self) -> usize {
+    self.allocated.memory_size as usize
+  }
+
+  /// Returns the offset to the pointer of the ARENA.
+  ///
+  /// If this value is `0`, then the `T` is ZST (zero sized type).
+  #[inline]
+  fn memory_offset(&self) -> usize {
+    self.allocated.memory_offset as usize
+  }
+
+  unsafe fn detach(&mut self) {
     self.detached = true;
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
+    )
+  }
+
+  /// Asynchronously flush the buffer to the disk.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.memory_offset as usize,
+      self.allocated.memory_size as usize,
+    )
+  }
+}
+
+impl<T, A: Allocator> Owned<T, A> {
   /// Write a value to the `RefMut`.
   #[inline]
   pub fn write(&mut self, value: T) {
@@ -53,58 +103,6 @@ impl<T> Owned<T> {
       },
       Kind::Dangling(_) => {}
     }
-  }
-
-  /// Returns how many bytes of `T` occupies.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn size(&self) -> usize {
-    self.allocated.ptr_size as usize
-  }
-
-  /// Returns the offset of `T` to the pointer of the ARENA.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn offset(&self) -> usize {
-    self.allocated.ptr_offset as usize
-  }
-
-  /// Returns how many bytes of memory the value occupies.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn memory_size(&self) -> usize {
-    self.allocated.memory_size as usize
-  }
-
-  /// Returns the offset to the pointer of the ARENA.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn memory_offset(&self) -> usize {
-    self.allocated.memory_offset as usize
-  }
-
-  /// Flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    self.arena.flush_range(
-      self.allocated.ptr_offset as usize,
-      self.allocated.ptr_size as usize,
-    )
-  }
-
-  /// Asynchronously flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    self.arena.flush_async_range(
-      self.allocated.memory_offset as usize,
-      self.allocated.memory_size as usize,
-    )
   }
 
   /// Returns a shared reference to the value.
@@ -149,7 +147,7 @@ impl<T> Owned<T> {
   }
 }
 
-impl<T> Drop for Owned<T> {
+impl<T, A: Allocator> Drop for Owned<T, A> {
   fn drop(&mut self) {
     match &mut self.kind {
       Kind::Slot(slot) => {
@@ -188,24 +186,57 @@ impl<T> Drop for Owned<T> {
 /// A mutable reference to a value `T` in the ARENA.
 #[derive(Debug)]
 #[must_use = "The `T` is uninitialized, and must be initialized by `write` before it is used, if `T` is not zero sized type."]
-pub struct RefMut<'a, T> {
+pub struct RefMut<'a, T, A: Allocator> {
   kind: Kind<T>,
-  arena: &'a Arena,
+  arena: &'a A,
   detached: bool,
   pub(super) allocated: Meta,
 }
 
-impl<'a, T> RefMut<'a, T> {
+impl<'a, T, A: Allocator> crate::Memory for RefMut<'a, T, A> {
+  fn capacity(&self) -> usize {
+    self.allocated.ptr_size as usize
+  }
+
+  fn offset(&self) -> usize {
+    self.allocated.ptr_offset as usize
+  }
+
+  fn memory_capacity(&self) -> usize {
+    self.allocated.memory_size as usize
+  }
+
+  fn memory_offset(&self) -> usize {
+    self.allocated.memory_offset as usize
+  }
+
   /// Detach the value from the ARENA, which means when the value is dropped,
   /// the underlying memory will not be collected for futhur allocation.
   ///
   /// # Safety
   /// - If `T` is not inlined ([`core::mem::needs_drop::<T>()`](core::mem::needs_drop) returns `true`), then users should take care of dropping the value by themselves.
-  #[inline]
-  pub unsafe fn detach(&mut self) {
+  unsafe fn detach(&mut self) {
     self.detached = true;
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush(&self) -> std::io::Result<()> {
+    self.arena.flush_range(
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
+    )
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn flush_async(&self) -> std::io::Result<()> {
+    self.arena.flush_async_range(
+      self.allocated.ptr_offset as usize,
+      self.allocated.ptr_size as usize,
+    )
+  }
+}
+
+impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   /// Write a value to the `RefMut`.
   #[inline]
   pub fn write(&mut self, value: T) {
@@ -218,38 +249,6 @@ impl<'a, T> RefMut<'a, T> {
       },
       Kind::Dangling(_) => {}
     }
-  }
-
-  /// Returns how many bytes of `T` occupies.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn size(&self) -> usize {
-    self.allocated.ptr_size as usize
-  }
-
-  /// Returns the offset of `T` to the pointer of the ARENA.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn offset(&self) -> usize {
-    self.allocated.ptr_offset as usize
-  }
-
-  /// Returns how many bytes of memory the value occupies.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn memory_size(&self) -> usize {
-    self.allocated.memory_size as usize
-  }
-
-  /// Returns the offset to the pointer of the ARENA.
-  ///
-  /// If this value is `0`, then the `T` is ZST (zero sized type).
-  #[inline]
-  pub const fn memory_offset(&self) -> usize {
-    self.allocated.memory_offset as usize
   }
 
   /// Returns a shared reference to the value.
@@ -293,28 +292,8 @@ impl<'a, T> RefMut<'a, T> {
     }
   }
 
-  /// Flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush(&self) -> std::io::Result<()> {
-    self.arena.flush_range(
-      self.allocated.ptr_offset as usize,
-      self.allocated.ptr_size as usize,
-    )
-  }
-
-  /// Asynchronously flush the buffer to the disk.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn flush_async(&self) -> std::io::Result<()> {
-    self.arena.flush_async_range(
-      self.allocated.ptr_offset as usize,
-      self.allocated.ptr_size as usize,
-    )
-  }
-
   #[inline]
-  pub(super) fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a Arena) -> Self {
+  pub(super) fn new(slot: MaybeUninit<T>, allocated: Meta, arena: &'a A) -> Self {
     Self {
       kind: Kind::Slot(slot),
       arena,
@@ -324,7 +303,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a Arena) -> Self {
+  pub(super) fn new_inline(value: NonNull<T>, allocated: Meta, arena: &'a A) -> Self {
     Self {
       kind: Kind::Inline(value),
       arena,
@@ -334,10 +313,10 @@ impl<'a, T> RefMut<'a, T> {
   }
 
   #[inline]
-  pub(super) fn new_zst(arena: &'a Arena) -> Self {
+  pub(super) fn new_zst(arena: &'a A) -> Self {
     Self {
       kind: Kind::Dangling(NonNull::dangling()),
-      allocated: Meta::null(arena.ptr as _),
+      allocated: Meta::null(arena.raw_ptr() as _),
       arena,
       detached: false,
     }
@@ -345,7 +324,7 @@ impl<'a, T> RefMut<'a, T> {
 
   #[allow(clippy::wrong_self_convention)]
   #[inline]
-  pub(super) fn to_owned(&mut self) -> Owned<T> {
+  pub(super) fn to_owned(&mut self) -> Owned<T, A> {
     self.detached = true;
 
     Owned {
@@ -357,7 +336,7 @@ impl<'a, T> RefMut<'a, T> {
   }
 }
 
-impl<'a, T> Drop for RefMut<'a, T> {
+impl<'a, T, A: Allocator> Drop for RefMut<'a, T, A> {
   fn drop(&mut self) {
     match &mut self.kind {
       Kind::Slot(slot) => {
