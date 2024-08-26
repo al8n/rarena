@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use crate::Memory as _;
+
 use super::*;
 
 mod optimistic_slow_path;
@@ -111,7 +113,7 @@ fn alloc_offset_and_size(a: Arena) {
 
   let meta = unsafe { a.alloc::<Meta>().unwrap() };
   assert_eq!(meta.offset(), meta_offset);
-  assert_eq!(meta.size() + meta.offset(), meta_end);
+  assert_eq!(meta.capacity() + meta.offset(), meta_end);
 
   let head = a
     .alloc_aligned_bytes::<Node<u64>>(20 * mem::size_of::<Link>() as u32)
@@ -414,6 +416,8 @@ fn carefully_alloc_mmap_anon_unify() {
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn recoverable_in() {
+  use crate::Memory as _;
+
   struct Recoverable {
     field1: u64,
     field2: AtomicU32,
@@ -561,7 +565,9 @@ fn discard_freelist_in(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   l.discard_freelist().unwrap();
@@ -665,13 +671,17 @@ fn allocate_slow_path_concurrent_create_segments(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
   for i in (1..=5).rev() {
     let mut b = l.alloc_bytes(i * 50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-    b.detach();
+    unsafe {
+      b.detach();
+    }
   }
 
   while l.refs() > 1 {
@@ -694,7 +704,9 @@ fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
@@ -704,7 +716,9 @@ fn allocate_slow_path_concurrent_acquire_from_segment(l: Arena) {
     std::thread::spawn(move || {
       b.wait();
       let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
+      unsafe {
+        b.detach();
+      }
       std::thread::yield_now();
     });
   }
@@ -740,7 +754,9 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   // allocate from segments
@@ -750,7 +766,9 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
     std::thread::spawn(move || {
       b.wait();
       let mut b = l.alloc_bytes(50 - MAX_SEGMENT_NODE_SIZE).unwrap();
-      b.detach();
+      unsafe {
+        b.detach();
+      }
     });
   }
 

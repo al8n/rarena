@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use crate::Memory as _;
+
 use super::*;
 
 mod optimistic_slow_path;
@@ -111,7 +113,7 @@ fn alloc_offset_and_size(a: Arena) {
 
   let meta = unsafe { a.alloc::<Meta>().unwrap() };
   assert_eq!(meta.offset(), meta_offset);
-  assert_eq!(meta.size() + meta.offset(), meta_end);
+  assert_eq!(meta.capacity() + meta.offset(), meta_end);
 
   let head = a
     .alloc_aligned_bytes::<Node<u64>>(20 * mem::size_of::<Link>() as u32)
@@ -549,7 +551,9 @@ fn discard_freelist_in(l: Arena) {
 
   let remaining = l.remaining();
   let mut remaining = l.alloc_bytes(remaining as u32).unwrap();
-  remaining.detach();
+  unsafe {
+    remaining.detach();
+  }
   drop(allocated);
 
   l.discard_freelist().unwrap();
