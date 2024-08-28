@@ -988,11 +988,23 @@ impl Sealed for Arena {}
 
 impl Allocator for Arena {
   fn reserved_slice(&self) -> &[u8] {
+    if self.reserved == 0 {
+      return &[];
+    }
+
     // Safety: the ptr is always non-null.
     unsafe { slice::from_raw_parts(self.ptr, self.reserved) }
   }
 
   unsafe fn reserved_slice_mut(&self) -> &mut [u8] {
+    if self.reserved == 0 {
+      return &mut [];
+    }
+
+    if self.ro {
+      panic!("ARENA is read-only");
+    }
+
     slice::from_raw_parts_mut(self.ptr, self.reserved)
   }
 

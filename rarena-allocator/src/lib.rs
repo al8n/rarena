@@ -181,6 +181,9 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// # Safety
   /// - The caller need to make sure there is no data-race
+  ///
+  /// # Panic
+  /// - If in read-only mode, and num of reserved bytes is greater than 0, this method will panic.
   #[allow(clippy::mut_from_ref)]
   unsafe fn reserved_slice_mut(&self) -> &mut [u8];
 
