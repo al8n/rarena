@@ -58,7 +58,7 @@ pub struct ArenaOptions {
   magic_version: u16,
   unify: bool,
   freelist: Freelist,
-  preallocate: u32,
+  reserved: u32,
 }
 
 impl Default for ArenaOptions {
@@ -80,31 +80,31 @@ impl ArenaOptions {
       unify: false,
       magic_version: 0,
       freelist: Freelist::Optimistic,
-      preallocate: 0,
+      reserved: 0,
     }
   }
 
-  /// Set the preallocate of the ARENA.
+  /// Set the reserved of the ARENA.
   ///
-  /// The preallocate is used to configure the start position of the ARENA. This is useful
+  /// The reserved is used to configure the start position of the ARENA. This is useful
   /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
-  /// you can set the preallocate to the size to `8` to store a 8 bytes checksum.
+  /// you can set the reserved to the size to `8` to store a 8 bytes checksum.
   ///
-  /// The default preallocate is `0`.
+  /// The default reserved is `0`.
   ///
   /// # Example
   ///
   /// ```rust
   /// use rarena_allocator::ArenaOptions;
   ///
-  /// let opts = ArenaOptions::new().with_preallocate(8);
+  /// let opts = ArenaOptions::new().with_reserved(8);
   /// ```
   #[inline]
-  pub const fn with_preallocate(mut self, preallocate: u32) -> Self {
-    self.preallocate = if self.capacity <= preallocate {
+  pub const fn with_reserved(mut self, reserved: u32) -> Self {
+    self.reserved = if self.capacity <= reserved {
       self.capacity
     } else {
-      preallocate
+      reserved
     };
     self
   }
@@ -251,26 +251,26 @@ impl ArenaOptions {
     self
   }
 
-  /// Get the preallocate of the ARENA.
+  /// Get the reserved of the ARENA.
   ///
-  /// The preallocate is used to configure the start position of the ARENA. This is useful
+  /// The reserved is used to configure the start position of the ARENA. This is useful
   /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
-  /// you can set the preallocate to the size to `8` to store a 8 bytes checksum.
+  /// you can set the reserved to the size to `8` to store a 8 bytes checksum.
   ///
-  /// The default preallocate is `0`.
+  /// The default reserved is `0`.
   ///
   /// # Example
   ///
   /// ```rust
   /// use rarena_allocator::ArenaOptions;
   ///
-  /// let opts = ArenaOptions::new().with_preallocate(8);
+  /// let opts = ArenaOptions::new().with_reserved(8);
   ///
-  /// assert_eq!(opts.preallocate(), 8);
+  /// assert_eq!(opts.reserved(), 8);
   /// ```
   #[inline]
-  pub const fn preallocate(&self) -> u32 {
-    self.preallocate
+  pub const fn reserved(&self) -> u32 {
+    self.reserved
   }
 
   /// Get the maximum alignment of the ARENA.

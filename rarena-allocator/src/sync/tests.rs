@@ -443,7 +443,13 @@ fn recoverable_in() {
       data.offset()
     };
 
-    let a = Arena::map(p, OpenOptions::new().read(true), MmapOptions::default(), 0).unwrap();
+    let a = Arena::map(
+      p,
+      ArenaOptions::new(),
+      OpenOptions::new().read(true),
+      MmapOptions::default(),
+    )
+    .unwrap();
     let data = &*a.get_aligned_pointer::<Recoverable>(offset);
     assert_eq!(data.field1, 10);
     assert_eq!(data.field2.load(Ordering::Relaxed), 20);
