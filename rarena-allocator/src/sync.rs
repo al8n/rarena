@@ -28,7 +28,6 @@ enum MemoryBackend {
     path: std::sync::Arc<std::path::PathBuf>,
     buf: *mut memmap2::MmapMut,
     file: std::fs::File,
-    shrink_on_drop: AtomicBool,
     remove_on_drop: AtomicBool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -36,7 +35,6 @@ enum MemoryBackend {
     path: std::sync::Arc<std::path::PathBuf>,
     buf: *mut memmap2::Mmap,
     file: std::fs::File,
-    shrink_on_drop: AtomicBool,
     remove_on_drop: AtomicBool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -130,20 +128,6 @@ impl Memory {
       }
       MemoryBackend::Mmap { remove_on_drop, .. } => {
         remove_on_drop.store(val, Ordering::Release);
-      }
-      _ => {}
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  fn set_shrink_on_drop(&self, val: bool) {
-    match &self.backend {
-      MemoryBackend::MmapMut { shrink_on_drop, .. } => {
-        shrink_on_drop.store(val, Ordering::Release);
-      }
-      MemoryBackend::Mmap { shrink_on_drop, .. } => {
-        shrink_on_drop.store(val, Ordering::Release);
       }
       _ => {}
     }
@@ -354,7 +338,6 @@ impl Memory {
             path: std::sync::Arc::new(path),
             buf: Box::into_raw(Box::new(mmap)),
             file,
-            shrink_on_drop: AtomicBool::new(false),
           },
           header_ptr: Either::Left(header_ptr as _),
           ptr,
@@ -480,7 +463,6 @@ impl Memory {
             path: std::sync::Arc::new(path),
             buf: Box::into_raw(Box::new(mmap)),
             file,
-            shrink_on_drop: AtomicBool::new(false),
           },
           header_ptr: Either::Left(header_ptr),
           ptr: ptr as _,
@@ -814,7 +796,6 @@ impl Memory {
       MemoryBackend::MmapMut {
         buf,
         file,
-        shrink_on_drop,
         path,
         remove_on_drop,
         ..
@@ -826,31 +807,12 @@ impl Memory {
           return;
         }
 
-        // we must trigger the drop of the mmap
-        let used = if shrink_on_drop.load(Ordering::Acquire) {
-          let header = match &self.header_ptr {
-            Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
-            Either::Right(header) => header,
-          };
-          Some(header.allocated.load(Ordering::Acquire))
-        } else {
-          None
-        };
-
         let _ = Box::from_raw(*buf);
-
-        if let Some(used) = used {
-          if used < self.cap {
-            let _ = file.set_len(used as u64);
-          }
-        }
-
         let _ = file.sync_all();
       }
       MemoryBackend::Mmap {
         path,
         file,
-        shrink_on_drop,
         buf,
         remove_on_drop,
         ..
@@ -862,24 +824,7 @@ impl Memory {
           return;
         }
 
-        let used = if shrink_on_drop.load(Ordering::Acquire) {
-          let header = match &self.header_ptr {
-            Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
-            Either::Right(header) => header,
-          };
-          Some(header.allocated.load(Ordering::Acquire))
-        } else {
-          None
-        };
-
         let _ = Box::from_raw(*buf);
-
-        if let Some(used) = used {
-          if used < self.cap {
-            let _ = file.set_len(used as u64);
-            let _ = file.sync_all();
-          }
-        }
       }
       _ => {}
     }
@@ -2554,32 +2499,6 @@ impl Allocator for Arena {
     };
 
     header.allocated.store(final_offset, Ordering::Release);
-  }
-
-  /// Sets the option to make the file shrink to the used size when dropped.
-  ///
-  /// This option, when true, will indicate that the file should be shrunk to
-  /// the size of the data written to it when the file is dropped.
-  ///
-  /// Default is `false`.
-  ///
-  /// > **WARNING:** Once set to `true`, the backed file will be shrunk when the ARENA is dropped, even though the file is opened in
-  /// > read-only mode.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
-  ///
-  /// # let arena = Arena::new(ArenaOptions::new());
-  /// arena.shrink_on_drop(true);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn shrink_on_drop(&self, shrink_on_drop: bool) {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().set_shrink_on_drop(shrink_on_drop) }
   }
 
   /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.

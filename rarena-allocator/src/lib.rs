@@ -1222,28 +1222,6 @@ pub trait Allocator: sealed::Sealed {
   /// - This method is not thread safe.
   unsafe fn rewind(&self, pos: ArenaPosition);
 
-  /// Sets the option to make the file shrink to the used size when dropped.
-  ///
-  /// This option, when true, will indicate that the file should be shrunk to
-  /// the size of the data written to it when the file is dropped.
-  ///
-  /// Default is `false`.
-  ///
-  /// > **WARNING:** Once set to `true`, the backed file will be shrunk when the allocator is dropped, even though the file is opened in
-  /// > read-only mode.
-  ///
-  /// # Examples
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
-  ///
-  /// # let arena = Arena::new(ArenaOptions::new());
-  /// arena.shrink_on_drop(true);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn shrink_on_drop(&self, shrink_on_drop: bool);
-
   /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
   ///
   /// # Example
