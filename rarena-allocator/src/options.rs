@@ -58,6 +58,7 @@ pub struct ArenaOptions {
   magic_version: u16,
   unify: bool,
   freelist: Freelist,
+  preallocate: u32,
 }
 
 impl Default for ArenaOptions {
@@ -79,7 +80,33 @@ impl ArenaOptions {
       unify: false,
       magic_version: 0,
       freelist: Freelist::Optimistic,
+      preallocate: 0,
     }
+  }
+
+  /// Set the preallocate of the ARENA.
+  ///
+  /// The preallocate is used to configure the start position of the ARENA. This is useful
+  /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
+  /// you can set the preallocate to the size to `8` to store a 8 bytes checksum.
+  ///
+  /// The default preallocate is `0`.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_preallocate(8);
+  /// ```
+  #[inline]
+  pub const fn with_preallocate(mut self, preallocate: u32) -> Self {
+    self.preallocate = if self.capacity <= preallocate {
+      self.capacity
+    } else {
+      preallocate
+    };
+    self
   }
 
   /// Set the maximum alignment of the ARENA.
@@ -222,6 +249,28 @@ impl ArenaOptions {
   pub const fn with_freelist(mut self, freelist: Freelist) -> Self {
     self.freelist = freelist;
     self
+  }
+
+  /// Get the preallocate of the ARENA.
+  ///
+  /// The preallocate is used to configure the start position of the ARENA. This is useful
+  /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
+  /// you can set the preallocate to the size to `8` to store a 8 bytes checksum.
+  ///
+  /// The default preallocate is `0`.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_preallocate(8);
+  ///
+  /// assert_eq!(opts.preallocate(), 8);
+  /// ```
+  #[inline]
+  pub const fn preallocate(&self) -> u32 {
+    self.preallocate
   }
 
   /// Get the maximum alignment of the ARENA.
