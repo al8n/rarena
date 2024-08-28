@@ -396,7 +396,9 @@ fn carefully_alloc_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    carefully_alloc_in(Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap());
+    carefully_alloc_in(
+      Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
+    );
   });
 }
 
