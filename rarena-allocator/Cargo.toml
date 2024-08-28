@@ -20,7 +20,7 @@ memmap = ["memmap2", "fs4", "std", "rustix", "bitflags/std"]
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 
 # A feature only used for testing purposes.
-reserved = []
+reserved = ["alloc"]
 
 [dependencies]
 bitflags = { version = "2", default-features = false }

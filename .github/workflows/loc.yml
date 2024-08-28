@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        crates: [rarena-allocator, rarena-skiplist]
+        crates: [rarena-allocator]
         
     steps:
       - uses: actions/checkout@v3
