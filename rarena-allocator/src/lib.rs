@@ -13,6 +13,8 @@ extern crate alloc as std;
 #[cfg(feature = "std")]
 extern crate std;
 
+mod memory;
+
 mod error;
 pub use error::*;
 
