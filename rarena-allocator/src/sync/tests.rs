@@ -890,7 +890,7 @@ fn reopen_with_reserved() {
 
   let l = Arena::map(
     p.clone(),
-    DEFAULT_ARENA_OPTIONS.with_reserved(5),
+    DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
     OpenOptions::new().read(true),
     mmap_options,
   )

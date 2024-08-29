@@ -845,7 +845,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map(&path, open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -876,7 +876,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -979,7 +979,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -1010,7 +1010,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
