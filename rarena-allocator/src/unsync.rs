@@ -66,6 +66,7 @@ impl Header {
 
 struct Memory {
   refs: usize,
+  reserved: usize,
   cap: u32,
   data_offset: usize,
   flag: MemoryFlags,
@@ -167,24 +168,36 @@ impl Memory {
       let ptr = vec.as_mut_ptr();
       ptr::write_bytes(ptr, 0, vec.cap);
 
-      let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
+      let reserved = opts.reserved() as usize;
+
+      let header_ptr_offset =
+        align_offset::<Header>(opts.reserved()) as usize + mem::align_of::<Header>();
+
+      if reserved + header_ptr_offset + mem::size_of::<Header>() > vec.cap {
+        super::panic_reserved_too_large();
+      }
+
       let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
       let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
 
       let (header, data_offset) = if unify {
-        Self::write_sanity(
+        super::write_sanity(
           opts.freelist() as u8,
           opts.magic_version(),
-          slice::from_raw_parts_mut(ptr, 8),
+          slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
         );
         header_ptr.write(Header::new(data_offset as u32, min_segment_size));
         (Either::Left(header_ptr as _), data_offset)
       } else {
-        data_offset = 1;
-        (Either::Right(Header::new(1, min_segment_size)), data_offset)
+        data_offset = reserved + 1;
+        (
+          Either::Right(Header::new((reserved + 1) as u32, min_segment_size)),
+          data_offset,
+        )
       };
 
       Self {
+        reserved: opts.reserved() as usize,
         cap: cap as u32,
         refs: 1,
         flag: MemoryFlags::empty(),
@@ -299,7 +312,14 @@ impl Memory {
 
         let ptr = mmap.as_mut_ptr();
 
-        let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
+        let reserved = opts.reserved() as usize;
+
+        let header_ptr_offset =
+          align_offset::<Header>(opts.reserved()) as usize + mem::align_of::<Header>();
+
+        if reserved + header_ptr_offset + mem::size_of::<Header>() > capacity as usize {
+          return Err(reserved_too_large());
+        }
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
 
@@ -307,10 +327,10 @@ impl Memory {
           // initialize the memory with 0
           ptr::write_bytes(ptr, 0, cap);
 
-          Self::write_sanity(
+          super::write_sanity(
             freelist as u8,
             magic_version,
-            slice::from_raw_parts_mut(ptr, header_ptr_offset),
+            slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
           );
 
           // Safety: we have add the overhead for the header
@@ -324,11 +344,16 @@ impl Memory {
             0,
             mmap.len() - allocated as usize,
           );
-          Self::sanity_check(Some(freelist), magic_version, &mmap)?;
+          super::sanity_check(
+            Some(freelist),
+            magic_version,
+            &mmap[reserved..reserved + mem::align_of::<Header>()],
+          )?;
           (CURRENT_VERSION, magic_version)
         };
 
         let this = Self {
+          reserved,
           cap: cap as u32,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
@@ -357,37 +382,7 @@ impl Memory {
     path_builder: PB,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    let path = path_builder().map_err(Either::Left)?;
-
-    Self::map_in(path, open_options, mmap_options, magic_version, mmap).map_err(Either::Right)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map<P: AsRef<std::path::Path>>(
-    path: P,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    magic_version: u16,
-  ) -> std::io::Result<Self> {
-    Self::map_in(
-      path.as_ref().to_path_buf(),
-      open_options,
-      mmap_options,
-      magic_version,
-      mmap,
-    )
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_copy_read_only_with_path_builder<PB, E>(
-    path_builder: PB,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
+    reserved: u32,
     magic_version: u16,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
@@ -399,6 +394,49 @@ impl Memory {
       path,
       open_options,
       mmap_options,
+      reserved,
+      magic_version,
+      mmap,
+    )
+    .map_err(Either::Right)
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map<P: AsRef<std::path::Path>>(
+    path: P,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    reserved: u32,
+    magic_version: u16,
+  ) -> std::io::Result<Self> {
+    Self::map_in(
+      path.as_ref().to_path_buf(),
+      open_options,
+      mmap_options,
+      reserved,
+      magic_version,
+      mmap,
+    )
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn map_copy_read_only_with_path_builder<PB, E>(
+    path_builder: PB,
+    open_options: OpenOptions,
+    mmap_options: MmapOptions,
+    reserved: u32,
+    magic_version: u16,
+  ) -> Result<Self, Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    let path = path_builder().map_err(Either::Left)?;
+
+    Self::map_in(
+      path,
+      open_options,
+      mmap_options,
+      reserved,
       magic_version,
       mmap_copy_read_only,
     )
@@ -410,12 +448,14 @@ impl Memory {
     path: P,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
+    reserved: u32,
     magic_version: u16,
   ) -> std::io::Result<Self> {
     Self::map_in(
       path.as_ref().to_path_buf(),
       open_options,
       mmap_options,
+      reserved,
       magic_version,
       mmap_copy_read_only,
     )
@@ -426,6 +466,7 @@ impl Memory {
     path: std::path::PathBuf,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
+    reserved: u32,
     magic_version: u16,
     f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::Mmap>,
   ) -> std::io::Result<Self> {
@@ -447,13 +488,25 @@ impl Memory {
           return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
         }
 
-        let freelist = Self::sanity_check(None, magic_version, &mmap)?;
+        let reserved = reserved as usize;
 
         let ptr = mmap.as_ptr();
-        let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
+        let header_ptr_offset =
+          align_offset::<Header>(reserved as u32) as usize + mem::align_of::<Header>();
+
+        if reserved + header_ptr_offset + mem::size_of::<Header>() > len {
+          return Err(reserved_too_large());
+        }
+        let freelist = super::sanity_check(
+          None,
+          magic_version,
+          &mmap[reserved..reserved + mem::align_of::<Header>()],
+        )?;
+
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset) as _;
         let this = Self {
+          reserved,
           cap: len as u32,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
@@ -483,6 +536,7 @@ impl Memory {
     alignment: usize,
     min_segment_size: u32,
     unify: bool,
+    reserved: u32,
     magic_version: u16,
     freelist: Freelist,
   ) -> std::io::Result<Self> {
@@ -503,26 +557,37 @@ impl Memory {
       unsafe {
         ptr::write_bytes(ptr, 0, mmap.len());
 
-        let header_ptr_offset = ptr.add(1).align_offset(mem::align_of::<Header>()) + 1;
+        let header_ptr_offset =
+          align_offset::<Header>(reserved) as usize + mem::align_of::<Header>();
         let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset);
 
+        let reserved = reserved as usize;
+
+        if reserved + header_ptr_offset + mem::size_of::<Header>() > mmap.len() {
+          return Err(reserved_too_large());
+        }
+
         let (header, data_offset) = if unify {
-          Self::write_sanity(
+          super::write_sanity(
             freelist as u8,
             magic_version,
-            slice::from_raw_parts_mut(ptr, header_ptr_offset),
+            slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
           );
           header_ptr
             .cast::<Header>()
             .write(Header::new(data_offset as u32, min_segment_size));
           (Either::Left(header_ptr as _), data_offset)
         } else {
-          data_offset = 1;
-          (Either::Right(Header::new(1, min_segment_size)), data_offset)
+          data_offset = reserved + 1;
+          (
+            Either::Right(Header::new((reserved + 1) as u32, min_segment_size)),
+            data_offset,
+          )
         };
 
         let this = Self {
+          reserved,
           flag: MemoryFlags::MMAP,
           cap: mmap.len() as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
@@ -659,61 +724,6 @@ impl Memory {
       }
       _ => Ok(()),
     }
-  }
-
-  #[inline]
-  fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
-    data[FREELIST_OFFSET] = freelist;
-    data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE]
-      .copy_from_slice(MAGIC_TEXT.as_ref());
-    data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
-      .copy_from_slice(magic_version.to_le_bytes().as_ref());
-    data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
-      .copy_from_slice(CURRENT_VERSION.to_le_bytes().as_ref());
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  fn sanity_check(
-    freelist: Option<Freelist>,
-    magic_version: u16,
-    data: &[u8],
-  ) -> std::io::Result<Freelist> {
-    let stored_freelist = data[FREELIST_OFFSET];
-    let stored_freelist = Freelist::try_from(stored_freelist).map_err(invalid_data)?;
-
-    if let Some(freelist) = freelist {
-      if stored_freelist != freelist {
-        return Err(bad_freelist());
-      }
-    }
-
-    let stored_magic_version: u16 = u16::from_le_bytes(
-      data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
-        .try_into()
-        .unwrap(),
-    );
-    let version: u16 = u16::from_le_bytes(
-      data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
-        .try_into()
-        .unwrap(),
-    );
-
-    if stored_magic_version != magic_version {
-      return Err(invalid_data(MagicVersionMismatch::new(
-        magic_version,
-        stored_magic_version,
-      )));
-    }
-
-    if version != CURRENT_VERSION {
-      return Err(invalid_data(VersionMismatch::new(CURRENT_VERSION, version)));
-    }
-
-    if data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE] != MAGIC_TEXT {
-      return Err(bad_magic());
-    }
-    Ok(stored_freelist)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -922,6 +932,7 @@ impl Segment {
 /// Arena should be lock-free
 pub struct Arena {
   ptr: *mut u8,
+  reserved: usize,
   data_offset: u32,
   flag: MemoryFlags,
   max_retries: u8,
@@ -970,6 +981,7 @@ impl Clone for Arena {
       // last Arena is dropped.
       Self {
         max_retries: self.max_retries,
+        reserved: self.reserved,
         flag: self.flag,
         magic_version: self.magic_version,
         version: self.version,
@@ -990,6 +1002,27 @@ impl Clone for Arena {
 impl Sealed for Arena {}
 
 impl Allocator for Arena {
+  fn reserved_slice(&self) -> &[u8] {
+    if self.reserved == 0 {
+      return &[];
+    }
+
+    // Safety: the ptr is always non-null.
+    unsafe { slice::from_raw_parts(self.ptr, self.reserved) }
+  }
+
+  unsafe fn reserved_slice_mut(&self) -> &mut [u8] {
+    if self.reserved == 0 {
+      return &mut [];
+    }
+
+    if self.ro {
+      panic!("ARENA is read-only");
+    }
+
+    slice::from_raw_parts_mut(self.ptr, self.reserved)
+  }
+
   fn raw_mut_ptr(&self) -> *mut u8 {
     self.ptr
   }
@@ -1049,7 +1082,7 @@ impl Allocator for Arena {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
   /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
@@ -1101,7 +1134,7 @@ impl Allocator for Arena {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
   ///
@@ -1932,7 +1965,7 @@ impl Allocator for Arena {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map(&path, open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -1941,12 +1974,18 @@ impl Allocator for Arena {
   #[inline]
   fn map<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> std::io::Result<Self> {
-    Memory::map(path, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
+    Memory::map(
+      path,
+      open_options,
+      mmap_options,
+      opts.reserved(),
+      opts.magic_version(),
+    )
+    .map(|memory| Self::new_in(memory, 0, true, true))
   }
 
   /// Opens a read only ARENA backed by a mmap with the given capacity.
@@ -1967,7 +2006,7 @@ impl Allocator for Arena {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -1976,15 +2015,21 @@ impl Allocator for Arena {
   #[inline]
   fn map_with_path_builder<PB, E>(
     path_builder: PB,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
   {
-    Memory::map_with_path_builder(path_builder, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
+    Memory::map_with_path_builder(
+      path_builder,
+      open_options,
+      mmap_options,
+      opts.reserved(),
+      opts.magic_version(),
+    )
+    .map(|memory| Self::new_in(memory, 0, true, true))
   }
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
@@ -2006,6 +2051,7 @@ impl Allocator for Arena {
       opts.maximum_alignment(),
       opts.minimum_segment_size(),
       opts.unify(),
+      opts.reserved(),
       opts.magic_version(),
       opts.freelist(),
     )
@@ -2095,7 +2141,7 @@ impl Allocator for Arena {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only(&path, open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -2104,12 +2150,18 @@ impl Allocator for Arena {
   #[inline]
   fn map_copy_read_only<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> std::io::Result<Self> {
-    Memory::map_copy_read_only(path, open_options, mmap_options, magic_version)
-      .map(|memory| Self::new_in(memory, 0, true, true))
+    Memory::map_copy_read_only(
+      path,
+      open_options,
+      mmap_options,
+      opts.reserved(),
+      opts.magic_version(),
+    )
+    .map(|memory| Self::new_in(memory, 0, true, true))
   }
 
   /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file with the given path builder.
@@ -2130,7 +2182,7 @@ impl Allocator for Arena {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -2139,9 +2191,9 @@ impl Allocator for Arena {
   #[inline]
   fn map_copy_read_only_with_path_builder<PB, E>(
     path_builder: PB,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
@@ -2150,7 +2202,8 @@ impl Allocator for Arena {
       path_builder,
       open_options,
       mmap_options,
-      magic_version,
+      opts.reserved(),
+      opts.magic_version(),
     )
     .map(|memory| Self::new_in(memory, 0, true, true))
   }
@@ -3329,6 +3382,7 @@ impl Arena {
     let ptr = memory.as_mut_ptr();
 
     Self {
+      reserved: memory.reserved,
       freelist: memory.freelist,
       cap: memory.cap(),
       flag: memory.flag,

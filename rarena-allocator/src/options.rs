@@ -58,6 +58,7 @@ pub struct ArenaOptions {
   magic_version: u16,
   unify: bool,
   freelist: Freelist,
+  reserved: u32,
 }
 
 impl Default for ArenaOptions {
@@ -79,7 +80,33 @@ impl ArenaOptions {
       unify: false,
       magic_version: 0,
       freelist: Freelist::Optimistic,
+      reserved: 0,
     }
+  }
+
+  /// Set the reserved of the ARENA.
+  ///
+  /// The reserved is used to configure the start position of the ARENA. This is useful
+  /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
+  /// you can set the reserved to the size to `8` to store a 8 bytes checksum.
+  ///
+  /// The default reserved is `0`.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_reserved(8);
+  /// ```
+  #[inline]
+  pub const fn with_reserved(mut self, reserved: u32) -> Self {
+    self.reserved = if self.capacity <= reserved {
+      self.capacity
+    } else {
+      reserved
+    };
+    self
   }
 
   /// Set the maximum alignment of the ARENA.
@@ -222,6 +249,28 @@ impl ArenaOptions {
   pub const fn with_freelist(mut self, freelist: Freelist) -> Self {
     self.freelist = freelist;
     self
+  }
+
+  /// Get the reserved of the ARENA.
+  ///
+  /// The reserved is used to configure the start position of the ARENA. This is useful
+  /// when you want to add some bytes before the ARENA, e.g. when using the memory map file backed ARENA,
+  /// you can set the reserved to the size to `8` to store a 8 bytes checksum.
+  ///
+  /// The default reserved is `0`.
+  ///
+  /// # Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::ArenaOptions;
+  ///
+  /// let opts = ArenaOptions::new().with_reserved(8);
+  ///
+  /// assert_eq!(opts.reserved(), 8);
+  /// ```
+  #[inline]
+  pub const fn reserved(&self) -> u32 {
+    self.reserved
   }
 
   /// Get the maximum alignment of the ARENA.

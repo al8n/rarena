@@ -118,8 +118,75 @@ mod sealed {
   pub trait Sealed: Sized + Clone {}
 }
 
+#[inline]
+fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
+  data[FREELIST_OFFSET] = freelist;
+  data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE].copy_from_slice(MAGIC_TEXT.as_ref());
+  data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
+    .copy_from_slice(magic_version.to_le_bytes().as_ref());
+  data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
+    .copy_from_slice(CURRENT_VERSION.to_le_bytes().as_ref());
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn sanity_check(
+  freelist: Option<Freelist>,
+  magic_version: u16,
+  data: &[u8],
+) -> std::io::Result<Freelist> {
+  let stored_freelist = data[FREELIST_OFFSET];
+  let stored_freelist = Freelist::try_from(stored_freelist).map_err(invalid_data)?;
+
+  if let Some(freelist) = freelist {
+    if stored_freelist != freelist {
+      return Err(bad_freelist());
+    }
+  }
+
+  let stored_magic_version: u16 = u16::from_le_bytes(
+    data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
+      .try_into()
+      .unwrap(),
+  );
+  let version: u16 = u16::from_le_bytes(
+    data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
+      .try_into()
+      .unwrap(),
+  );
+
+  if stored_magic_version != magic_version {
+    return Err(invalid_data(MagicVersionMismatch::new(
+      magic_version,
+      stored_magic_version,
+    )));
+  }
+
+  if version != CURRENT_VERSION {
+    return Err(invalid_data(VersionMismatch::new(CURRENT_VERSION, version)));
+  }
+
+  if data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE] != MAGIC_TEXT {
+    return Err(bad_magic());
+  }
+  Ok(stored_freelist)
+}
+
 /// A trait for easily interacting with the sync and unsync allocator allocators.
 pub trait Allocator: sealed::Sealed {
+  /// Returns the reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
+  fn reserved_slice(&self) -> &[u8];
+
+  /// Returns the mutable reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
+  ///
+  /// # Safety
+  /// - The caller need to make sure there is no data-race
+  ///
+  /// # Panic
+  /// - If in read-only mode, and num of reserved bytes is greater than 0, this method will panic.
+  #[allow(clippy::mut_from_ref)]
+  unsafe fn reserved_slice_mut(&self) -> &mut [u8];
+
   /// Allocates a `T` in the allocator.
   ///
   /// # Safety
@@ -171,7 +238,7 @@ pub trait Allocator: sealed::Sealed {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
   /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
@@ -223,7 +290,7 @@ pub trait Allocator: sealed::Sealed {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
   ///
@@ -778,7 +845,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map(&path, open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -786,9 +853,9 @@ pub trait Allocator: sealed::Sealed {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn map<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> std::io::Result<Self>;
 
   /// Opens a read only allocator backed by a mmap with the given capacity.
@@ -809,7 +876,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -817,9 +884,9 @@ pub trait Allocator: sealed::Sealed {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn map_with_path_builder<PB, E>(
     path_builder: PB,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> Result<Self, either::Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>;
@@ -912,7 +979,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only(&path, open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -920,9 +987,9 @@ pub trait Allocator: sealed::Sealed {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn map_copy_read_only<P: AsRef<std::path::Path>>(
     path: P,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> std::io::Result<Self>;
 
   /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
@@ -943,7 +1010,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), open_options, mmap_options, 0).unwrap();
+  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -951,9 +1018,9 @@ pub trait Allocator: sealed::Sealed {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn map_copy_read_only_with_path_builder<PB, E>(
     path_builder: PB,
+    opts: ArenaOptions,
     open_options: OpenOptions,
     mmap_options: MmapOptions,
-    magic_version: u16,
   ) -> Result<Self, either::Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>;
@@ -1422,6 +1489,20 @@ mod common {
 #[inline]
 fn invalid_data<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::Error {
   std::io::Error::new(std::io::ErrorKind::InvalidData, e)
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
+fn reserved_too_large() -> std::io::Error {
+  std::io::Error::new(
+    std::io::ErrorKind::InvalidInput,
+    "reserved memory too large, the remaining memory is not enough to construct the ARENA",
+  )
+}
+
+#[inline]
+const fn panic_reserved_too_large() -> ! {
+  panic!("reserved memory too large, the remaining memory is not enough to construct the ARENA")
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

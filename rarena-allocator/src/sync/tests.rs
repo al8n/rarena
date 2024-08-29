@@ -12,6 +12,12 @@ mod pessimistic_slow_path;
 const ARENA_SIZE: u32 = 1024;
 const MAX_SEGMENT_NODE_SIZE: u32 = (SEGMENT_NODE_SIZE * 2 - 1) as u32;
 
+#[cfg(not(feature = "reserved"))]
+const RESERVED: u32 = 0;
+#[cfg(feature = "reserved")]
+const RESERVED: u32 = 5;
+const DEFAULT_ARENA_OPTIONS: ArenaOptions = ArenaOptions::new().with_reserved(RESERVED);
+
 fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]
   f();
@@ -36,12 +42,12 @@ fn alloc_bytes(a: Arena) {
 
 #[test]
 fn alloc_bytes_vec() {
-  run(|| alloc_bytes(Arena::new(ArenaOptions::new())))
+  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS)))
 }
 
 #[test]
 fn alloc_bytes_vec_unify() {
-  run(|| alloc_bytes(Arena::new(ArenaOptions::new().with_unify(true))))
+  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true))))
 }
 
 #[test]
@@ -56,7 +62,7 @@ fn alloc_bytes_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    alloc_bytes(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    alloc_bytes(Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap());
   });
 }
 
@@ -65,7 +71,7 @@ fn alloc_bytes_mmap() {
 fn alloc_bytes_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_bytes(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    alloc_bytes(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -74,7 +80,7 @@ fn alloc_bytes_mmap_anon() {
 fn alloc_bytes_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_bytes(Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap());
+    alloc_bytes(Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap());
   });
 }
 
@@ -125,7 +131,7 @@ fn alloc_offset_and_size(a: Arena) {
 #[cfg(not(feature = "loom"))]
 fn alloc_offset_and_size_vec() {
   run(|| {
-    alloc_offset_and_size(Arena::new(ArenaOptions::new()));
+    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
@@ -133,7 +139,7 @@ fn alloc_offset_and_size_vec() {
 #[cfg(not(feature = "loom"))]
 fn alloc_offset_and_size_vec_unify() {
   run(|| {
-    alloc_offset_and_size(Arena::new(ArenaOptions::new().with_unify(true)));
+    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -150,7 +156,7 @@ fn alloc_offset_and_size_mmap() {
       .write(true);
     let mmap_options = MmapOptions::default();
     alloc_offset_and_size(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+      Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
     );
   });
 }
@@ -160,7 +166,7 @@ fn alloc_offset_and_size_mmap() {
 fn alloc_offset_and_size_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_offset_and_size(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    alloc_offset_and_size(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -182,14 +188,14 @@ fn alloc_heap(a: Arena) {
 #[test]
 fn alloc_heap_vec() {
   run(|| {
-    alloc_heap(Arena::new(ArenaOptions::new()));
+    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
 #[test]
 fn alloc_heap_vec_unify() {
   run(|| {
-    alloc_heap(Arena::new(ArenaOptions::new().with_unify(true)));
+    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -205,7 +211,7 @@ fn alloc_heap_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    alloc_heap(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    alloc_heap(Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap());
   });
 }
 
@@ -214,7 +220,7 @@ fn alloc_heap_mmap() {
 fn alloc_heap_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_heap(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    alloc_heap(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -223,7 +229,7 @@ fn alloc_heap_mmap_anon() {
 fn alloc_heap_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_heap(Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap());
+    alloc_heap(Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap());
   });
 }
 
@@ -241,14 +247,14 @@ fn alloc_inlined(a: Arena) {
 #[test]
 fn alloc_inlined_vec() {
   run(|| {
-    alloc_inlined(Arena::new(ArenaOptions::new()));
+    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
 #[test]
 fn alloc_inlined_vec_unify() {
   run(|| {
-    alloc_inlined(Arena::new(ArenaOptions::new().with_unify(true)));
+    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -264,7 +270,7 @@ fn alloc_inlined_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    alloc_inlined(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    alloc_inlined(Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap());
   });
 }
 
@@ -273,7 +279,7 @@ fn alloc_inlined_mmap() {
 fn alloc_inlined_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_inlined(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    alloc_inlined(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -282,7 +288,7 @@ fn alloc_inlined_mmap_anon() {
 fn alloc_inlined_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_inlined(Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap());
+    alloc_inlined(Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap());
   });
 }
 
@@ -304,14 +310,14 @@ fn alloc_zst(a: Arena) {
 #[test]
 fn alloc_zst_vec() {
   run(|| {
-    alloc_zst(Arena::new(ArenaOptions::new()));
+    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
 #[test]
 fn alloc_zst_vec_unify() {
   run(|| {
-    alloc_zst(Arena::new(ArenaOptions::new().with_unify(true)));
+    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -327,7 +333,7 @@ fn alloc_zst_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    alloc_zst(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    alloc_zst(Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap());
   });
 }
 
@@ -336,7 +342,7 @@ fn alloc_zst_mmap() {
 fn alloc_zst_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_zst(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    alloc_zst(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -345,7 +351,7 @@ fn alloc_zst_mmap_anon() {
 fn alloc_zst_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    alloc_zst(Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap());
+    alloc_zst(Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap());
   });
 }
 
@@ -367,14 +373,14 @@ fn carefully_alloc_in(a: Arena) {
 #[test]
 fn carefully_alloc() {
   run(|| {
-    carefully_alloc_in(Arena::new(ArenaOptions::new()));
+    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
 #[test]
 fn carefully_alloc_unify() {
   run(|| {
-    carefully_alloc_in(Arena::new(ArenaOptions::new().with_unify(true)));
+    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -390,7 +396,9 @@ fn carefully_alloc_mmap() {
       .read(true)
       .write(true);
     let mmap_options = MmapOptions::default();
-    carefully_alloc_in(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
+    carefully_alloc_in(
+      Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
+    );
   });
 }
 
@@ -399,7 +407,7 @@ fn carefully_alloc_mmap() {
 fn carefully_alloc_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    carefully_alloc_in(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    carefully_alloc_in(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -409,7 +417,7 @@ fn carefully_alloc_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     carefully_alloc_in(
-      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
+      Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap(),
     );
   });
 }
@@ -433,7 +441,7 @@ fn recoverable_in() {
 
   unsafe {
     let offset = {
-      let a = Arena::map_mut(&p, ArenaOptions::new(), open_options, mmap_options).unwrap();
+      let a = Arena::map_mut(&p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap();
       let mut data = a.alloc::<Recoverable>().unwrap();
       data.write(Recoverable {
         field1: 10,
@@ -443,7 +451,13 @@ fn recoverable_in() {
       data.offset()
     };
 
-    let a = Arena::map(p, OpenOptions::new().read(true), MmapOptions::default(), 0).unwrap();
+    let a = Arena::map(
+      p,
+      DEFAULT_ARENA_OPTIONS,
+      OpenOptions::new().read(true),
+      MmapOptions::default(),
+    )
+    .unwrap();
     let data = &*a.get_aligned_pointer::<Recoverable>(offset);
     assert_eq!(data.field1, 10);
     assert_eq!(data.field2.load(Ordering::Relaxed), 20);
@@ -484,7 +498,7 @@ fn check_data_offset(l: Arena, offset: usize) {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec() {
   run(|| {
-    check_data_offset(Arena::new(ArenaOptions::new()), 1);
+    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS), RESERVED as usize + 1);
   });
 }
 
@@ -492,7 +506,11 @@ fn check_data_offset_vec() {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec_unify() {
   run(|| {
-    check_data_offset(Arena::new(ArenaOptions::new().with_unify(true)), 32);
+    check_data_offset(
+      Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)),
+      8 + core::mem::size_of::<super::Header>()
+        + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
+    );
   });
 }
 
@@ -509,8 +527,9 @@ fn check_data_offset_mmap() {
       .write(true);
     let mmap_options = MmapOptions::default();
     check_data_offset(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
-      32,
+      Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
+      8 + core::mem::size_of::<super::Header>()
+        + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
     );
   });
 }
@@ -521,8 +540,8 @@ fn check_data_offset_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     check_data_offset(
-      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
-      1,
+      Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap(),
+      RESERVED as usize + 1,
     );
   });
 }
@@ -533,8 +552,9 @@ fn check_data_offset_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     check_data_offset(
-      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
-      32,
+      Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap(),
+      8 + core::mem::size_of::<super::Header>()
+        + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
     );
   });
 }
@@ -577,7 +597,7 @@ fn discard_freelist_in(l: Arena) {
 #[test]
 fn discard_freelist() {
   run(|| {
-    discard_freelist_in(Arena::new(ArenaOptions::new()));
+    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS));
   });
 }
 
@@ -585,7 +605,7 @@ fn discard_freelist() {
 #[test]
 fn discard_freelist_unify() {
   run(|| {
-    discard_freelist_in(Arena::new(ArenaOptions::new().with_unify(true)));
+    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
   });
 }
 
@@ -602,7 +622,7 @@ fn discard_freelist_mmap() {
       .write(true);
     let mmap_options = MmapOptions::default();
     discard_freelist_in(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
+      Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
     );
   });
 }
@@ -612,7 +632,7 @@ fn discard_freelist_mmap() {
 fn discard_freelist_mmap_anon() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    discard_freelist_in(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
+    discard_freelist_in(Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap());
   });
 }
 
@@ -622,7 +642,7 @@ fn discard_freelist_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     discard_freelist_in(
-      Arena::map_anon(ArenaOptions::new().with_unify(true), mmap_options).unwrap(),
+      Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap(),
     );
   });
 }
@@ -790,7 +810,7 @@ fn reopen() {
   let mmap_options = MmapOptions::default();
   let l = Arena::map_mut(
     p.clone(),
-    ArenaOptions::new(),
+    DEFAULT_ARENA_OPTIONS,
     open_options.clone(),
     mmap_options.clone(),
   )
@@ -801,7 +821,7 @@ fn reopen() {
 
   let l = Arena::map_mut(
     p.clone(),
-    ArenaOptions::new(),
+    DEFAULT_ARENA_OPTIONS,
     open_options,
     mmap_options.clone(),
   )
@@ -810,8 +830,147 @@ fn reopen() {
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
 
-  let l = Arena::map(p.clone(), OpenOptions::new().read(true), mmap_options, 0).unwrap();
+  let l = Arena::map(
+    p.clone(),
+    DEFAULT_ARENA_OPTIONS,
+    OpenOptions::new().read(true),
+    mmap_options,
+  )
+  .unwrap();
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+fn reopen_with_reserved() {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join("test_reopen");
+  let open_options = OpenOptions::default()
+    .create(Some(ARENA_SIZE))
+    .read(true)
+    .write(true);
+  let mmap_options = MmapOptions::default();
+  let l = Arena::map_mut(
+    p.clone(),
+    DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
+    open_options.clone(),
+    mmap_options.clone(),
+  )
+  .unwrap();
+  let allocated = l.allocated();
+  let data_offset = l.data_offset();
+  unsafe {
+    let reserved_slice = l.reserved_slice_mut();
+    for i in 0..RESERVED {
+      reserved_slice[i as usize] = i as u8;
+    }
+  }
+
+  drop(l);
+
+  let l = Arena::map_mut(
+    p.clone(),
+    DEFAULT_ARENA_OPTIONS,
+    open_options,
+    mmap_options.clone(),
+  )
+  .unwrap();
+  assert_eq!(l.allocated(), allocated);
+  assert_eq!(l.data_offset(), data_offset);
+
+  unsafe {
+    let reserved_slice = l.reserved_slice_mut();
+    for i in 0..RESERVED {
+      assert_eq!(reserved_slice[i as usize], i as u8);
+      reserved_slice[i as usize] += 1;
+    }
+  }
+  drop(l);
+
+  let l = Arena::map(
+    p.clone(),
+    DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
+    OpenOptions::new().read(true),
+    mmap_options,
+  )
+  .unwrap();
+  assert_eq!(l.allocated(), allocated);
+  assert_eq!(l.data_offset(), data_offset);
+
+  let reserved_slice = l.reserved_slice();
+  for i in 0..RESERVED {
+    assert_eq!(reserved_slice[i as usize], i as u8 + 1);
+  }
+
+  drop(l);
+}
+
+fn with_reserved(l: Arena) {
+  unsafe {
+    let reserved_slice = l.reserved_slice_mut();
+    for i in 0..RESERVED {
+      reserved_slice[i as usize] = i as u8;
+    }
+  }
+
+  let mut b = l.alloc_bytes(10).unwrap();
+
+  unsafe {
+    let reserved_slice = l.reserved_slice();
+    for i in 0..RESERVED {
+      assert_eq!(reserved_slice[i as usize], i as u8);
+    }
+
+    b.detach();
+  }
+}
+
+#[test]
+fn with_reserved_vec() {
+  run(|| {
+    with_reserved(Arena::new(DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED)));
+  });
+}
+
+#[test]
+fn with_reserved_vec_unify() {
+  run(|| {
+    with_reserved(Arena::new(
+      DEFAULT_ARENA_OPTIONS
+        .with_unify(true)
+        .with_reserved(RESERVED),
+    ));
+  });
+}
+
+#[test]
+#[cfg_attr(miri, ignore)]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn with_reserved_map_anon() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    with_reserved(
+      Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED), mmap_options).unwrap(),
+    );
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn with_reserved_map_anon_unify() {
+  run(|| {
+    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
+    with_reserved(
+      Arena::map_anon(
+        DEFAULT_ARENA_OPTIONS
+          .with_unify(true)
+          .with_reserved(RESERVED),
+        mmap_options,
+      )
+      .unwrap(),
+    );
+  });
 }

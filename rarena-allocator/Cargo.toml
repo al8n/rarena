@@ -19,6 +19,9 @@ memmap = ["memmap2", "fs4", "std", "rustix", "bitflags/std"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 
+# A feature only used for testing purposes.
+reserved = ["alloc"]
+
 [dependencies]
 bitflags = { version = "2", default-features = false }
 byteorder = { version = "1", optional = true }
@@ -42,6 +45,7 @@ tempfile = "3"
 wg = "0.9"
 crossbeam-queue = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crc32fast = "1"
 
 [package.metadata.docs.rs]
 all-features = true
