@@ -1059,7 +1059,7 @@ impl Allocator for Arena {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
   /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
@@ -1111,7 +1111,7 @@ impl Allocator for Arena {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = Arena::map("path/to/file", OpenOptions::read(true), MmapOptions::default()).unwrap();
+  /// let arena = Arena::map("path/to/file", ArenaOptions::new(), OpenOptions::read(true), MmapOptions::default()).unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
   ///

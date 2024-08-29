@@ -682,7 +682,14 @@ fn reopen() {
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
 
-  let l = Arena::map(p.clone(), OpenOptions::new().read(true), mmap_options, 0).unwrap();
+  let l = Arena::map(
+    p.clone(),
+    DEFAULT_ARENA_OPTIONS,
+    OpenOptions::new().read(true),
+    mmap_options,
+    0,
+  )
+  .unwrap();
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
