@@ -833,7 +833,6 @@ fn reopen() {
     DEFAULT_ARENA_OPTIONS,
     OpenOptions::new().read(true),
     mmap_options,
-    0,
   )
   .unwrap();
   assert_eq!(l.allocated(), allocated);
