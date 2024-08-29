@@ -379,50 +379,6 @@ impl Allocator for Arena {
     })
   }
 
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[inline]
-  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self
-      .alloc_aligned_bytes::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self
-      .alloc_aligned_bytes_within_page::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
   /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
   ///
   /// The layout of the allocated memory is:
@@ -462,28 +418,6 @@ impl Allocator for Arena {
     })
   }
 
-  /// Allocates an owned slice of memory in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
-  #[inline]
-  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self.alloc_bytes(size).map(|mut b| b.to_owned())
-  }
-
-  /// Allocates an owned slice of memory in the ARENA in the same page.
-  ///
-  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
-  }
-
   /// Allocates a slice of memory in the ARENA in the same page.
   ///
   /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
@@ -501,44 +435,6 @@ impl Allocator for Arena {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
     })
-  }
-
-  /// Allocates a `T` in the ARENA. Like [`alloc`](Self::alloc), but returns an `Owned`.
-  ///
-  /// The cost is one more atomic operation than [`alloc`](Self::alloc).
-  ///
-  /// # Safety
-  ///
-  /// - See [`alloc`](Self::alloc) for safety.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  ///
-  /// unsafe {
-  ///   let mut data = arena.alloc_owned::<u64>().unwrap();
-  ///   data.write(10);
-  ///
-  ///   assert_eq!(*data.as_ref(), 10);
-  /// }
-  /// ```
-  #[inline]
-  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error> {
-    self.alloc::<T>().map(|mut r| r.to_owned())
-  }
-
-  /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
-  ///
-  /// # Safety
-  /// - See [`alloc`](Self::alloc) for safety.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
-    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
   }
 
   /// Allocates a `T` in the ARENA in the same page.

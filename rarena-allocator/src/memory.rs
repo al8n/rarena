@@ -1,4 +1,4 @@
-use core::{ptr, slice};
+use core::{marker::PhantomData, ptr, slice};
 
 use either::Either;
 
@@ -50,7 +50,7 @@ pub(crate) trait Header: Sized {
 
 enum MemoryBackend<P: PathRefCounter> {
   #[allow(dead_code)]
-  Vec(AlignedVec),
+  Vec(AlignedVec, PhantomData<P>),
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   MmapMut {
     path: P,
@@ -285,7 +285,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         flag: MemoryFlags::empty(),
         ptr,
         header_ptr: header,
-        backend: MemoryBackend::Vec(vec),
+        backend: MemoryBackend::Vec(vec, PhantomData),
         data_offset,
         unify,
         magic_version: opts.magic_version(),

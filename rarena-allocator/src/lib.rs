@@ -331,7 +331,11 @@ pub trait Allocator: sealed::Sealed {
   /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
   /// bytes.put(val).unwrap(); // write `T` to the byte slice.
   /// ```
-  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error>;
+  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self
+      .alloc_aligned_bytes::<T>(size)
+      .map(|mut b| b.to_owned())
+  }
 
   /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
   ///
@@ -349,7 +353,11 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error>;
+  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self
+      .alloc_aligned_bytes_within_page::<T>(size)
+      .map(|mut b| b.to_owned())
+  }
 
   /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
   ///
@@ -379,7 +387,9 @@ pub trait Allocator: sealed::Sealed {
   /// Allocates an owned slice of memory in the allocator.
   ///
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Allocator::alloc_bytes).
-  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error>;
+  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self.alloc_bytes(size).map(|mut b| b.to_owned())
+  }
 
   /// Allocates an owned slice of memory in the allocator in the same page.
   ///
@@ -390,7 +400,9 @@ pub trait Allocator: sealed::Sealed {
   /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Allocator::alloc_bytes_within_page).
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error>;
+  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
+  }
 
   /// Allocates a slice of memory in the allocator in the same page.
   ///
@@ -427,7 +439,9 @@ pub trait Allocator: sealed::Sealed {
   ///   assert_eq!(*data.as_ref(), 10);
   /// }
   /// ```
-  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error>;
+  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error> {
+    self.alloc::<T>().map(|mut r| r.to_owned())
+  }
 
   /// Allocates a `T` in the allocator in the same page. Like [`alloc_within_page`](Allocator::alloc_within_page), but returns an `Owned`.
   ///
@@ -435,7 +449,9 @@ pub trait Allocator: sealed::Sealed {
   /// - See [`alloc`](Allocator::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error>;
+  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
+    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
+  }
 
   /// Allocates a `T` in the allocator in the same page.
   ///
