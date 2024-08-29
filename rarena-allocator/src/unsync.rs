@@ -497,7 +497,11 @@ impl Memory {
         if reserved + header_ptr_offset + mem::size_of::<Header>() > len {
           return Err(reserved_too_large());
         }
-        let freelist = super::sanity_check(None, magic_version, &mmap)?;
+        let freelist = super::sanity_check(
+          None,
+          magic_version,
+          &mmap[reserved..reserved + mem::align_of::<Header>()],
+        )?;
 
         let data_offset = header_ptr_offset + mem::size_of::<Header>();
         let header_ptr = ptr.add(header_ptr_offset) as _;
