@@ -421,11 +421,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           (CURRENT_VERSION, magic_version)
         } else {
           let allocated = (*header_ptr).load_allocated();
-          ptr::write_bytes(
-            ptr.add(allocated as usize),
-            0,
-            mmap.len() - allocated as usize,
-          );
+          ptr::write_bytes(ptr.add(allocated as usize), 0, cap - allocated as usize);
           super::sanity_check(
             Some(freelist),
             magic_version,
@@ -622,6 +618,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     freelist: Freelist,
   ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
+      let cap = mmap.len();
       if unify {
         if mmap.len() < overhead::<H>() {
           return Err(invalid_data(TooSmall::new(mmap.len(), overhead::<H>())));
@@ -636,13 +633,13 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       // Safety: we have add the overhead for the header
       unsafe {
-        ptr::write_bytes(ptr, 0, mmap.len());
+        ptr::write_bytes(ptr, 0, cap);
 
         let header_ptr_offset = align_offset::<H>(reserved) as usize + mem::align_of::<H>();
         let mut data_offset = header_ptr_offset + mem::size_of::<H>();
         let header_ptr = ptr.add(header_ptr_offset);
 
-        if reserved as usize + header_ptr_offset + mem::size_of::<H>() > mmap.len() {
+        if reserved as usize + header_ptr_offset + mem::size_of::<H>() > cap {
           return Err(reserved_too_large());
         }
 
@@ -667,7 +664,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           reserved: reserved as usize,
           flag: MemoryFlags::MMAP,
-          cap: mmap.len() as u32,
+          cap: cap as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
           refs: R::new(1),
           data_offset,
