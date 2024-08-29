@@ -15,32 +15,13 @@ use crate::{MmapOptions, OpenOptions, PAGE_SIZE};
 #[allow(unused_imports)]
 use std::boxed::Box;
 
-const OVERHEAD: usize = mem::size_of::<Header>();
-const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
+#[cfg(feature = "std")]
+type Memory = crate::memory::Memory<UnsafeCell<usize>, std::rc::Rc<std::path::PathBuf>, Header>;
 
-enum MemoryBackend {
-  #[allow(dead_code)]
-  Vec(AlignedVec),
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  MmapMut {
-    path: std::rc::Rc<std::path::PathBuf>,
-    buf: *mut memmap2::MmapMut,
-    file: std::fs::File,
-    remove_on_drop: bool,
-  },
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  Mmap {
-    path: std::rc::Rc<std::path::PathBuf>,
-    buf: *mut memmap2::Mmap,
-    file: std::fs::File,
-    remove_on_drop: bool,
-  },
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  AnonymousMmap {
-    #[allow(dead_code)]
-    buf: memmap2::MmapMut,
-  },
-}
+#[cfg(not(feature = "std"))]
+type Memory = crate::memory::Memory<UnsafeCell<usize>, std::rc::Rc<()>, Header>;
+
+const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
 
 #[derive(Debug)]
 #[repr(C, align(8))]
@@ -52,7 +33,7 @@ struct Header {
   discarded: u32,
 }
 
-impl Header {
+impl crate::memory::Header for Header {
   #[inline]
   fn new(size: u32, min_segment_size: u32) -> Self {
     Self {
@@ -62,790 +43,15 @@ impl Header {
       discarded: 0,
     }
   }
-}
 
-struct Memory {
-  refs: usize,
-  reserved: usize,
-  cap: u32,
-  data_offset: usize,
-  flag: MemoryFlags,
-  header_ptr: Either<*mut u8, Header>,
-  ptr: *mut u8,
-  #[allow(dead_code)]
-  backend: MemoryBackend,
-  unify: bool,
-  magic_version: u16,
-  version: u16,
-  freelist: Freelist,
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[inline]
-fn mmap_mut(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::MmapMut> {
-  unsafe { mmap_options.map_mut(file) }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[inline]
-fn mmap_copy(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::MmapMut> {
-  unsafe { mmap_options.map_copy(file) }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[inline]
-fn mmap(mmap_options: MmapOptions, file: &std::fs::File) -> std::io::Result<memmap2::Mmap> {
-  unsafe { mmap_options.map(file) }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[inline]
-fn mmap_copy_read_only(
-  mmap_options: MmapOptions,
-  file: &std::fs::File,
-) -> std::io::Result<memmap2::Mmap> {
-  unsafe { mmap_options.map_copy_read_only(file) }
-}
-
-impl Memory {
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
-  const fn path(&self) -> Option<&std::rc::Rc<std::path::PathBuf>> {
-    match &self.backend {
-      MemoryBackend::MmapMut { path, .. } => Some(path),
-      MemoryBackend::Mmap { path, .. } => Some(path),
-      _ => None,
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  fn set_remove_on_drop(&mut self, val: bool) {
-    match &mut self.backend {
-      MemoryBackend::MmapMut { remove_on_drop, .. } => {
-        *remove_on_drop = val;
-      }
-      MemoryBackend::Mmap { remove_on_drop, .. } => {
-        *remove_on_drop = val;
-      }
-      _ => {}
-    }
-  }
-
-  unsafe fn clear(&mut self) {
-    let header_ptr_offset = self.ptr.align_offset(mem::align_of::<Header>());
-    let data_offset = header_ptr_offset + mem::size_of::<Header>();
-
-    let min_segment_size = self.header().min_segment_size;
-    let (header, data_offset) = if self.unify {
-      let header_ptr = self.ptr.add(header_ptr_offset);
-      let header = header_ptr.cast::<Header>();
-      header.write(Header::new(data_offset as u32, min_segment_size));
-      (Either::Left(header_ptr), data_offset)
-    } else {
-      (Either::Right(Header::new(1, min_segment_size)), 1)
-    };
-
-    self.header_ptr = header;
-    self.data_offset = data_offset;
-  }
-
-  fn new_vec(opts: ArenaOptions) -> Self {
-    let cap = opts.capacity();
-    let alignment = opts.maximum_alignment();
-    let min_segment_size = opts.minimum_segment_size();
-    let unify = opts.unify();
-
-    let cap = if unify {
-      cap.saturating_add(OVERHEAD as u32)
-    } else {
-      cap.saturating_add(alignment as u32)
-    } as usize;
-
-    let mut vec = AlignedVec::new::<Header>(cap, alignment);
-    // Safety: we have add the overhead for the header
-    unsafe {
-      let ptr = vec.as_mut_ptr();
-      ptr::write_bytes(ptr, 0, vec.cap);
-
-      let reserved = opts.reserved() as usize;
-
-      let header_ptr_offset =
-        align_offset::<Header>(opts.reserved()) as usize + mem::align_of::<Header>();
-
-      if reserved + header_ptr_offset + mem::size_of::<Header>() > vec.cap {
-        super::panic_reserved_too_large();
-      }
-
-      let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
-      let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
-
-      let (header, data_offset) = if unify {
-        super::write_sanity(
-          opts.freelist() as u8,
-          opts.magic_version(),
-          slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
-        );
-        header_ptr.write(Header::new(data_offset as u32, min_segment_size));
-        (Either::Left(header_ptr as _), data_offset)
-      } else {
-        data_offset = reserved + 1;
-        (
-          Either::Right(Header::new((reserved + 1) as u32, min_segment_size)),
-          data_offset,
-        )
-      };
-
-      Self {
-        reserved: opts.reserved() as usize,
-        cap: cap as u32,
-        refs: 1,
-        flag: MemoryFlags::empty(),
-        ptr,
-        header_ptr: header,
-        backend: MemoryBackend::Vec(vec),
-        data_offset,
-        unify,
-        magic_version: opts.magic_version(),
-        version: CURRENT_VERSION,
-        freelist: opts.freelist(),
-      }
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_mut<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self> {
-    Self::map_mut_in(
-      path.as_ref().to_path_buf(),
-      opts,
-      open_options,
-      mmap_options,
-      mmap_mut,
-    )
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_mut_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    let path = path_builder().map_err(Either::Left)?;
-
-    Self::map_mut_in(path, opts, open_options, mmap_options, mmap_mut).map_err(Either::Right)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_copy<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self> {
-    Self::map_mut_in(
-      path.as_ref().to_path_buf(),
-      opts,
-      open_options,
-      mmap_options,
-      mmap_copy,
-    )
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_copy_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    let path = path_builder().map_err(Either::Left)?;
-
-    Self::map_mut_in(path, opts, open_options, mmap_options, mmap_copy).map_err(Either::Right)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_mut_in(
-    path: std::path::PathBuf,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::MmapMut>,
-  ) -> std::io::Result<Self> {
-    let (create_new, file) = open_options.open(path.as_path())?;
-    let file_size = file.metadata()?.len() as u32;
-    let alignment = opts.maximum_alignment();
-    let min_segment_size = opts.minimum_segment_size();
-    let freelist = opts.freelist();
-    let magic_version = opts.magic_version();
-    let capacity = opts.capacity();
-
-    let size = file_size.max(capacity);
-    if size < OVERHEAD as u32 {
-      return Err(invalid_data(TooSmall::new(size as usize, OVERHEAD)));
-    }
-
-    if file_size < capacity {
-      file.set_len(capacity as u64)?;
-    }
-
-    unsafe {
-      f(mmap_options, &file).and_then(|mut mmap| {
-        let cap = mmap.len();
-        if cap < OVERHEAD {
-          return Err(invalid_data(TooSmall::new(cap, OVERHEAD)));
-        }
-
-        // TODO: should we align the memory?
-        let _alignment = alignment.max(mem::align_of::<Header>());
-
-        let ptr = mmap.as_mut_ptr();
-
-        let reserved = opts.reserved() as usize;
-
-        let header_ptr_offset =
-          align_offset::<Header>(opts.reserved()) as usize + mem::align_of::<Header>();
-
-        if reserved + header_ptr_offset + mem::size_of::<Header>() > capacity as usize {
-          return Err(reserved_too_large());
-        }
-        let data_offset = header_ptr_offset + mem::size_of::<Header>();
-        let header_ptr = ptr.add(header_ptr_offset).cast::<Header>();
-
-        let (version, magic_version) = if create_new {
-          // initialize the memory with 0
-          ptr::write_bytes(ptr, 0, cap);
-
-          super::write_sanity(
-            freelist as u8,
-            magic_version,
-            slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
-          );
-
-          // Safety: we have add the overhead for the header
-          header_ptr.write(Header::new(data_offset as u32, min_segment_size));
-
-          (CURRENT_VERSION, magic_version)
-        } else {
-          let allocated = (*header_ptr).allocated;
-          ptr::write_bytes(
-            ptr.add(allocated as usize),
-            0,
-            mmap.len() - allocated as usize,
-          );
-          super::sanity_check(
-            Some(freelist),
-            magic_version,
-            &mmap[reserved..reserved + mem::align_of::<Header>()],
-          )?;
-          (CURRENT_VERSION, magic_version)
-        };
-
-        let this = Self {
-          reserved,
-          cap: cap as u32,
-          flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
-          backend: MemoryBackend::MmapMut {
-            remove_on_drop: false,
-            path: std::rc::Rc::new(path),
-            buf: Box::into_raw(Box::new(mmap)),
-            file,
-          },
-          header_ptr: Either::Left(header_ptr as _),
-          ptr,
-          refs: 1,
-          data_offset,
-          unify: true,
-          magic_version,
-          version,
-          freelist,
-        };
-
-        Ok(this)
-      })
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_with_path_builder<PB, E>(
-    path_builder: PB,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    reserved: u32,
-    magic_version: u16,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    let path = path_builder().map_err(Either::Left)?;
-
-    Self::map_in(
-      path,
-      open_options,
-      mmap_options,
-      reserved,
-      magic_version,
-      mmap,
-    )
-    .map_err(Either::Right)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map<P: AsRef<std::path::Path>>(
-    path: P,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    reserved: u32,
-    magic_version: u16,
-  ) -> std::io::Result<Self> {
-    Self::map_in(
-      path.as_ref().to_path_buf(),
-      open_options,
-      mmap_options,
-      reserved,
-      magic_version,
-      mmap,
-    )
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_copy_read_only_with_path_builder<PB, E>(
-    path_builder: PB,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    reserved: u32,
-    magic_version: u16,
-  ) -> Result<Self, Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>,
-  {
-    let path = path_builder().map_err(Either::Left)?;
-
-    Self::map_in(
-      path,
-      open_options,
-      mmap_options,
-      reserved,
-      magic_version,
-      mmap_copy_read_only,
-    )
-    .map_err(Either::Right)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_copy_read_only<P: AsRef<std::path::Path>>(
-    path: P,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    reserved: u32,
-    magic_version: u16,
-  ) -> std::io::Result<Self> {
-    Self::map_in(
-      path.as_ref().to_path_buf(),
-      open_options,
-      mmap_options,
-      reserved,
-      magic_version,
-      mmap_copy_read_only,
-    )
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_in(
-    path: std::path::PathBuf,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-    reserved: u32,
-    magic_version: u16,
-    f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::Mmap>,
-  ) -> std::io::Result<Self> {
-    use either::Either;
-
-    if !path.exists() {
-      return Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "file not found",
-      ));
-    }
-
-    let (_, file) = open_options.open(&path)?;
-
-    unsafe {
-      f(mmap_options, &file).and_then(|mmap| {
-        let len = mmap.len();
-        if len < OVERHEAD {
-          return Err(invalid_data(TooSmall::new(len, OVERHEAD)));
-        }
-
-        let reserved = reserved as usize;
-
-        let ptr = mmap.as_ptr();
-        let header_ptr_offset =
-          align_offset::<Header>(reserved as u32) as usize + mem::align_of::<Header>();
-
-        if reserved + header_ptr_offset + mem::size_of::<Header>() > len {
-          return Err(reserved_too_large());
-        }
-        let freelist = super::sanity_check(
-          None,
-          magic_version,
-          &mmap[reserved..reserved + mem::align_of::<Header>()],
-        )?;
-
-        let data_offset = header_ptr_offset + mem::size_of::<Header>();
-        let header_ptr = ptr.add(header_ptr_offset) as _;
-        let this = Self {
-          reserved,
-          cap: len as u32,
-          flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
-          backend: MemoryBackend::Mmap {
-            remove_on_drop: false,
-            path: std::rc::Rc::new(path),
-            buf: Box::into_raw(Box::new(mmap)),
-            file,
-          },
-          header_ptr: Either::Left(header_ptr),
-          ptr: ptr as _,
-          refs: 1,
-          data_offset,
-          unify: true,
-          magic_version,
-          version: CURRENT_VERSION,
-          freelist,
-        };
-
-        Ok(this)
-      })
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn map_anon(
-    mmap_options: MmapOptions,
-    alignment: usize,
-    min_segment_size: u32,
-    unify: bool,
-    reserved: u32,
-    magic_version: u16,
-    freelist: Freelist,
-  ) -> std::io::Result<Self> {
-    mmap_options.map_anon().and_then(|mut mmap| {
-      if unify {
-        if mmap.len() < OVERHEAD {
-          return Err(invalid_data(TooSmall::new(mmap.len(), OVERHEAD)));
-        }
-      } else if mmap.len() < alignment {
-        return Err(invalid_data(TooSmall::new(mmap.len(), alignment)));
-      }
-
-      // TODO:  should we align the memory?
-      let _alignment = alignment.max(mem::align_of::<Header>());
-      let ptr = mmap.as_mut_ptr();
-
-      // Safety: we have add the overhead for the header
-      unsafe {
-        ptr::write_bytes(ptr, 0, mmap.len());
-
-        let header_ptr_offset =
-          align_offset::<Header>(reserved) as usize + mem::align_of::<Header>();
-        let mut data_offset = header_ptr_offset + mem::size_of::<Header>();
-        let header_ptr = ptr.add(header_ptr_offset);
-
-        let reserved = reserved as usize;
-
-        if reserved + header_ptr_offset + mem::size_of::<Header>() > mmap.len() {
-          return Err(reserved_too_large());
-        }
-
-        let (header, data_offset) = if unify {
-          super::write_sanity(
-            freelist as u8,
-            magic_version,
-            slice::from_raw_parts_mut(ptr.add(reserved), mem::align_of::<Header>()),
-          );
-          header_ptr
-            .cast::<Header>()
-            .write(Header::new(data_offset as u32, min_segment_size));
-          (Either::Left(header_ptr as _), data_offset)
-        } else {
-          data_offset = reserved + 1;
-          (
-            Either::Right(Header::new((reserved + 1) as u32, min_segment_size)),
-            data_offset,
-          )
-        };
-
-        let this = Self {
-          reserved,
-          flag: MemoryFlags::MMAP,
-          cap: mmap.len() as u32,
-          backend: MemoryBackend::AnonymousMmap { buf: mmap },
-          refs: 1,
-          data_offset,
-          header_ptr: header,
-          ptr,
-          unify,
-          magic_version,
-          version: CURRENT_VERSION,
-          freelist,
-        };
-
-        Ok(this)
-      }
-    })
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn lock_exclusive(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
-    match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.lock_exclusive(),
-      MemoryBackend::Mmap { file, .. } => file.lock_exclusive(),
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn lock_shared(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
-    match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.lock_shared(),
-      MemoryBackend::Mmap { file, .. } => file.lock_shared(),
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn try_lock_exclusive(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
-    match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.try_lock_exclusive(),
-      MemoryBackend::Mmap { file, .. } => file.try_lock_exclusive(),
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn try_lock_shared(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
-    match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.try_lock_shared(),
-      MemoryBackend::Mmap { file, .. } => file.try_lock_shared(),
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn unlock(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
-    match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.unlock(),
-      MemoryBackend::Mmap { file, .. } => file.unlock(),
-      _ => Ok(()),
-    }
-  }
-
-  /// # Safety
-  /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    match &self.backend {
-      MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
-        if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
-        }
-
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
-        rustix::mm::mlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
-        if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
-        }
-
-        let ptr = (**buf).as_ref().as_ptr();
-        rustix::mm::mlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      _ => Ok(()),
-    }
-  }
-
-  /// # Safety
-  /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    match &self.backend {
-      MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
-        if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
-        }
-
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
-        rustix::mm::munlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
-        if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
-        }
-
-        let ptr = (**buf).as_ref().as_ptr();
-        rustix::mm::munlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn flush(&self) -> std::io::Result<()> {
-    match &self.backend {
-      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush() },
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn flush_async(&self) -> std::io::Result<()> {
-    match &self.backend {
-      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_async() },
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    match &self.backend {
-      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_range(offset, len) },
-      _ => Ok(()),
-    }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    match &self.backend {
-      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
-        (**mmap).flush_async_range(offset, len)
-      },
-      _ => Ok(()),
-    }
-  }
-
-  #[allow(dead_code)]
-  #[inline]
-  const fn as_ptr(&self) -> *const u8 {
-    self.ptr
+  fn load_allocated(&self) -> u32 {
+    self.allocated
   }
 
   #[inline]
-  const fn as_mut_ptr(&self) -> *mut u8 {
-    self.ptr
-  }
-
-  #[inline]
-  fn header(&self) -> &Header {
-    unsafe {
-      match &self.header_ptr {
-        Either::Left(header_ptr) => &*(*header_ptr).cast::<Header>(),
-        Either::Right(header) => header,
-      }
-    }
-  }
-
-  #[inline]
-  fn header_mut(&mut self) -> &mut Header {
-    unsafe {
-      match &mut self.header_ptr {
-        Either::Left(header_ptr) => &mut *(*header_ptr).cast::<Header>(),
-        Either::Right(header) => header,
-      }
-    }
-  }
-
-  #[inline]
-  const fn cap(&self) -> u32 {
-    self.cap
-  }
-
-  /// Only works on mmap with a file backend, unmounts the memory mapped file and truncates it to the specified size.
-  ///
-  /// ## Safety:
-  /// - This method must be invoked in the drop impl of `Arena`.
-  unsafe fn unmount(&mut self) {
-    // Any errors during unmapping/closing are ignored as the only way
-    // to report them would be through panicking which is highly discouraged
-    // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
-
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    match &mut self.backend {
-      MemoryBackend::MmapMut {
-        buf,
-        file,
-        path,
-        remove_on_drop,
-        ..
-      } => {
-        if *remove_on_drop {
-          let _ = Box::from_raw(*buf);
-          core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path.as_path());
-          return;
-        }
-
-        let _ = Box::from_raw(*buf);
-        let _ = file.sync_all();
-      }
-      MemoryBackend::Mmap {
-        path,
-        file,
-        buf,
-        remove_on_drop,
-        ..
-      } => {
-        if *remove_on_drop {
-          let _ = Box::from_raw(*buf);
-          core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path.as_path());
-          return;
-        }
-
-        let _ = Box::from_raw(*buf);
-      }
-      _ => {}
-    }
+  fn load_min_segment_size(&self) -> u32 {
+    self.min_segment_size
   }
 }
 
@@ -967,14 +173,14 @@ impl fmt::Debug for Arena {
 impl Clone for Arena {
   fn clone(&self) -> Self {
     unsafe {
-      let memory = &mut *self.inner.as_ptr();
+      use crate::memory::RefCounter;
 
-      let refs = memory.refs;
-      if refs > usize::MAX >> 1 {
+      let memory = self.inner.as_ref();
+
+      let old_size = memory.refs().fetch_add(1, Ordering::Release);
+      if old_size > usize::MAX >> 1 {
         abort();
       }
-
-      memory.refs += 1;
 
       // Safety:
       // The ptr is always non-null, and the data is only deallocated when the
@@ -1185,50 +391,6 @@ impl Allocator for Arena {
     })
   }
 
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[inline]
-  fn alloc_aligned_bytes_owned<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self
-      .alloc_aligned_bytes::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// # Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self
-      .alloc_aligned_bytes_within_page::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
-
   /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
   ///
   /// The layout of the allocated memory is:
@@ -1268,28 +430,6 @@ impl Allocator for Arena {
     })
   }
 
-  /// Allocates an owned slice of memory in the ARENA.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes`](Self::alloc_bytes).
-  #[inline]
-  fn alloc_bytes_owned(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self.alloc_bytes(size).map(|mut b| b.to_owned())
-  }
-
-  /// Allocates an owned slice of memory in the ARENA in the same page.
-  ///
-  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Self::alloc_bytes_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
-  }
-
   /// Allocates a slice of memory in the ARENA in the same page.
   ///
   /// Compared to [`alloc_bytes`](Self::alloc_bytes), this method only allocates from the main memory, so
@@ -1307,44 +447,6 @@ impl Allocator for Arena {
       None => BytesRefMut::null(self),
       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
     })
-  }
-
-  /// Allocates a `T` in the ARENA. Like [`alloc`](Self::alloc), but returns an `Owned`.
-  ///
-  /// The cost is one more atomic operation than [`alloc`](Self::alloc).
-  ///
-  /// # Safety
-  ///
-  /// - See [`alloc`](Self::alloc) for safety.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new());
-  ///
-  /// unsafe {
-  ///   let mut data = arena.alloc_owned::<u64>().unwrap();
-  ///   data.write(10);
-  ///
-  ///   assert_eq!(*data.as_ref(), 10);
-  /// }
-  /// ```
-  #[inline]
-  unsafe fn alloc_owned<T>(&self) -> Result<Owned<T, Self>, Error> {
-    self.alloc::<T>().map(|mut r| r.to_owned())
-  }
-
-  /// Allocates a `T` in the ARENA in the same page. Like [`alloc_within_page`](Self::alloc_within_page), but returns an `Owned`.
-  ///
-  /// # Safety
-  /// - See [`alloc`](Self::alloc) for safety.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
-    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
   }
 
   /// Allocates a `T` in the ARENA in the same page.
@@ -2469,7 +1571,7 @@ impl Allocator for Arena {
   /// ```
   #[inline]
   fn refs(&self) -> usize {
-    unsafe { self.inner.as_ref().refs }
+    unsafe { *self.inner.as_ref().refs().as_inner_ref() }
   }
 
   /// Returns the number of bytes remaining bytes can be allocated by the ARENA.
@@ -3382,17 +2484,17 @@ impl Arena {
     let ptr = memory.as_mut_ptr();
 
     Self {
-      reserved: memory.reserved,
-      freelist: memory.freelist,
+      reserved: memory.reserved(),
+      freelist: memory.freelist(),
       cap: memory.cap(),
-      flag: memory.flag,
+      flag: memory.flag(),
       unify,
-      magic_version: memory.magic_version,
-      version: memory.version,
+      magic_version: memory.magic_version(),
+      version: memory.version(),
       ptr,
       ro,
       max_retries,
-      data_offset: memory.data_offset as u32,
+      data_offset: memory.data_offset() as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       page_size: *PAGE_SIZE,
@@ -3456,12 +2558,13 @@ impl Arena {
 
 impl Drop for Arena {
   fn drop(&mut self) {
+    use crate::memory::RefCounter;
+
     unsafe {
       let memory_ptr = self.inner.as_ptr();
-      let memory = &mut *memory_ptr;
+      let memory = &*memory_ptr;
       // `Memory` storage... follow the drop steps from Arc.
-      if memory.refs != 1 {
-        memory.refs -= 1;
+      if memory.refs().fetch_sub(1, Ordering::Release) != 1 {
         return;
       }
 
