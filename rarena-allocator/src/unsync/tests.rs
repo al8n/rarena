@@ -506,7 +506,7 @@ fn check_data_offset_vec() {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec_unify() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)), 32 + crate::align_offset::<super::Header>(RESERVED as u32) as usize);
+    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)), 8 + core::mem::size_of::<super::Header>() + crate::align_offset::<super::Header>(RESERVED as u32) as usize);
   });
 }
 

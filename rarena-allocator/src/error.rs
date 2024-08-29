@@ -186,6 +186,7 @@ pub enum Error {
 }
 
 impl Error {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
   pub(crate) const fn larger_than_page_size(requested: u32, page_size: u32) -> Self {
     Self::LargerThanPageSize {
