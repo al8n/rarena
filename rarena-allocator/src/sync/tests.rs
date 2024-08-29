@@ -528,7 +528,8 @@ fn check_data_offset_mmap() {
     let mmap_options = MmapOptions::default();
     check_data_offset(
       Arena::map_mut(p, DEFAULT_ARENA_OPTIONS, open_options, mmap_options).unwrap(),
-      32,
+      8 + core::mem::size_of::<super::Header>()
+        + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
     );
   });
 }
@@ -540,7 +541,7 @@ fn check_data_offset_mmap_anon() {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     check_data_offset(
       Arena::map_anon(DEFAULT_ARENA_OPTIONS, mmap_options).unwrap(),
-      1,
+      RESERVED as usize + 1,
     );
   });
 }
@@ -552,7 +553,8 @@ fn check_data_offset_mmap_anon_unify() {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     check_data_offset(
       Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap(),
-      32,
+      8 + core::mem::size_of::<super::Header>()
+        + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
     );
   });
 }
