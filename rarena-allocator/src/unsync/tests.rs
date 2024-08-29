@@ -13,10 +13,10 @@ const ARENA_SIZE: u32 = 1024;
 const MAX_SEGMENT_NODE_SIZE: u32 = (SEGMENT_NODE_SIZE * 2 - 1) as u32;
 
 #[cfg(not(feature = "reserved"))]
-const DEFAULT_ARENA_OPTIONS: ArenaOptions = ArenaOptions::new();
-
+const RESERVED: u32 = 0;
 #[cfg(feature = "reserved")]
-const DEFAULT_ARENA_OPTIONS: ArenaOptions = ArenaOptions::new().with_reserved(5);
+const RESERVED: u32 = 5;
+const DEFAULT_ARENA_OPTIONS: ArenaOptions = ArenaOptions::new().with_reserved(RESERVED);
 
 fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]
@@ -498,7 +498,7 @@ fn check_data_offset(l: Arena, offset: usize) {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS), 1);
+    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS), RESERVED as usize + 1);
   });
 }
 
@@ -506,7 +506,7 @@ fn check_data_offset_vec() {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec_unify() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)), 32);
+    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)), 32 + crate::align_offset::<super::Header>(RESERVED as u32) as usize);
   });
 }
 
