@@ -1692,6 +1692,30 @@ macro_rules! impl_bytes_mut_utils {
       })
     }
 
+    /// Set the buffer length.
+    ///
+    /// # Panics
+    /// - If `len` is greater than the capacity of the buffer.
+    #[inline]
+    pub fn set_len(&mut self, len: usize) {
+      if len > self.capacity() {
+        panic!("length out of bounds");
+      }
+
+      if len == self.len {
+        return;
+      }
+
+      let clen = self.len;
+      if len > self.len {
+        self[clen..len].fill(0);
+      } else {
+        self[len..clen].fill(0);
+      }
+
+      self.len = len;
+    }
+
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
