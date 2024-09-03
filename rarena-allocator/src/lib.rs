@@ -1692,6 +1692,29 @@ macro_rules! impl_bytes_mut_utils {
       })
     }
 
+    /// Set the buffer length.
+    ///
+    /// # Panics
+    /// - If `len` is greater than the capacity of the buffer.
+    #[inline]
+    pub fn set_len(&mut self, len: usize) {
+      if len > self.capacity() {
+        panic!("length out of bounds");
+      }
+
+      if len == self.len {
+        return;
+      }
+
+      let olen = self.len;
+      self.len = len;
+      if len > olen {
+        unsafe { core::ptr::write_bytes(self.as_mut_ptr().add(olen), 0, len - olen) };
+      } else {
+        unsafe { core::ptr::write_bytes(self.as_mut_ptr().add(len), 0, olen - len) };
+      }
+    }
+
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
