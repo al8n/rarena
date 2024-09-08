@@ -723,6 +723,114 @@ pub trait Allocator: sealed::Sealed {
   /// - `offset + size` must be less than the capacity of the allocator.
   unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8];
 
+  /// Reads a `u16` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_u16_varint(&self, offset: usize) -> Result<(usize, u16), Error> {
+    let allocated = self.allocated();
+    if offset + 3 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 3)
+    };
+
+    dbutils::leb128::decode_u16_varint(buf).map_err(Into::into)
+  }
+
+  /// Reads a `u32` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_u32_varint(&self, offset: usize) -> Result<(usize, u32), Error> {
+    let allocated = self.allocated();
+    if offset + 5 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 5)
+    };
+
+    dbutils::leb128::decode_u32_varint(buf).map_err(Into::into)
+  }
+
+  /// Reads a `u64` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_u64_varint(&self, offset: usize) -> Result<(usize, u64), Error> {
+    let allocated = self.allocated();
+    if offset + 10 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 10)
+    };
+
+    dbutils::leb128::decode_u64_varint(buf).map_err(Into::into)
+  }
+
+  /// Reads a `i16` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_i16_varint(&self, offset: usize) -> Result<(usize, i16), Error> {
+    let allocated = self.allocated();
+    if offset + 3 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 3)
+    };
+
+    dbutils::leb128::decode_i16_varint(buf).map_err(Into::into)
+  }
+
+  /// Reads a `i32` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_i32_varint(&self, offset: usize) -> Result<(usize, i32), Error> {
+    let allocated = self.allocated();
+    if offset + 5 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 5)
+    };
+
+    dbutils::leb128::decode_i32_varint(buf).map_err(Into::into)
+  }
+
+  /// Reads a `i64` in LEB128 format from the allocator at the given offset.
+  ///
+  /// # Safety
+  /// - `offset` must be within the allocated memory of the allocator.
+  fn get_i64_varint(&self, offset: usize) -> Result<(usize, i64), Error> {
+    let allocated = self.allocated();
+    if offset + 10 >= allocated {
+      return Err(Error::OutOfBounds { offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = self.get_pointer(offset);
+      core::slice::from_raw_parts(ptr, 10)
+    };
+
+    dbutils::leb128::decode_i64_varint(buf).map_err(Into::into)
+  }
+
   /// Returns a mutable bytes slice from the allocator.
   /// If the allocator is read-only, then this method will return an empty slice.
   ///
@@ -1665,6 +1773,53 @@ macro_rules! put_byte_order {
   }
 }
 
+#[cfg(feature = "std")]
+macro_rules! write_varint {
+  ($write_name:ident::$put_name:ident($ty:ident)) => {
+    paste::paste! {
+      #[doc = "Write a `" $ty "` value into the buffer in LEB128 format, return number of bytes written on success, or an error if the buffer does not have enough space."]
+      #[inline]
+      #[cfg(feature = "std")]
+      pub fn $write_name(&mut self, value: $ty) -> std::io::Result<usize> {
+        self.$put_name(value).map_err(|e| std::io::Error::new(std::io::ErrorKind::WriteZero, e))
+      }
+    }
+  }
+}
+
+macro_rules! put_varint {
+  ($name:ident($ty:ident)) => {
+    paste::paste! {
+      #[doc = "Put a `" $ty "` value into the buffer in LEB128 format, return an error if the buffer does not have enough space."]
+      ///
+      /// Returns the number of bytes written.
+      #[inline]
+      pub fn $name(&mut self, value: $ty) -> Result<usize, dbutils::leb128::EncodeVarintError> {
+        let buf = unsafe {
+          core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
+        };
+        dbutils::leb128::[< encode_ $ty _varint >](value, buf)
+          .inspect(|len| self.len += *len)
+      }
+
+      #[doc = "Put a `" $ty "` value into the buffer in LEB128 format, without doing error checking."]
+      ///
+      /// Returns the number of bytes written.
+      ///
+      /// # Panics
+      ///
+      #[doc = "- If the buffer does not have enough space to hold the `" $ty "`."]
+      #[inline]
+      pub fn [< $name _unchecked >] (&mut self, value: $ty) -> usize {
+        let buf = unsafe {
+          core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
+        };
+        dbutils::leb128::[< encode_ $ty _varint >] (value, buf).inspect(|len| self.len += *len).unwrap()
+      }
+    }
+  }
+}
+
 macro_rules! impl_bytes_mut_utils {
   (align) => {
     /// Add paddings to the buffer according to the alignment of `T`.
@@ -1819,6 +1974,15 @@ macro_rules! impl_bytes_mut_utils {
       }
     )*
   };
+  (leb($($ty:ident), +$(,)?)) => {
+    $(
+      paste::paste! {
+        put_varint!([< put_ $ty _varint>]($ty));
+        #[cfg(feature="std")]
+        write_varint!([< write_ $ty _varint>]::[< put_ $ty _varint>]($ty));
+      }
+    )*
+  };
   (8) => {
     /// Put a `u8` value into the buffer, return an error if the buffer does not have enough space.
     #[inline]
@@ -1920,6 +2084,39 @@ macro_rules! get_byte_order {
   }
 }
 
+macro_rules! get_varint {
+  ($name:ident($ty:ident)) => {
+    paste::paste! {
+      #[doc = "Get a `" $ty "` value from the buffer in LEB128 format, return an error if the buffer does not have a valid LEB128 format `" $ty "`."]
+      ///
+      /// # Returns
+      ///
+      /// - The first element of the tuple is the number of bytes read from the buffer.
+      /// - The second element of the tuple is the decoded value.
+      #[doc = "- The second element of the tuple is the decoded `" $ty "`."]
+      #[inline]
+      pub fn $name(&self) -> Result<(usize, $ty), dbutils::leb128::DecodeVarintError> {
+        dbutils::leb128::[< decode_ $ty _varint >](self)
+          .map(|(bytes, value)| (bytes, value as $ty))
+      }
+
+      #[doc = "Get a `" $ty "` value from the buffer in LEB128 format, without doing checking."]
+      ///
+      #[doc = "For a safe alternative see [`" $name "`](Self::" $name ")."]
+      ///
+      /// # Panics
+      ///
+      #[doc = "- If the buffer does not have a valid LEB128 format `" $ty "`."]
+      #[inline]
+      pub fn [< $name _unchecked >](&mut self) -> $ty {
+        dbutils::leb128::[< decode_ $ty _varint >](self)
+          .map(|(_, value)| value as $ty)
+          .unwrap()
+      }
+    }
+  }
+}
+
 macro_rules! impl_bytes_utils {
   (slice) => {
     /// Get a byte slice from the buffer, return an error if the buffer does not have enough bytes.
@@ -1986,6 +2183,13 @@ macro_rules! impl_bytes_utils {
         get_byte_order!([< get_ $ty _be >]::from_be_bytes($ty, "big-endian"));
         get_byte_order!([< get_ $ty _le >]::from_le_bytes($ty, "little-endian"));
         get_byte_order!([< get_ $ty _ne >]::from_ne_bytes($ty, "native-endian"));
+      }
+    )*
+  };
+  (leb($($ty:ident), +$(,)?)) => {
+    $(
+      paste::paste! {
+        get_varint!([< get_ $ty _varint >]($ty));
       }
     )*
   };

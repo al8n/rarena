@@ -183,6 +183,24 @@ pub enum Error {
     /// The page size
     page_size: u32,
   },
+
+  /// Index is out of range
+  OutOfBounds {
+    /// The offset
+    offset: usize,
+    /// The current allocated size of the arena
+    allocated: usize,
+  },
+
+  /// Returned when decoding a LEB128 value fails
+  DecodeVarintError(dbutils::leb128::DecodeVarintError),
+}
+
+impl From<dbutils::leb128::DecodeVarintError> for Error {
+  #[inline]
+  fn from(e: dbutils::leb128::DecodeVarintError) -> Self {
+    Self::DecodeVarintError(e)
+  }
 }
 
 impl Error {
@@ -199,7 +217,7 @@ impl Error {
 impl core::fmt::Display for Error {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     match self {
-      Error::InsufficientSpace {
+      Self::InsufficientSpace {
         requested,
         available,
       } => write!(
@@ -207,8 +225,8 @@ impl core::fmt::Display for Error {
         "Allocation failed: requested size is {}, but only {} is available",
         requested, available
       ),
-      Error::ReadOnly => write!(f, "Arena is read-only"),
-      Error::LargerThanPageSize {
+      Self::ReadOnly => write!(f, "Arena is read-only"),
+      Self::LargerThanPageSize {
         requested,
         page_size,
       } => write!(
@@ -216,6 +234,12 @@ impl core::fmt::Display for Error {
         "Allocation failed: cannot allocate in the same page, requested size is {}, but the page size is {}",
         requested, page_size
       ),
+      Self::OutOfBounds { offset, allocated } => write!(
+        f,
+        "Index out of bounds: offset {} is out of range, the current allocated size is {}",
+        offset, allocated
+      ),
+      Self::DecodeVarintError(e) => write!(f, "{}", e),
     }
   }
 }

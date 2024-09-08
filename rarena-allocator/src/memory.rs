@@ -683,7 +683,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn lock_exclusive(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
+    use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => file.lock_exclusive(),
       MemoryBackend::Mmap { file, .. } => file.lock_exclusive(),
@@ -693,7 +693,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn lock_shared(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
+    use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => file.lock_shared(),
       MemoryBackend::Mmap { file, .. } => file.lock_shared(),
@@ -703,7 +703,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn try_lock_exclusive(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
+    use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => file.try_lock_exclusive(),
       MemoryBackend::Mmap { file, .. } => file.try_lock_exclusive(),
@@ -713,7 +713,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn try_lock_shared(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
+    use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => file.try_lock_shared(),
       MemoryBackend::Mmap { file, .. } => file.try_lock_shared(),
@@ -723,7 +723,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn unlock(&self) -> std::io::Result<()> {
-    use fs4::FileExt;
+    use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => file.unlock(),
       MemoryBackend::Mmap { file, .. } => file.unlock(),
