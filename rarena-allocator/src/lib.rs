@@ -179,7 +179,7 @@ macro_rules! impl_bytes_utils_for_allocator {
     const SIZE: usize = core::mem::size_of::<$ty>();
 
     let allocated = $this.allocated();
-    if $offset + SIZE >= allocated {
+    if $offset + SIZE > allocated {
       return Err(Error::OutOfBounds { $offset, allocated });
     }
 
@@ -211,7 +211,7 @@ macro_rules! define_bytes_utils {
 macro_rules! impl_leb128_utils_for_allocator {
   ($this:ident($ty:ident, $offset:ident, $size:literal)) => {{
     let allocated = $this.allocated();
-    if $offset + 1 >= allocated {
+    if $offset >= allocated {
       return Err(Error::OutOfBounds { $offset, allocated });
     }
 
