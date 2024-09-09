@@ -109,13 +109,13 @@ impl<A: Allocator> crate::Memory for BytesMut<A> {
 impl<A: Allocator> BytesMut<A> {
   impl_bytes_mut_utils!(8);
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
-  impl_bytes_mut_utils!(leb(u16, u32, u64, i16, i32, i64));
+  impl_bytes_mut_utils!(leb(u16, u32, u64, u128, i16, i32, i64, i128));
   impl_bytes_mut_utils!(slice);
   impl_bytes_mut_utils!(align);
 
   impl_bytes_utils!(8);
   impl_bytes_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
-  impl_bytes_utils!(leb(u16, u32, u64, i16, i32, i64));
+  impl_bytes_utils!(leb(u16, u32, u64, u128, i16, i32, i64, i128));
   impl_bytes_utils!(slice);
 
   /// Returns the mutable pointer to the buffer.
@@ -280,13 +280,13 @@ impl<'a, A: Allocator> crate::Memory for BytesRefMut<'a, A> {
 impl<'a, A: Allocator> BytesRefMut<'a, A> {
   impl_bytes_mut_utils!(8);
   impl_bytes_mut_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
-  impl_bytes_mut_utils!(leb(u16, u32, u64, i16, i32, i64));
+  impl_bytes_mut_utils!(leb(u16, u32, u64, u128, i16, i32, i64, i128));
   impl_bytes_mut_utils!(slice);
   impl_bytes_mut_utils!(align);
 
   impl_bytes_utils!(8);
   impl_bytes_utils!(u16, u32, u64, usize, u128, i16, i32, i64, isize, i128);
-  impl_bytes_utils!(leb(u16, u32, u64, i16, i32, i64));
+  impl_bytes_utils!(leb(u16, u32, u64, u128, i16, i32, i64, i128));
   impl_bytes_utils!(slice);
 
   /// Returns the mutable pointer to the buffer.

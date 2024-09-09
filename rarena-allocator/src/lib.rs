@@ -174,6 +174,75 @@ fn sanity_check(
   Ok(stored_freelist)
 }
 
+macro_rules! impl_bytes_utils_for_allocator {
+  ($this:ident::$from:ident($ty:ident, $offset:ident)) => {{
+    const SIZE: usize = core::mem::size_of::<$ty>();
+
+    let allocated = $this.allocated();
+    if $offset + SIZE >= allocated {
+      return Err(Error::OutOfBounds { $offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = $this.get_pointer($offset);
+      core::slice::from_raw_parts(ptr, SIZE)
+    };
+
+    Ok($ty::$from(buf.try_into().unwrap()))
+  }};
+}
+
+macro_rules! define_bytes_utils {
+  ($($ty:ident:$endian:literal), +$(,)?) => {
+    $(
+      paste::paste! {
+        #[doc = "Returns a `" $ty "` from the allocator."]
+        ///
+        /// # Safety
+        /// - `offset..offset + size` must be within allocated memory.
+        unsafe fn [< get_ $ty _ $endian >](&self, offset: usize) -> Result<$ty, Error> {
+          impl_bytes_utils_for_allocator!(self::[< from_ $endian _bytes >]($ty, offset))
+        }
+      }
+    )*
+  };
+}
+
+macro_rules! impl_leb128_utils_for_allocator {
+  ($this:ident($ty:ident, $offset:ident, $size:literal)) => {{
+    let allocated = $this.allocated();
+    if $offset + 1 >= allocated {
+      return Err(Error::OutOfBounds { $offset, allocated });
+    }
+
+    let buf = unsafe {
+      let ptr = $this.get_pointer($offset);
+      let gap = (allocated - $offset).min($size);
+      core::slice::from_raw_parts(ptr, gap)
+    };
+
+    paste::paste! {
+      dbutils::leb128::[< decode_ $ty _varint >](buf).map_err(Into::into)
+    }
+  }};
+}
+
+macro_rules! define_leb128_utils {
+  ($($ty:ident:$size:literal), +$(,)?) => {
+    $(
+      paste::paste! {
+        #[doc = "Returns a `" $ty "` in LEB128 format from the allocator at the given offset."]
+        ///
+        /// # Safety
+        /// - `offset` must be within the allocated memory of the allocator.
+        fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(usize, $ty), Error> {
+          impl_leb128_utils_for_allocator!(self($ty, offset, $size))
+        }
+      }
+    )*
+  };
+}
+
 /// A trait for easily interacting with the sync and unsync allocator allocators.
 pub trait Allocator: sealed::Sealed {
   /// Returns the reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
@@ -723,113 +792,71 @@ pub trait Allocator: sealed::Sealed {
   /// - `offset + size` must be less than the capacity of the allocator.
   unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8];
 
-  /// Reads a `u16` in LEB128 format from the allocator at the given offset.
+  /// Returns a `u8` from the allocator.
   ///
   /// # Safety
   /// - `offset` must be within the allocated memory of the allocator.
-  fn get_u16_varint(&self, offset: usize) -> Result<(usize, u16), Error> {
+  unsafe fn get_u8(&self, offset: usize) -> Result<u8, Error> {
     let allocated = self.allocated();
-    if offset + 3 >= allocated {
+    if offset + 1 >= allocated {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
     let buf = unsafe {
       let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 3)
+      core::slice::from_raw_parts(ptr, 1)
     };
 
-    dbutils::leb128::decode_u16_varint(buf).map_err(Into::into)
+    Ok(buf[0])
   }
 
-  /// Reads a `u32` in LEB128 format from the allocator at the given offset.
+  /// Returns a `i8` from the allocator.
   ///
   /// # Safety
   /// - `offset` must be within the allocated memory of the allocator.
-  fn get_u32_varint(&self, offset: usize) -> Result<(usize, u32), Error> {
+  unsafe fn get_i8(&self, offset: usize) -> Result<i8, Error> {
     let allocated = self.allocated();
-    if offset + 5 >= allocated {
+    if offset + 1 >= allocated {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
     let buf = unsafe {
       let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 5)
+      core::slice::from_raw_parts(ptr, 1)
     };
 
-    dbutils::leb128::decode_u32_varint(buf).map_err(Into::into)
+    Ok(buf[0] as i8)
   }
 
-  /// Reads a `u64` in LEB128 format from the allocator at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  fn get_u64_varint(&self, offset: usize) -> Result<(usize, u64), Error> {
-    let allocated = self.allocated();
-    if offset + 10 >= allocated {
-      return Err(Error::OutOfBounds { offset, allocated });
-    }
+  define_bytes_utils!(
+    u16:"be",
+    u16:"le",
+    u32:"be",
+    u32:"le",
+    u64:"be",
+    u64:"le",
+    u128:"be",
+    u128:"le",
+    i16:"be",
+    i16:"le",
+    i32:"be",
+    i32:"le",
+    i64:"be",
+    i64:"le",
+    i128:"be",
+    i128:"le",
+  );
 
-    let buf = unsafe {
-      let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 10)
-    };
-
-    dbutils::leb128::decode_u64_varint(buf).map_err(Into::into)
-  }
-
-  /// Reads a `i16` in LEB128 format from the allocator at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  fn get_i16_varint(&self, offset: usize) -> Result<(usize, i16), Error> {
-    let allocated = self.allocated();
-    if offset + 3 >= allocated {
-      return Err(Error::OutOfBounds { offset, allocated });
-    }
-
-    let buf = unsafe {
-      let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 3)
-    };
-
-    dbutils::leb128::decode_i16_varint(buf).map_err(Into::into)
-  }
-
-  /// Reads a `i32` in LEB128 format from the allocator at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  fn get_i32_varint(&self, offset: usize) -> Result<(usize, i32), Error> {
-    let allocated = self.allocated();
-    if offset + 5 >= allocated {
-      return Err(Error::OutOfBounds { offset, allocated });
-    }
-
-    let buf = unsafe {
-      let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 5)
-    };
-
-    dbutils::leb128::decode_i32_varint(buf).map_err(Into::into)
-  }
-
-  /// Reads a `i64` in LEB128 format from the allocator at the given offset.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  fn get_i64_varint(&self, offset: usize) -> Result<(usize, i64), Error> {
-    let allocated = self.allocated();
-    if offset + 10 >= allocated {
-      return Err(Error::OutOfBounds { offset, allocated });
-    }
-
-    let buf = unsafe {
-      let ptr = self.get_pointer(offset);
-      core::slice::from_raw_parts(ptr, 10)
-    };
-
-    dbutils::leb128::decode_i64_varint(buf).map_err(Into::into)
-  }
+  define_leb128_utils!(
+    i16:3,
+    i32:5,
+    i64:10,
+    i128:19,
+    u16:3,
+    u32:5,
+    u64:10,
+    u128:19,
+  );
 
   /// Returns a mutable bytes slice from the allocator.
   /// If the allocator is read-only, then this method will return an empty slice.
