@@ -184,11 +184,21 @@ macro_rules! impl_bytes_utils_for_allocator {
     }
 
     let buf = unsafe {
-      let ptr = $this.get_pointer($offset);
+      let ptr = $this.raw_ptr().add($offset);
       core::slice::from_raw_parts(ptr, SIZE)
     };
 
     Ok($ty::$from(buf.try_into().unwrap()))
+  }};
+  (unsafe $this:ident::$from:ident($ty:ident, $offset:ident)) => {{
+    const SIZE: usize = core::mem::size_of::<$ty>();
+
+    let buf = unsafe {
+      let ptr = $this.raw_ptr().add($offset);
+      core::slice::from_raw_parts(ptr, SIZE)
+    };
+
+    $ty::$from(buf.try_into().unwrap())
   }};
 }
 
@@ -197,11 +207,16 @@ macro_rules! define_bytes_utils {
     $(
       paste::paste! {
         #[doc = "Returns a `" $ty "` from the allocator."]
+        fn [< get_ $ty _ $endian >](&self, offset: usize) -> Result<$ty, Error> {
+          impl_bytes_utils_for_allocator!(self::[< from_ $endian _bytes >]($ty, offset))
+        }
+
+        #[doc = "Returns a `" $ty "` from the allocator without bounds checking."]
         ///
         /// # Safety
         /// - `offset..offset + size` must be within allocated memory.
-        unsafe fn [< get_ $ty _ $endian >](&self, offset: usize) -> Result<$ty, Error> {
-          impl_bytes_utils_for_allocator!(self::[< from_ $endian _bytes >]($ty, offset))
+        unsafe fn [< get_ $ty _ $endian _unchecked>](&self, offset: usize) -> $ty {
+          impl_bytes_utils_for_allocator!(unsafe self::[< from_ $endian _bytes >]($ty, offset))
         }
       }
     )*
@@ -793,17 +808,14 @@ pub trait Allocator: sealed::Sealed {
   unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8];
 
   /// Returns a `u8` from the allocator.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  unsafe fn get_u8(&self, offset: usize) -> Result<u8, Error> {
+  fn get_u8(&self, offset: usize) -> Result<u8, Error> {
     let allocated = self.allocated();
-    if offset + 1 >= allocated {
+    if offset >= allocated {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
     let buf = unsafe {
-      let ptr = self.get_pointer(offset);
+      let ptr = self.raw_ptr().add(offset);
       core::slice::from_raw_parts(ptr, 1)
     };
 
@@ -811,21 +823,44 @@ pub trait Allocator: sealed::Sealed {
   }
 
   /// Returns a `i8` from the allocator.
-  ///
-  /// # Safety
-  /// - `offset` must be within the allocated memory of the allocator.
-  unsafe fn get_i8(&self, offset: usize) -> Result<i8, Error> {
+  fn get_i8(&self, offset: usize) -> Result<i8, Error> {
     let allocated = self.allocated();
-    if offset + 1 >= allocated {
+    if offset >= allocated {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
     let buf = unsafe {
-      let ptr = self.get_pointer(offset);
+      let ptr = self.raw_ptr().add(offset);
       core::slice::from_raw_parts(ptr, 1)
     };
 
     Ok(buf[0] as i8)
+  }
+
+  /// Returns a `u8` from the allocator without bounds checking.
+  ///
+  /// # Safety
+  /// - `offset + size` must be within the allocated memory of the allocator.
+  unsafe fn get_u8_unchecked(&self, offset: usize) -> u8 {
+    let buf = unsafe {
+      let ptr = self.raw_ptr().add(offset);
+      core::slice::from_raw_parts(ptr, 1)
+    };
+
+    buf[0]
+  }
+
+  /// Returns a `i8` from the allocator without bounds checking.
+  ///
+  /// # Safety
+  /// - `offset + size` must be within the allocated memory of the allocator.
+  unsafe fn get_i8_unchecked(&self, offset: usize) -> i8 {
+    let buf = unsafe {
+      let ptr = self.raw_ptr().add(offset);
+      core::slice::from_raw_parts(ptr, 1)
+    };
+
+    buf[0] as i8
   }
 
   define_bytes_utils!(
