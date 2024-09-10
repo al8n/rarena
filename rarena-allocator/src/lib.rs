@@ -1681,11 +1681,8 @@ fn invalid_data<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[inline]
-fn reserved_too_large() -> std::io::Error {
-  std::io::Error::new(
-    std::io::ErrorKind::InvalidInput,
-    "reserved memory too large, the remaining memory is not enough to construct the ARENA",
-  )
+fn invalid_input<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::Error {
+  std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

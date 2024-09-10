@@ -473,18 +473,6 @@ fn recoverable() {
   });
 }
 
-#[test]
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-fn test_too_small() {
-  use crate::error::TooSmall;
-
-  let too_small = TooSmall::new(10, 20);
-  assert_eq!(
-    std::format!("{}", too_small),
-    "memmap size is less than the minimum capacity: 10 < 20"
-  );
-}
-
 #[cfg(not(feature = "loom"))]
 fn check_data_offset(l: Arena, offset: usize) {
   let data_offset = l.data_offset();
@@ -498,7 +486,10 @@ fn check_data_offset(l: Arena, offset: usize) {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap(), RESERVED as usize + 1);
+    check_data_offset(
+      Arena::new(DEFAULT_ARENA_OPTIONS).unwrap(),
+      RESERVED as usize + 1,
+    );
   });
 }
 
@@ -938,11 +929,14 @@ fn with_reserved_vec() {
 #[test]
 fn with_reserved_vec_unify() {
   run(|| {
-    with_reserved(Arena::new(
-      DEFAULT_ARENA_OPTIONS
-        .with_unify(true)
-        .with_reserved(RESERVED),
-    ).unwrap());
+    with_reserved(
+      Arena::new(
+        DEFAULT_ARENA_OPTIONS
+          .with_unify(true)
+          .with_reserved(RESERVED),
+      )
+      .unwrap(),
+    );
   });
 }
 

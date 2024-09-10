@@ -27,6 +27,119 @@ fn run(f: impl Fn() + Send + Sync + 'static) {
 }
 
 #[test]
+fn test_construct_with_small_capacity_vec() {
+  run(|| {
+    let e = Arena::new(ArenaOptions::new().with_capacity(0)).unwrap_err();
+    assert!(matches!(e, Error::InsufficientSpace { available: 0, .. }));
+    assert!(Arena::new(ArenaOptions::new().with_capacity(1)).is_ok());
+
+    let e = Arena::new(ArenaOptions::new().with_capacity(40).with_reserved(40)).unwrap_err();
+    assert!(matches!(e, Error::InsufficientSpace { available: 40, .. }));
+  });
+}
+
+#[test]
+fn test_construct_with_small_capacity_vec_unify() {
+  run(|| {
+    let e = Arena::new(ArenaOptions::new().with_capacity(1).with_unify(true)).unwrap_err();
+    assert!(matches!(e, Error::InsufficientSpace { available: 1, .. }));
+
+    let e = Arena::new(
+      ArenaOptions::new()
+        .with_capacity(40)
+        .with_reserved(40)
+        .with_unify(true),
+    )
+    .unwrap_err();
+    assert!(matches!(e, Error::InsufficientSpace { available: 40, .. }));
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn test_construct_with_small_capacity_map_anon() {
+  run(|| {
+    let e = Arena::map_anon(ArenaOptions::new(), MmapOptions::new().len(0)).unwrap_err();
+    assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
+
+    assert!(Arena::map_anon(ArenaOptions::new(), MmapOptions::new().len(1),).is_ok());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+fn test_construct_with_small_capacity_map_anon_unify() {
+  run(|| {
+    let e = Arena::map_anon(
+      ArenaOptions::new().with_unify(true),
+      MmapOptions::new().len(1),
+    )
+    .unwrap_err();
+    assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
+
+    assert!(Arena::map_anon(
+      ArenaOptions::new().with_unify(true),
+      MmapOptions::new().len(41),
+    )
+    .is_ok());
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[cfg_attr(miri, ignore)]
+fn test_construct_with_small_capacity_map_mut() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir
+      .path()
+      .join("test_construct_with_small_capacity_map_mut");
+    let open_options = OpenOptions::default()
+      .create_new(Some(1))
+      .read(true)
+      .write(true);
+    let mmap_options = MmapOptions::default();
+    let e = Arena::map_mut(
+      p,
+      ArenaOptions::new().with_capacity(1),
+      open_options,
+      mmap_options,
+    )
+    .unwrap_err();
+    assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
+  });
+}
+
+#[test]
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[cfg_attr(miri, ignore)]
+fn test_construct_with_small_capacity_map() {
+  run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_construct_with_small_capacity_map");
+
+    let fs = std::fs::OpenOptions::new()
+      .create_new(true)
+      .write(true)
+      .open(&p)
+      .unwrap();
+    fs.set_len(1).unwrap();
+    drop(fs);
+
+    let open_options = OpenOptions::default().read(true);
+    let mmap_options = MmapOptions::default();
+    let e = Arena::map(
+      &p,
+      ArenaOptions::new().with_capacity(1),
+      open_options,
+      mmap_options,
+    )
+    .unwrap_err();
+    assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
+  });
+}
+
+#[test]
 fn test_meta_eq() {
   let a_ptr = 1u8;
   let b_ptr = 1u8;
@@ -473,18 +586,6 @@ fn recoverable() {
   });
 }
 
-#[test]
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-fn test_too_small() {
-  use crate::error::TooSmall;
-
-  let too_small = TooSmall::new(10, 20);
-  assert_eq!(
-    std::format!("{}", too_small),
-    "memmap size is less than the minimum capacity: 10 < 20"
-  );
-}
-
 #[cfg(not(feature = "loom"))]
 fn check_data_offset(l: Arena, offset: usize) {
   let data_offset = l.data_offset();
@@ -498,7 +599,10 @@ fn check_data_offset(l: Arena, offset: usize) {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap(), RESERVED as usize + 1);
+    check_data_offset(
+      Arena::new(DEFAULT_ARENA_OPTIONS).unwrap(),
+      RESERVED as usize + 1,
+    );
   });
 }
 
@@ -792,11 +896,14 @@ fn with_reserved_vec() {
 #[test]
 fn with_reserved_vec_unify() {
   run(|| {
-    with_reserved(Arena::new(
-      DEFAULT_ARENA_OPTIONS
-        .with_unify(true)
-        .with_reserved(RESERVED),
-    ).unwrap());
+    with_reserved(
+      Arena::new(
+        DEFAULT_ARENA_OPTIONS
+          .with_unify(true)
+          .with_reserved(RESERVED),
+      )
+      .unwrap(),
+    );
   });
 }
 

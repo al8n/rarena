@@ -9,8 +9,8 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
   opts: StdOpenOptions,
-  create: Option<u32>,
-  create_new: Option<u32>,
+  pub(crate) create: Option<u32>,
+  pub(crate) create_new: Option<u32>,
 }
 
 impl From<StdOpenOptions> for OpenOptions {

@@ -26,7 +26,7 @@ fn allocate_slow_path_pessimistic(l: Arena) {
 #[cfg(not(feature = "loom"))]
 fn allocate_slow_path_pessimistic_vec() {
   run(|| {
-    allocate_slow_path_pessimistic(Arena::new(OPTIONS));
+    allocate_slow_path_pessimistic(Arena::new(OPTIONS).unwrap());
   });
 }
 
@@ -34,7 +34,7 @@ fn allocate_slow_path_pessimistic_vec() {
 #[cfg(not(feature = "loom"))]
 fn allocate_slow_path_pessimistic_vec_unify() {
   run(|| {
-    allocate_slow_path_pessimistic(Arena::new(OPTIONS.with_unify(true)));
+    allocate_slow_path_pessimistic(Arena::new(OPTIONS.with_unify(true)).unwrap());
   });
 }
 

@@ -1,34 +1,5 @@
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[derive(Debug)]
-pub(crate) struct TooSmall {
-  cap: usize,
-  min_cap: usize,
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl TooSmall {
-  #[inline]
-  pub(crate) const fn new(cap: usize, min_cap: usize) -> Self {
-    Self { cap, min_cap }
-  }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl core::fmt::Display for TooSmall {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(
-      f,
-      "memmap size is less than the minimum capacity: {} < {}",
-      self.cap, self.min_cap
-    )
-  }
-}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl std::error::Error for TooSmall {}
-
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-#[derive(Debug)]
 pub(crate) struct MagicVersionMismatch {
   expected_version: u16,
   found_version: u16,
