@@ -233,7 +233,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     self.data_offset = data_offset;
   }
 
-  pub(crate) fn new_vec(opts: ArenaOptions) -> Self {
+  pub(crate) fn new_vec(opts: ArenaOptions) -> Result<Self, Error> {
     let cap = opts.capacity();
     let alignment = opts.maximum_alignment();
     let min_segment_size = opts.minimum_segment_size();
@@ -255,8 +255,9 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       let header_ptr_offset = align_offset::<H>(opts.reserved()) as usize + mem::align_of::<H>();
 
-      if reserved + header_ptr_offset + mem::size_of::<H>() > vec.cap {
-        super::panic_reserved_too_large();
+      let header_size = reserved + header_ptr_offset + mem::size_of::<H>();
+      if header_size > vec.cap {
+        return Err(Error::InsufficientSpace { requested: header_size as u32, available: vec.cap as u32 })
       }
 
       let mut data_offset = header_ptr_offset + mem::size_of::<H>();
@@ -278,7 +279,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         )
       };
 
-      Self {
+      Ok(Self {
         cap: cap as u32,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
@@ -291,7 +292,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         magic_version: opts.magic_version(),
         version: CURRENT_VERSION,
         freelist: opts.freelist(),
-      }
+      })
     }
   }
 

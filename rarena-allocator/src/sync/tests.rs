@@ -42,12 +42,12 @@ fn alloc_bytes(a: Arena) {
 
 #[test]
 fn alloc_bytes_vec() {
-  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS)))
+  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap()))
 }
 
 #[test]
 fn alloc_bytes_vec_unify() {
-  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true))))
+  run(|| alloc_bytes(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap()))
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn alloc_offset_and_size(a: Arena) {
 #[cfg(not(feature = "loom"))]
 fn alloc_offset_and_size_vec() {
   run(|| {
-    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS));
+    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
@@ -139,7 +139,7 @@ fn alloc_offset_and_size_vec() {
 #[cfg(not(feature = "loom"))]
 fn alloc_offset_and_size_vec_unify() {
   run(|| {
-    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    alloc_offset_and_size(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -188,14 +188,14 @@ fn alloc_heap(a: Arena) {
 #[test]
 fn alloc_heap_vec() {
   run(|| {
-    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS));
+    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
 #[test]
 fn alloc_heap_vec_unify() {
   run(|| {
-    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    alloc_heap(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -247,14 +247,14 @@ fn alloc_inlined(a: Arena) {
 #[test]
 fn alloc_inlined_vec() {
   run(|| {
-    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS));
+    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
 #[test]
 fn alloc_inlined_vec_unify() {
   run(|| {
-    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    alloc_inlined(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -310,14 +310,14 @@ fn alloc_zst(a: Arena) {
 #[test]
 fn alloc_zst_vec() {
   run(|| {
-    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS));
+    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
 #[test]
 fn alloc_zst_vec_unify() {
   run(|| {
-    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    alloc_zst(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -373,14 +373,14 @@ fn carefully_alloc_in(a: Arena) {
 #[test]
 fn carefully_alloc() {
   run(|| {
-    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS));
+    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
 #[test]
 fn carefully_alloc_unify() {
   run(|| {
-    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    carefully_alloc_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -498,7 +498,7 @@ fn check_data_offset(l: Arena, offset: usize) {
 #[cfg(not(feature = "loom"))]
 fn check_data_offset_vec() {
   run(|| {
-    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS), RESERVED as usize + 1);
+    check_data_offset(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap(), RESERVED as usize + 1);
   });
 }
 
@@ -507,7 +507,7 @@ fn check_data_offset_vec() {
 fn check_data_offset_vec_unify() {
   run(|| {
     check_data_offset(
-      Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)),
+      Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap(),
       8 + core::mem::size_of::<super::Header>()
         + crate::align_offset::<super::Header>(RESERVED as u32) as usize,
     );
@@ -597,7 +597,7 @@ fn discard_freelist_in(l: Arena) {
 #[test]
 fn discard_freelist() {
   run(|| {
-    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS));
+    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS).unwrap());
   });
 }
 
@@ -605,7 +605,7 @@ fn discard_freelist() {
 #[test]
 fn discard_freelist_unify() {
   run(|| {
-    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)));
+    discard_freelist_in(Arena::new(DEFAULT_ARENA_OPTIONS.with_unify(true)).unwrap());
   });
 }
 
@@ -931,7 +931,7 @@ fn with_reserved(l: Arena) {
 #[test]
 fn with_reserved_vec() {
   run(|| {
-    with_reserved(Arena::new(DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED)));
+    with_reserved(Arena::new(DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED)).unwrap());
   });
 }
 
@@ -942,7 +942,7 @@ fn with_reserved_vec_unify() {
       DEFAULT_ARENA_OPTIONS
         .with_unify(true)
         .with_reserved(RESERVED),
-    ));
+    ).unwrap());
   });
 }
 

@@ -1390,7 +1390,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let arena = Arena::new(ArenaOptions::new());
   /// ```
-  fn new(opts: ArenaOptions) -> Self;
+  fn new(opts: ArenaOptions) -> Result<Self, Error>;
 
   /// Returns the offset to the start of the allocator.
   ///
@@ -1686,11 +1686,6 @@ fn reserved_too_large() -> std::io::Error {
     std::io::ErrorKind::InvalidInput,
     "reserved memory too large, the remaining memory is not enough to construct the ARENA",
   )
-}
-
-#[inline]
-const fn panic_reserved_too_large() -> ! {
-  panic!("reserved memory too large, the remaining memory is not enough to construct the ARENA")
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

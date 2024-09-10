@@ -1526,9 +1526,8 @@ impl Allocator for Arena {
   /// let arena = Arena::new(ArenaOptions::new());
   /// ```
   #[inline]
-  fn new(opts: ArenaOptions) -> Self {
-    let memory = Memory::new_vec(opts);
-    Self::new_in(memory, opts.maximum_retries(), opts.unify(), false)
+  fn new(opts: ArenaOptions) -> Result<Self, Error> { 
+    Memory::new_vec(opts).map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
   }
 
   /// Returns the offset to the start of the ARENA.
