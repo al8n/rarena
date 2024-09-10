@@ -8,7 +8,7 @@ const OPTIONS: ArenaOptions = ArenaOptions::new();
 #[cfg(not(feature = "loom"))]
 fn allocate_slow_path_optimistic_vec() {
   run(|| {
-    allocate_slow_path(Arena::new(OPTIONS));
+    allocate_slow_path(Arena::new(OPTIONS).unwrap());
   });
 }
 
@@ -16,7 +16,7 @@ fn allocate_slow_path_optimistic_vec() {
 #[cfg(not(feature = "loom"))]
 fn allocate_slow_path_optimistic_vec_unify() {
   run(|| {
-    allocate_slow_path(Arena::new(OPTIONS.with_unify(true)));
+    allocate_slow_path(Arena::new(OPTIONS.with_unify(true)).unwrap());
   });
 }
 

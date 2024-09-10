@@ -246,7 +246,7 @@ impl Allocator for Arena {
   ///
   /// ```ignore
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   ///
   /// {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -289,7 +289,7 @@ impl Allocator for Arena {
   /// ### Heap allocated type with carefull memory management
   ///
   /// ```ignore
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   ///
   /// // Do not invoke detach, so when the data is dropped, the drop logic will be handled by the ARENA.
   /// // automatically.
@@ -473,7 +473,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let allocated = arena.allocated();
   /// ```
   #[inline]
@@ -488,7 +488,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let memory = arena.memory();
   /// ```
   #[inline]
@@ -512,7 +512,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let capacity = arena.capacity();
   /// ```
   #[inline]
@@ -543,7 +543,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   ///
   /// unsafe {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -571,7 +571,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let data_offset = arena.data_offset();
   /// ```
   #[inline]
@@ -586,7 +586,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let data = arena.data();
   /// ```
   #[inline]
@@ -637,7 +637,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// arena.discard_freelist();
   /// ```
   #[inline]
@@ -659,7 +659,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let discarded = arena.discarded();
   /// ```
   #[inline]
@@ -935,7 +935,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// arena.increase_discarded(100);
   /// ```
   #[inline]
@@ -953,7 +953,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let is_mmap = arena.is_mmap();
   /// assert_eq!(is_mmap, false);
   /// ```
@@ -971,7 +971,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let is_ondisk = arena.is_ondisk();
   /// assert_eq!(is_ondisk, false);
   /// ```
@@ -987,7 +987,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let is_ondisk_and_mmap = arena.is_ondisk_and_mmap();
   /// assert_eq!(is_ondisk_and_mmap, false);
   /// ```
@@ -1052,7 +1052,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let magic_version = arena.magic_version();
   /// ```
   #[inline]
@@ -1389,7 +1389,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let memory = arena.memory();
   /// ```
   #[inline]
@@ -1404,7 +1404,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let min_segment_size = arena.minimum_segment_size();
   /// ```
   #[inline]
@@ -1419,7 +1419,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// arena.set_minimum_segment_size(100);
   /// ```
   #[inline]
@@ -1523,11 +1523,12 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// ```
   #[inline]
-  fn new(opts: ArenaOptions) -> Result<Self, Error> { 
-    Memory::new_vec(opts).map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
+  fn new(opts: ArenaOptions) -> Result<Self, Error> {
+    Memory::new_vec(opts)
+      .map(|memory| Self::new_in(memory, opts.maximum_retries(), opts.unify(), false))
   }
 
   /// Returns the offset to the start of the ARENA.
@@ -1547,7 +1548,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let page_size = arena.page_size();
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -1564,7 +1565,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let read_only = arena.read_only();
   /// ```
   #[inline]
@@ -1579,7 +1580,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let refs = arena.refs();
   /// ```
   #[inline]
@@ -1594,7 +1595,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let remaining = arena.remaining();
   /// ```
   #[inline]
@@ -1614,7 +1615,7 @@ impl Allocator for Arena {
   /// ```rust
   /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// # let arena = Arena::new(ArenaOptions::new());
+  /// # let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// arena.remove_on_drop(true);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -1742,7 +1743,7 @@ impl Allocator for Arena {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// let arena = Arena::new(ArenaOptions::new());
+  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let version = arena.version();
   /// ```
   #[inline]
@@ -1762,7 +1763,7 @@ impl Arena {
   /// ```rust
   /// # use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
   ///
-  /// # let arena = Arena::new(ArenaOptions::new());
+  /// # let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let path = arena.path();
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

@@ -234,31 +234,18 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   pub(crate) fn new_vec(opts: ArenaOptions) -> Result<Self, Error> {
-    let cap = opts.capacity();
+    let vec_cap = opts.capacity();
     let alignment = opts.maximum_alignment();
     let min_segment_size = opts.minimum_segment_size();
     let unify = opts.unify();
+    let reserved = opts.reserved() as usize;
+    let header_ptr_offset = check_capacity::<H>(reserved, unify, vec_cap as usize)?;
 
-    let cap = if unify {
-      cap.saturating_add(overhead::<H>() as u32)
-    } else {
-      cap.saturating_add(alignment as u32)
-    } as usize;
-
-    let mut vec = AlignedVec::new::<H>(cap, alignment);
+    let mut vec = AlignedVec::new::<H>(vec_cap as usize, alignment);
     // Safety: we have add the overhead for the header
     unsafe {
       let ptr = vec.as_mut_ptr();
       ptr::write_bytes(ptr, 0, vec.cap);
-
-      let reserved = opts.reserved() as usize;
-
-      let header_ptr_offset = align_offset::<H>(opts.reserved()) as usize + mem::align_of::<H>();
-
-      let header_size = reserved + header_ptr_offset + mem::size_of::<H>();
-      if header_size > vec.cap {
-        return Err(Error::InsufficientSpace { requested: header_size as u32, available: vec.cap as u32 })
-      }
 
       let mut data_offset = header_ptr_offset + mem::size_of::<H>();
       let header_ptr = ptr.add(header_ptr_offset).cast::<H>();
@@ -280,7 +267,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       };
 
       Ok(Self {
-        cap: cap as u32,
+        cap: vec_cap,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
         flag: MemoryFlags::empty(),
@@ -368,16 +355,17 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   ) -> std::io::Result<Self> {
     let (create_new, file) = open_options.open(path.as_path())?;
     let file_size = file.metadata()?.len() as u32;
-    let alignment = opts.maximum_alignment();
+    let reserved = opts.reserved() as usize;
+
     let min_segment_size = opts.minimum_segment_size();
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
     let capacity = opts.capacity();
 
     let size = file_size.max(capacity);
-    if size < overhead::<H>() as u32 {
-      return Err(invalid_data(TooSmall::new(size as usize, overhead::<H>())));
-    }
+
+    let header_ptr_offset =
+      check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
 
     if file_size < capacity {
       file.set_len(capacity as u64)?;
@@ -386,22 +374,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     unsafe {
       f(mmap_options, &file).and_then(|mut mmap| {
         let cap = mmap.len();
-        if cap < overhead::<H>() {
-          return Err(invalid_data(TooSmall::new(cap, overhead::<H>())));
-        }
-
-        // TODO: should we align the memory?
-        let _alignment = alignment.max(mem::align_of::<H>());
 
         let ptr = mmap.as_mut_ptr();
 
         let reserved = opts.reserved() as usize;
-
-        let header_ptr_offset = align_offset::<H>(opts.reserved()) as usize + mem::align_of::<H>();
-
-        if reserved + header_ptr_offset + mem::size_of::<H>() > capacity as usize {
-          return Err(reserved_too_large());
-        }
 
         let data_offset = header_ptr_offset + mem::size_of::<H>();
         let header_ptr = ptr.add(header_ptr_offset).cast::<H>();
@@ -563,18 +539,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     unsafe {
       f(mmap_options, &file).and_then(|mmap| {
         let len = mmap.len();
-        if len < overhead::<H>() {
-          return Err(invalid_data(TooSmall::new(len, overhead::<H>())));
-        }
-
         let reserved = reserved as usize;
 
-        let ptr = mmap.as_ptr();
-        let header_ptr_offset = align_offset::<H>(reserved as u32) as usize + mem::align_of::<H>();
+        let header_ptr_offset = check_capacity::<H>(reserved, true, len).map_err(invalid_input)?;
 
-        if reserved + header_ptr_offset + mem::size_of::<H>() > len {
-          return Err(reserved_too_large());
-        }
+        let ptr = mmap.as_ptr();
 
         let freelist = super::sanity_check(
           None,
@@ -619,14 +588,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     freelist: Freelist,
   ) -> std::io::Result<Self> {
     mmap_options.map_anon().and_then(|mut mmap| {
-      let cap = mmap.len();
-      if unify {
-        if mmap.len() < overhead::<H>() {
-          return Err(invalid_data(TooSmall::new(mmap.len(), overhead::<H>())));
-        }
-      } else if mmap.len() < alignment {
-        return Err(invalid_data(TooSmall::new(mmap.len(), alignment)));
-      }
+      let map_cap = mmap.len();
+
+      let alignment = alignment.max(mem::align_of::<H>());
+
+      let header_ptr_offset =
+        check_capacity::<H>(reserved as usize, unify, map_cap).map_err(invalid_input)?;
 
       // TODO:  should we align the memory?
       let _alignment = alignment.max(mem::align_of::<H>());
@@ -634,15 +601,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       // Safety: we have add the overhead for the header
       unsafe {
-        ptr::write_bytes(ptr, 0, cap);
+        ptr::write_bytes(ptr, 0, map_cap);
 
-        let header_ptr_offset = align_offset::<H>(reserved) as usize + mem::align_of::<H>();
         let mut data_offset = header_ptr_offset + mem::size_of::<H>();
         let header_ptr = ptr.add(header_ptr_offset);
-
-        if reserved as usize + header_ptr_offset + mem::size_of::<H>() > cap {
-          return Err(reserved_too_large());
-        }
 
         let (header, data_offset) = if unify {
           super::write_sanity(
@@ -665,7 +627,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           reserved: reserved as usize,
           flag: MemoryFlags::MMAP,
-          cap: cap as u32,
+          cap: map_cap as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
           refs: R::new(1),
           data_offset,
@@ -931,6 +893,20 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 }
 
 #[inline]
-const fn overhead<H>() -> usize {
-  mem::size_of::<H>()
+fn check_capacity<H>(reserved: usize, unify: bool, capacity: usize) -> Result<usize, Error> {
+  let (header_ptr_offset, prefix_size) = if unify {
+    let offset = align_offset::<H>(reserved as u32) as usize + mem::align_of::<H>();
+    (offset, offset + mem::size_of::<H>())
+  } else {
+    (reserved + 1, reserved + 1)
+  };
+
+  if prefix_size > capacity {
+    return Err(Error::InsufficientSpace {
+      requested: prefix_size as u32,
+      available: capacity as u32,
+    });
+  }
+
+  Ok(header_ptr_offset)
 }
