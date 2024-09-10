@@ -735,19 +735,19 @@ impl Allocator for Arena {
       if len == 0 {
         return Ok(());
       }
-  
+
       let page_size = (*PAGE_SIZE) as usize;
-  
+
       // Calculate start page
       let start_page_offset = (offset / page_size) * page_size;
-  
+
       // Calculate end page. The end offset is the last byte that needs to be flushed.
       let end_offset = offset + len - 1;
       let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-  
+
       // Check if the end of the last page exceeds the capacity of the memory map
       let end_flush_offset = end_page_offset.min(self.cap as usize);
-  
+
       // Ensure that the flush does not start beyond the capacity
       if start_page_offset >= self.cap as usize {
         return Err(std::io::Error::new(
@@ -755,7 +755,7 @@ impl Allocator for Arena {
           "Offset is out of bounds",
         ));
       }
-  
+
       unsafe {
         return self
           .inner
@@ -764,7 +764,7 @@ impl Allocator for Arena {
       }
     }
 
-    Ok(())    
+    Ok(())
   }
 
   /// Asynchronously flushes outstanding memory map modifications in the range to disk.
@@ -791,19 +791,19 @@ impl Allocator for Arena {
       if len == 0 {
         return Ok(());
       }
-  
+
       let page_size = (*PAGE_SIZE) as usize;
-  
+
       // Calculate start page
       let start_page_offset = (offset / page_size) * page_size;
-  
+
       // Calculate end page. The end offset is the last byte that needs to be flushed.
       let end_offset = offset + len - 1;
       let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-  
+
       // Check if the end of the last page exceeds the capacity of the memory map
       let end_flush_offset = end_page_offset.min(self.cap as usize);
-  
+
       // Ensure that the flush does not start beyond the capacity
       if start_page_offset >= self.cap as usize {
         return Err(std::io::Error::new(
@@ -811,7 +811,7 @@ impl Allocator for Arena {
           "Offset is out of bounds",
         ));
       }
-  
+
       unsafe {
         return self
           .inner
