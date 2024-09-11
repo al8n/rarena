@@ -2162,9 +2162,9 @@ macro_rules! get_varint {
       ///
       #[doc = "- If the buffer does not have a valid LEB128 format `" $ty "`."]
       #[inline]
-      pub fn [< $name _unchecked >](&mut self) -> $ty {
+      pub fn [< $name _unchecked >](&mut self) -> (usize, $ty) {
         dbutils::leb128::[< decode_ $ty _varint >](self)
-          .map(|(_, value)| value as $ty)
+          .map(|(bytes, value)| (bytes, value as $ty))
           .unwrap()
       }
     }
