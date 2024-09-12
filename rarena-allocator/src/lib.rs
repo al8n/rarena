@@ -693,7 +693,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.flush().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -713,7 +713,7 @@ pub trait Allocator: sealed::Sealed {
   /// # std::fs::remove_file(&path);
   /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// arena.flush_async().unwrap();
   ///
@@ -734,7 +734,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.flush_range(0, 100).unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -754,7 +754,7 @@ pub trait Allocator: sealed::Sealed {
   /// # std::fs::remove_file(&path);
   /// let open_options = OpenOptions::default().create(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// arena.flush_async_range(0, 100).unwrap();
   ///
@@ -973,7 +973,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.lock_exclusive().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -993,7 +993,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.lock_shared().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -1017,6 +1017,10 @@ pub trait Allocator: sealed::Sealed {
 
   /// Opens a read only allocator backed by a mmap with the given capacity.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1028,18 +1032,18 @@ pub trait Allocator: sealed::Sealed {
   /// # {
   ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// # }
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map<P: AsRef<std::path::Path>>(
+  unsafe fn map<P: AsRef<std::path::Path>>(
     path: P,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1047,6 +1051,10 @@ pub trait Allocator: sealed::Sealed {
   ) -> std::io::Result<Self>;
 
   /// Opens a read only allocator backed by a mmap with the given capacity.
+  ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
   /// # Example
   ///
@@ -1059,18 +1067,18 @@ pub trait Allocator: sealed::Sealed {
   /// # {
   ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// # }
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_with_path_builder<PB, E>(
+  unsafe fn map_with_path_builder<PB, E>(
     path_builder: PB,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1097,6 +1105,10 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1107,13 +1119,13 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_copy<P: AsRef<std::path::Path>>(
+  unsafe fn map_copy<P: AsRef<std::path::Path>>(
     path: P,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1124,6 +1136,10 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1134,13 +1150,13 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_copy_with_path_builder<PB, E>(
+  unsafe fn map_copy_with_path_builder<PB, E>(
     path_builder: PB,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1151,6 +1167,10 @@ pub trait Allocator: sealed::Sealed {
 
   /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1162,18 +1182,18 @@ pub trait Allocator: sealed::Sealed {
   /// # {
   ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// # }
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_copy_read_only<P: AsRef<std::path::Path>>(
+  unsafe fn map_copy_read_only<P: AsRef<std::path::Path>>(
     path: P,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1182,6 +1202,10 @@ pub trait Allocator: sealed::Sealed {
 
   /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1193,18 +1217,18 @@ pub trait Allocator: sealed::Sealed {
   /// # {
   ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// # }
   ///
   /// let open_options = OpenOptions::default().read(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_copy_read_only_with_path_builder<PB, E>(
+  unsafe fn map_copy_read_only_with_path_builder<PB, E>(
     path_builder: PB,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1215,6 +1239,10 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator backed by a mmap with the given options.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1225,13 +1253,13 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_mut<P: AsRef<std::path::Path>>(
+  unsafe fn map_mut<P: AsRef<std::path::Path>>(
     path: P,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1240,6 +1268,10 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator backed by a mmap with the given options.
   ///
+  /// # Safety
+  ///
+  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  ///
   /// # Example
   ///
   /// ```rust
@@ -1250,13 +1282,13 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let arena = Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let arena = unsafe { Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_mut_with_path_builder<PB, E>(
+  unsafe fn map_mut_with_path_builder<PB, E>(
     path_builder: PB,
     opts: ArenaOptions,
     open_options: OpenOptions,
@@ -1488,7 +1520,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.try_lock_exclusive().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -1508,7 +1540,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.try_lock_shared().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -1528,7 +1560,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
   /// let mmap_options = MmapOptions::new();
-  /// let mut arena = Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap();
+  /// let mut arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
   /// arena.lock_exclusive().unwrap();
   ///
   /// // do some thing

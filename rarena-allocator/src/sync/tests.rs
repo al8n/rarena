@@ -54,7 +54,7 @@ fn alloc_bytes_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn alloc_bytes_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_alloc_bytes_mmap");
     let open_options = OpenOptions::default()
@@ -147,7 +147,7 @@ fn alloc_offset_and_size_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn alloc_offset_and_size_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_alloc_offset_and_size_mmap");
     let open_options = OpenOptions::default()
@@ -203,7 +203,7 @@ fn alloc_heap_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn alloc_heap_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_alloc_heap_mmap");
     let open_options = OpenOptions::default()
@@ -262,7 +262,7 @@ fn alloc_inlined_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn alloc_inlined_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_alloc_inlined_mmap");
     let open_options = OpenOptions::default()
@@ -325,7 +325,7 @@ fn alloc_zst_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn alloc_zst_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_alloc_zst_mmap");
     let open_options = OpenOptions::default()
@@ -388,7 +388,7 @@ fn carefully_alloc_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn carefully_alloc_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_carefully_alloc_mmap");
     let open_options = OpenOptions::default()
@@ -509,7 +509,7 @@ fn check_data_offset_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn check_data_offset_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_check_data_offset_mmap");
     let open_options = OpenOptions::default()
@@ -604,7 +604,7 @@ fn discard_freelist_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn discard_freelist_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_discard_freelist_mmap");
     let open_options = OpenOptions::default()
@@ -799,35 +799,41 @@ fn reopen() {
     .read(true)
     .write(true);
   let mmap_options = MmapOptions::default();
-  let l = Arena::map_mut(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS,
-    open_options.clone(),
-    mmap_options.clone(),
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map_mut(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS,
+      open_options.clone(),
+      mmap_options.clone(),
+    )
+    .unwrap()
+  };
   let allocated = l.allocated();
   let data_offset = l.data_offset();
   drop(l);
 
-  let l = Arena::map_mut(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS,
-    open_options,
-    mmap_options.clone(),
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map_mut(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS,
+      open_options,
+      mmap_options.clone(),
+    )
+    .unwrap()
+  };
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
 
-  let l = Arena::map(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS,
-    OpenOptions::new().read(true),
-    mmap_options,
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS,
+      OpenOptions::new().read(true),
+      mmap_options,
+    )
+    .unwrap()
+  };
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
   drop(l);
@@ -844,13 +850,15 @@ fn reopen_with_reserved() {
     .read(true)
     .write(true);
   let mmap_options = MmapOptions::default();
-  let l = Arena::map_mut(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
-    open_options.clone(),
-    mmap_options.clone(),
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map_mut(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
+      open_options.clone(),
+      mmap_options.clone(),
+    )
+    .unwrap()
+  };
   let allocated = l.allocated();
   let data_offset = l.data_offset();
   unsafe {
@@ -862,13 +870,15 @@ fn reopen_with_reserved() {
 
   drop(l);
 
-  let l = Arena::map_mut(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS,
-    open_options,
-    mmap_options.clone(),
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map_mut(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS,
+      open_options,
+      mmap_options.clone(),
+    )
+    .unwrap()
+  };
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
 
@@ -881,13 +891,15 @@ fn reopen_with_reserved() {
   }
   drop(l);
 
-  let l = Arena::map(
-    p.clone(),
-    DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
-    OpenOptions::new().read(true),
-    mmap_options,
-  )
-  .unwrap();
+  let l = unsafe {
+    Arena::map(
+      p.clone(),
+      DEFAULT_ARENA_OPTIONS.with_reserved(RESERVED),
+      OpenOptions::new().read(true),
+      mmap_options,
+    )
+    .unwrap()
+  };
   assert_eq!(l.allocated(), allocated);
   assert_eq!(l.data_offset(), data_offset);
 

@@ -42,7 +42,7 @@ fn allocate_slow_path_pessimistic_vec_unify() {
 #[cfg_attr(miri, ignore)]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_pessimistic_mmap() {
-  run(|| {
+  run(|| unsafe {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("test_allocate_slow_path_mmap");
     let open_options = OpenOptions::default()

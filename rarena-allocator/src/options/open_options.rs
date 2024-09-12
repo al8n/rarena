@@ -275,8 +275,16 @@ impl OpenOptions {
   }
 }
 
-/// A memory map options for file backed [`SkipMap`](super::SkipMap),
+/// A memory map options for file backed [`Allocator`](crate::Allocator),
 /// providing advanced options and flags for specifying memory map behavior.
+///
+/// ## Safety
+///
+/// All file-backed memory map constructors are marked `unsafe` because of the potential for
+/// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+/// out of process. Applications must consider the risk and take appropriate precautions when
+/// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+/// unlinked) files exist but are platform specific and limited.
 #[derive(Clone, Debug)]
 pub struct MmapOptions(Mmap2Options);
 
