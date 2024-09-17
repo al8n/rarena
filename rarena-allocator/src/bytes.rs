@@ -315,6 +315,12 @@ impl<'a, A: Allocator> BytesRefMut<'a, A> {
     self.len == 0
   }
 
+  /// Returns the remaining capacity.
+  #[inline]
+  pub const fn remaining(&self) -> usize {
+    self.allocated.ptr_size as usize - self.len
+  }
+
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
   pub(super) unsafe fn new(arena: &'a A, allocated: Meta) -> Self {

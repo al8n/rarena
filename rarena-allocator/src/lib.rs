@@ -1956,7 +1956,6 @@ macro_rules! impl_bytes_mut_utils {
       }
     }
 
-
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
     /// You may want to use [`put_aligned`] instead of this method.
