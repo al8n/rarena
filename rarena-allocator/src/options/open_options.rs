@@ -28,7 +28,7 @@ impl Default for OpenOptions {
   ///
   /// All options are initially set to `false`.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -45,7 +45,7 @@ impl OpenOptions {
   ///
   /// All options are initially set to `false`.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -66,7 +66,7 @@ impl OpenOptions {
   /// This option, when true, will indicate that the file should be
   /// `read`-able if opened.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -87,7 +87,7 @@ impl OpenOptions {
   /// If the file already exists, any write calls on it will overwrite its
   /// contents, without truncating it.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -132,7 +132,7 @@ impl OpenOptions {
   /// [seek]: std::io::Seek::seek "io::Seek::seek"
   /// [Current]: std::io::SeekFrom::Current "io::SeekFrom::Current"
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -152,7 +152,7 @@ impl OpenOptions {
   ///
   /// The file must be opened with write access for truncate to work.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -174,7 +174,7 @@ impl OpenOptions {
   /// See also [`std::fs::write()`][std::fs::write] for a simple function to
   /// create a file with some given data.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -220,7 +220,7 @@ impl OpenOptions {
   /// [`.create()`]: OpenOptions::create
   /// [`.truncate()`]: OpenOptions::truncate
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ```rust
   /// use rarena_allocator::OpenOptions;
@@ -303,7 +303,7 @@ impl From<Mmap2Options> for MmapOptions {
 impl MmapOptions {
   /// Creates a new set of options for configuring and creating a memory map.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::MmapOptions;
@@ -322,7 +322,7 @@ impl MmapOptions {
   ///
   /// For file-backed memory maps, the length will default to the file length.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```
   /// use rarena_allocator::MmapOptions;
@@ -341,7 +341,7 @@ impl MmapOptions {
   ///
   /// By default, the offset is 0.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```
   /// use rarena_allocator::MmapOptions;
@@ -360,7 +360,7 @@ impl MmapOptions {
   ///
   /// This option has no effect on file-backed memory maps.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```
   /// use rarena_allocator::MmapOptions;
@@ -383,7 +383,7 @@ impl MmapOptions {
   ///
   /// This option has no effect on file-backed memory maps.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```
   /// use rarena_allocator::MmapOptions;
@@ -402,7 +402,7 @@ impl MmapOptions {
   ///
   /// This option corresponds to the `MAP_POPULATE` flag on Linux. It has no effect on Windows.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```
   /// use rarena_allocator::MmapOptions;

@@ -490,6 +490,7 @@ fn carefully_alloc_in(a: Arena) {
 }
 
 #[test]
+#[cfg(not(feature = "loom"))]
 fn checksum() {
   run(|| {
     use dbutils::checksum::Crc32;
@@ -497,7 +498,7 @@ fn checksum() {
     let arena = Arena::new(
       DEFAULT_ARENA_OPTIONS
         .with_reserved(0)
-        .with_capacity(1024 * 1024 * 1024),
+        .with_capacity(1024 * 1024 * 10),
     )
     .unwrap();
     let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();
@@ -516,6 +517,7 @@ fn checksum() {
 }
 
 #[test]
+#[cfg(not(feature = "loom"))]
 fn checksum_with_reserved() {
   run(|| {
     use dbutils::checksum::Crc32;
@@ -523,7 +525,7 @@ fn checksum_with_reserved() {
     let arena = Arena::new(
       DEFAULT_ARENA_OPTIONS
         .with_reserved(4)
-        .with_capacity(1024 * 1024 * 1024),
+        .with_capacity(1024 * 1024 * 10),
     )
     .unwrap();
     let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();

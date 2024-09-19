@@ -41,7 +41,7 @@ const CURRENT_VERSION: u16 = 0;
 const SENTINEL_SEGMENT_NODE_OFFSET: u32 = u32::MAX;
 const SENTINEL_SEGMENT_NODE_SIZE: u32 = u32::MAX;
 
-#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 static PAGE_SIZE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
   #[cfg(not(windows))]
   {
@@ -59,6 +59,9 @@ static PAGE_SIZE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
     }
   }
 });
+
+#[cfg(not(all(feature = "std", not(target_family = "wasm"))))]
+static PAGE_SIZE: &u32 = &4096;
 
 /// Enumeration of possible methods to seek within an [`Arena`] allocator.
 ///
@@ -104,7 +107,7 @@ pub trait Memory {
   /// Detach the value from the ARENA, which means when the value is dropped,
   /// the underlying memory will not be collected for futhur allocation.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The caller must ensure the value is dropped before the ARENA is dropped.
   unsafe fn detach(&mut self);
 
@@ -216,7 +219,7 @@ macro_rules! define_bytes_utils {
 
         #[doc = "Returns a `" $ty "` from the allocator without bounds checking."]
         ///
-        /// # Safety
+        /// ## Safety
         /// - `offset..offset + size` must be within allocated memory.
         unsafe fn [< get_ $ty _ $endian _unchecked>](&self, offset: usize) -> $ty {
           impl_bytes_utils_for_allocator!(unsafe self::[< from_ $endian _bytes >]($ty, offset))
@@ -251,7 +254,7 @@ macro_rules! define_leb128_utils {
       paste::paste! {
         #[doc = "Returns a `" $ty "` in LEB128 format from the allocator at the given offset."]
         ///
-        /// # Safety
+        /// ## Safety
         /// - `offset` must be within the allocated memory of the allocator.
         fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(usize, $ty), Error> {
           impl_leb128_utils_for_allocator!(self($ty, offset, $size))
@@ -268,7 +271,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the mutable reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
   ///
-  /// # Safety
+  /// ## Safety
   /// - The caller need to make sure there is no data-race
   ///
   /// # Panic
@@ -278,7 +281,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Allocates a `T` in the allocator.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`](Allocator::RefMut::detach),
   ///   then the caller must ensure that the `T` is dropped before the allocator is dropped.
@@ -289,7 +292,7 @@ pub trait Allocator: sealed::Sealed {
   ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
   ///      although those types are on stack, but they cannot be recovered, when reopens the file.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ## Memory leak
   ///
@@ -396,7 +399,7 @@ pub trait Allocator: sealed::Sealed {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
@@ -412,7 +415,7 @@ pub trait Allocator: sealed::Sealed {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes_owned::<T>(extra).unwrap();
@@ -432,7 +435,7 @@ pub trait Allocator: sealed::Sealed {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes_owned_within_page::<T>(extra).unwrap();
@@ -454,7 +457,7 @@ pub trait Allocator: sealed::Sealed {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes_within_page::<T>(extra).unwrap();
@@ -508,11 +511,11 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// The cost is one more atomic operation than [`alloc`](Allocator::alloc).
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// - See [`alloc`](Allocator::alloc) for safety.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -532,7 +535,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Allocates a `T` in the allocator in the same page. Like [`alloc_within_page`](Allocator::alloc_within_page), but returns an `Owned`.
   ///
-  /// # Safety
+  /// ## Safety
   /// - See [`alloc`](Allocator::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
@@ -542,7 +545,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Allocates a `T` in the allocator in the same page.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// - See [`alloc`](Allocator::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -551,7 +554,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the number of bytes allocated by the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -563,7 +566,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the whole main memory of the allocator as a byte slice.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -581,7 +584,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the capacity of the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -593,11 +596,11 @@ pub trait Allocator: sealed::Sealed {
 
   /// Clear the allocator.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The current pointers get from the allocator cannot be used anymore after calling this method.
   /// - This method is not thread-safe.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// Undefine behavior:
   ///
@@ -628,7 +631,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the data offset of the allocator. The offset is the end of the reserved bytes of the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -640,7 +643,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the data section of the allocator as a byte slice, header is not included.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -653,7 +656,7 @@ pub trait Allocator: sealed::Sealed {
   /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
   /// returns `true` if the deallocation is successful.
   ///
-  /// # Safety
+  /// ## Safety
   /// - you must ensure the same `offset..offset + size` is not deallocated twice.
   /// - `offset` must be larger than the [`Allocator::data_offset`].
   /// - `offset + size` must be less than the [`Allocator::allocated`].
@@ -663,7 +666,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// Returns the number of bytes discarded.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -675,7 +678,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the number of bytes discarded by the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -687,7 +690,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Flushes the memory-mapped file to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, OpenOptions, MmapOptions, Allocator};
@@ -707,7 +710,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Flushes the memory-mapped file to disk asynchronously.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -728,7 +731,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Flushes outstanding memory map modifications in the range to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -748,7 +751,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Asynchronously flushes outstanding memory map modifications in the range to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -769,14 +772,14 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns a pointer to the memory at the given offset.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset` must be less than the capacity of the allocator.
   unsafe fn get_pointer(&self, offset: usize) -> *const u8;
 
   /// Returns a pointer to the memory at the given offset.
   /// If the allocator is read-only, then this method will return a null pointer.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset` must be less than the capacity of the allocator.
   ///
   /// # Panic
@@ -785,7 +788,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns an aligned pointer to the memory at the given offset.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the allocator.
   unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T;
@@ -793,7 +796,7 @@ pub trait Allocator: sealed::Sealed {
   /// Returns an aligned pointer to the memory at the given offset.
   /// If the allocator is read-only, then this method will return a null pointer.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the allocator.
   ///
@@ -803,7 +806,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns a bytes slice from the allocator.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + size` must be allocated memory.
   /// - `offset` must be less than the capacity of the allocator.
   /// - `size` must be less than the capacity of the allocator.
@@ -842,7 +845,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns a `u8` from the allocator without bounds checking.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_u8_unchecked(&self, offset: usize) -> u8 {
     let buf = unsafe {
@@ -855,7 +858,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns a `i8` from the allocator without bounds checking.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_i8_unchecked(&self, offset: usize) -> i8 {
     let buf = unsafe {
@@ -899,7 +902,7 @@ pub trait Allocator: sealed::Sealed {
   /// Returns a mutable bytes slice from the allocator.
   /// If the allocator is read-only, then this method will return an empty slice.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + size` must be allocated memory.
   /// - `offset` must be less than the capacity of the allocator.
   /// - `size` must be less than the capacity of the allocator.
@@ -912,7 +915,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Forcelly increases the discarded bytes.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -924,7 +927,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns `true` if the allocator is created through memory map.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
@@ -939,7 +942,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns `true` if the allocator is on disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -952,7 +955,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns `true` if the allocator is on-disk and created through memory map.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -967,7 +970,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -987,7 +990,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Locks the underlying file for shared access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1008,7 +1011,7 @@ pub trait Allocator: sealed::Sealed {
   /// Returns the magic version of the allocator. This value can be used to check the compatibility for application using
   /// [`Arena`].
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1018,13 +1021,13 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   fn magic_version(&self) -> u16;
 
-  /// Opens a read only allocator backed by a mmap with the given capacity.
+  /// Opens a read only allocator backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1053,13 +1056,13 @@ pub trait Allocator: sealed::Sealed {
     mmap_options: MmapOptions,
   ) -> std::io::Result<Self>;
 
-  /// Opens a read only allocator backed by a mmap with the given capacity.
+  /// Opens a read only allocator backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1092,7 +1095,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator backed by an anonymous mmap with the given capacity.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, MmapOptions};
@@ -1108,11 +1111,11 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1139,11 +1142,11 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1170,11 +1173,11 @@ pub trait Allocator: sealed::Sealed {
 
   /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1205,11 +1208,11 @@ pub trait Allocator: sealed::Sealed {
 
   /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1242,11 +1245,11 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1271,11 +1274,11 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [type-level][MmapOptions] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1302,7 +1305,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the whole main memory of the allocator as a byte slice.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1312,12 +1315,14 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   fn memory(&self) -> &[u8];
 
-  /// Calculates the checksum of the allocated memory (not include the reserved memory specified by users) of the allocator.
+  /// Calculates the checksum of the allocated memory (excluding the reserved memory specified by users through [`ArenaOptions::with_reserved`]) of the allocator.
   fn checksum<S: BuildChecksumer>(&self, cks: &S) -> u64 {
     let allocated_memory = self.allocated_memory(); // Get the memory to be checksummed
     let reserved = self.reserved_slice().len();
     let data = &allocated_memory[reserved..];
+
     let page_size = self.page_size(); // Get the size of each page
+
     let total_len = data.len(); // Total length of the allocated memory
     let full_pages = total_len / page_size; // Calculate how many full pages there are
     let remaining_bytes = total_len % page_size; // Calculate the number of remaining bytes
@@ -1345,7 +1350,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the minimum segment size of the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1357,7 +1362,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Sets the minimum segment size of the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1369,7 +1374,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// `mlock(ptr, len)`—Lock memory into RAM.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// This function operates on raw pointers, but it should only be used on
   /// memory which the caller owns. Technically, locking memory shouldn't violate
@@ -1410,7 +1415,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// `munlock(ptr, len)`—Unlock memory.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// This function operates on raw pointers, but it should only be used on
   /// memory which the caller owns, to avoid compromising the `mlock` invariants
@@ -1449,7 +1454,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Creates a new allocator with the given options.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1460,13 +1465,16 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the offset to the start of the allocator.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `ptr` must be allocated by this allocator.
   unsafe fn offset(&self, ptr: *const u8) -> usize;
 
   /// Returns the page size.
   ///
-  /// # Example
+  /// If in no-std environment, then this method will return `4096`.
+  /// Otherwise, it will return the system's page size.
+  ///
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1474,13 +1482,11 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Arena::new(ArenaOptions::new()).unwrap();
   /// let page_size = arena.page_size();
   /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn page_size(&self) -> usize;
 
   /// Returns `true` if the arena is read-only.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1492,7 +1498,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the number of references to the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1504,7 +1510,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the number of bytes remaining bytes can be allocated by the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1521,7 +1527,7 @@ pub trait Allocator: sealed::Sealed {
   /// > **WARNING:** Once set to `true`, the backed file will be removed when the allocator is dropped, even though the file is opened in
   /// > read-only mode.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// # use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1535,7 +1541,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Set back the allocator's main memory cursor to the given position.
   ///
-  /// # Safety
+  /// ## Safety
   /// - If the current position is larger than the given position,
   ///   then the memory between the current position and the given position will be reclaimed,
   ///   so must ensure the memory chunk between the current position and the given position will not
@@ -1545,7 +1551,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1565,7 +1571,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1585,7 +1591,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Unlocks the underlying file, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
@@ -1608,7 +1614,7 @@ pub trait Allocator: sealed::Sealed {
 
   /// Returns the version of the allocator.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
@@ -1785,7 +1791,7 @@ const fn encode_segment_node(size: u32, next: u32) -> u64 {
 ///
 /// The aligned offset that is the next multiple of the alignment requirement of type `T`.
 ///
-/// # Examples
+/// ## Examples
 ///
 /// ```ignore
 /// use std::mem;
@@ -1875,7 +1881,7 @@ macro_rules! put_byte_order {
       ///
       #[doc = "For a safe alternative see [`" $name "`](Self::" $name ")."]
       ///
-      /// # Safety
+      /// ## Safety
       ///
       /// Calling this method if the buffer does not have enough space to hold the value is *[undefined behavior]*.
       ///
@@ -1994,7 +2000,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// You may want to use [`put_aligned`] instead of this method.
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// - Must invoke [`align_to`] before invoking this method, if `T` is not ZST.
     /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
@@ -2024,7 +2030,7 @@ macro_rules! impl_bytes_mut_utils {
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
     ///   then the caller must ensure that the `T` is dropped before the allocator is dropped.
@@ -2064,7 +2070,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// For a safe alternative see [`put_slice`](Self::put_slice).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough space to hold the slice is *[undefined behavior]*.
     ///
@@ -2124,7 +2130,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// For a safe alternative see [`put_u8`](Self::put_u8).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough space to hold the value is *[undefined behavior]*.
     ///
@@ -2149,7 +2155,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// For a safe alternative see [`put_i8`](Self::put_i8).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough space to hold the value is *[undefined behavior]*.
     ///
@@ -2184,7 +2190,7 @@ macro_rules! get_byte_order {
       ///
       #[doc = "For a safe alternative see [`" $name "`](Self::" $name ")."]
       ///
-      /// # Safety
+      /// ## Safety
       ///
       /// Calling this method if the buffer does not have enough bytes to read the value is *[undefined behavior]*.
       ///
@@ -2256,7 +2262,7 @@ macro_rules! impl_bytes_utils {
     ///
     /// For a safe alternative see [`get_slice`](Self::get_slice).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough bytes to read the slice is *[undefined behavior]*.
     ///
@@ -2285,7 +2291,7 @@ macro_rules! impl_bytes_utils {
     ///
     /// For a safe alternative see [`get_slice_mut`](Self::get_slice_mut).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough bytes to read the slice is *[undefined behavior]*.
     ///
@@ -2331,7 +2337,7 @@ macro_rules! impl_bytes_utils {
     ///
     /// For a safe alternative see [`get_u8`](Self::get_u8).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough bytes to read the value is *[undefined behavior]*.
     ///
@@ -2355,7 +2361,7 @@ macro_rules! impl_bytes_utils {
     ///
     /// For a safe alternative see [`get_i8`](Self::get_i8).
     ///
-    /// # Safety
+    /// ## Safety
     ///
     /// Calling this method if the buffer does not have enough bytes to read the value is *[undefined behavior]*.
     ///

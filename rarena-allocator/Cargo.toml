@@ -14,8 +14,8 @@ keywords = ["arena", "lock-free", "allocator"]
 [features]
 default = ["std"]
 alloc = []
-std = ["byteorder", "either/default", "dbutils/std"]
-memmap = ["memmap2", "fs4", "std", "rustix", "bitflags/std"]
+std = ["byteorder", "either/default", "dbutils/std", "rustix/std"]
+memmap = ["memmap2", "fs4", "std", "bitflags/std"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 
@@ -32,11 +32,12 @@ paste = "1"
 
 fs4 = { version = "0.9", optional = true }
 memmap2 = { version = "0.9", optional = true }
-rustix = { version = "0.38", optional = true, features = ["mm", "param"] }
 
 loom = { workspace = true, optional = true }
-
 tracing = { version = "0.1", optional = true }
+
+[target.'cfg(not(any(target_family = "wasm", windows)))'.dependencies]
+rustix = { version = "0.38", optional = true, features = ["mm", "param"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winbase", "sysinfoapi"] }

@@ -110,7 +110,7 @@ impl<T, A: Allocator> Owned<T, A> {
 
   /// Returns a shared reference to the value.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_ref(&self) -> &T {
     match &self.kind {
@@ -122,7 +122,7 @@ impl<T, A: Allocator> Owned<T, A> {
 
   /// Returns a mutable reference to the value.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_mut(&mut self) -> &mut T {
     match &mut self.kind {
@@ -216,7 +216,7 @@ impl<'a, T, A: Allocator> crate::Memory for RefMut<'a, T, A> {
   /// Detach the value from the ARENA, which means when the value is dropped,
   /// the underlying memory will not be collected for futhur allocation.
   ///
-  /// # Safety
+  /// ## Safety
   /// - If `T` is not inlined ([`core::mem::needs_drop::<T>()`](core::mem::needs_drop) returns `true`), then users should take care of dropping the value by themselves.
   unsafe fn detach(&mut self) {
     self.detached = true;
@@ -256,7 +256,7 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
 
   /// Returns a shared reference to the value.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_ref(&self) -> &T {
     match &self.kind {
@@ -268,7 +268,7 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
 
   /// Returns a mutable reference to the value.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_mut(&mut self) -> &mut T {
     match &mut self.kind {

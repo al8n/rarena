@@ -5,6 +5,7 @@ use core::{
   slice,
 };
 
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 use either::Either;
 
 use super::{common::*, sealed::Sealed, *};
@@ -44,6 +45,7 @@ impl crate::memory::Header for Header {
     }
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
   fn load_allocated(&self) -> u32 {
     self.allocated
@@ -108,7 +110,7 @@ struct Segment {
 }
 
 impl Segment {
-  /// # Safety
+  /// ## Safety
   /// - offset must be a well-aligned and in-bounds `u64` pointer.
   #[inline]
   unsafe fn from_offset(arena: &Arena, offset: u32, data_size: u32) -> Self {
@@ -149,7 +151,6 @@ pub struct Arena {
   ro: bool,
   cap: u32,
   freelist: Freelist,
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   page_size: u32,
 }
 
@@ -198,7 +199,6 @@ impl Clone for Arena {
         unify: self.unify,
         cap: self.cap,
         freelist: self.freelist,
-        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         page_size: self.page_size,
       }
     }
@@ -239,7 +239,7 @@ impl Allocator for Arena {
 
   /// Allocates a `T` in the ARENA.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
   ///   then the caller must ensure that the `T` is dropped before the ARENA is dropped.
@@ -250,7 +250,7 @@ impl Allocator for Arena {
   ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
   ///      although those types are on stack, but they cannot be recovered, when reopens the file.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// ## Memory leak
   ///
@@ -377,7 +377,7 @@ impl Allocator for Arena {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
@@ -399,7 +399,7 @@ impl Allocator for Arena {
   /// | T | [u8; size] |
   /// ```
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```ignore
   /// let mut bytes = arena.alloc_aligned_bytes::<T>(extra).unwrap();
@@ -451,7 +451,7 @@ impl Allocator for Arena {
 
   /// Allocates a `T` in the ARENA in the same page.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// - See [`alloc`](Self::alloc) for safety.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -480,7 +480,7 @@ impl Allocator for Arena {
 
   /// Returns the number of bytes allocated by the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -495,7 +495,7 @@ impl Allocator for Arena {
 
   /// Returns the whole main memory of the ARENA as a byte slice.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -511,7 +511,7 @@ impl Allocator for Arena {
 
   /// Returns the capacity of the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -526,10 +526,10 @@ impl Allocator for Arena {
 
   /// Clear the ARENA.
   ///
-  /// # Safety
+  /// ## Safety
   /// - The current pointers get from the ARENA cannot be used anymore after calling this method.
   ///
-  /// # Examples
+  /// ## Examples
   ///
   /// Undefine behavior:
   ///
@@ -569,7 +569,7 @@ impl Allocator for Arena {
 
   /// Returns the data offset of the ARENA. The offset is the end of the reserved bytes of the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -584,7 +584,7 @@ impl Allocator for Arena {
 
   /// Returns the data section of the ARENA as a byte slice, header is not included.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -604,7 +604,7 @@ impl Allocator for Arena {
   /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
   /// returns `true` if the deallocation is successful.
   ///
-  /// # Safety
+  /// ## Safety
   /// - you must ensure the same `offset..offset + size` is not deallocated twice.
   /// - `offset` must be larger than the [`Arena::data_offset`].
   /// - `offset + size` must be less than the [`Arena::allocated`].
@@ -632,7 +632,7 @@ impl Allocator for Arena {
   ///
   /// Returns the number of bytes discarded.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -654,7 +654,7 @@ impl Allocator for Arena {
 
   /// Returns the number of bytes discarded by the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -669,7 +669,7 @@ impl Allocator for Arena {
 
   /// Flushes the memory-mapped file to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -691,7 +691,7 @@ impl Allocator for Arena {
 
   /// Flushes the memory-mapped file to disk asynchronously.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -714,7 +714,7 @@ impl Allocator for Arena {
 
   /// Flushes outstanding memory map modifications in the range to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -765,7 +765,7 @@ impl Allocator for Arena {
 
   /// Asynchronously flushes outstanding memory map modifications in the range to disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -825,7 +825,7 @@ impl Allocator for Arena {
   /// Returns a pointer to the memory at the given offset.
   /// If the ARENA is read-only, then this method will return a null pointer.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset` must be less than the capacity of the ARENA.
   ///
   /// # Panic
@@ -845,7 +845,7 @@ impl Allocator for Arena {
 
   /// Returns an aligned pointer to the memory at the given offset.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the ARENA.
   #[inline]
@@ -861,7 +861,7 @@ impl Allocator for Arena {
   /// Returns an aligned pointer to the memory at the given offset.
   /// If the ARENA is read-only, then this method will return a null pointer.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the ARENA.
   ///
@@ -892,7 +892,7 @@ impl Allocator for Arena {
   /// Returns a mutable bytes slice from the ARENA.
   /// If the ARENA is read-only, then this method will return an empty slice.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `offset..offset + size` must be allocated memory.
   /// - `offset` must be less than the capacity of the ARENA.
   /// - `size` must be less than the capacity of the ARENA.
@@ -919,7 +919,7 @@ impl Allocator for Arena {
 
   /// Forcelly increases the discarded bytes.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -937,7 +937,7 @@ impl Allocator for Arena {
 
   /// Returns `true` if the ARENA is created through memory map.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -955,7 +955,7 @@ impl Allocator for Arena {
 
   /// Returns `true` if the ARENA is on disk.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -971,7 +971,7 @@ impl Allocator for Arena {
 
   /// Returns `true` if the ARENA is on-disk and created through memory map.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -991,7 +991,7 @@ impl Allocator for Arena {
 
   /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1013,7 +1013,7 @@ impl Allocator for Arena {
 
   /// Locks the underlying file for shared access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1036,7 +1036,7 @@ impl Allocator for Arena {
   /// Returns the magic version of the ARENA. This value can be used to check the compatibility for application using
   /// [`Arena`].
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1051,11 +1051,11 @@ impl Allocator for Arena {
 
   /// Opens a read only ARENA backed by a mmap with the given capacity.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1096,11 +1096,11 @@ impl Allocator for Arena {
 
   /// Opens a read only ARENA backed by a mmap with the given capacity.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1144,7 +1144,7 @@ impl Allocator for Arena {
 
   /// Creates a new ARENA backed by an anonymous mmap with the given capacity.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, MmapOptions};
@@ -1172,11 +1172,11 @@ impl Allocator for Arena {
   ///
   /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1207,11 +1207,11 @@ impl Allocator for Arena {
   ///
   /// Data written to the ARENA will not be visible by other processes, and will not be carried through to the underlying file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1243,11 +1243,11 @@ impl Allocator for Arena {
 
   /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1288,11 +1288,11 @@ impl Allocator for Arena {
 
   /// Opens a read only ARENA backed by a copy-on-write read-only memory map backed by a file with the given path builder.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1336,11 +1336,11 @@ impl Allocator for Arena {
 
   /// Creates a new ARENA backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1369,11 +1369,11 @@ impl Allocator for Arena {
 
   /// Creates a new ARENA backed by a mmap with the given options.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// See the [`MmapOptions`] docs for why this function is unsafe.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1405,7 +1405,7 @@ impl Allocator for Arena {
 
   /// Returns the whole main memory of the ARENA as a byte slice.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1420,7 +1420,7 @@ impl Allocator for Arena {
 
   /// Returns the minimum segment size of the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1435,7 +1435,7 @@ impl Allocator for Arena {
 
   /// Sets the minimum segment size of the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1450,7 +1450,7 @@ impl Allocator for Arena {
 
   /// `mlock(ptr, len)`—Lock memory into RAM.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// This function operates on raw pointers, but it should only be used on
   /// memory which the caller owns. Technically, locking memory shouldn't violate
@@ -1494,7 +1494,7 @@ impl Allocator for Arena {
 
   /// `munlock(ptr, len)`—Unlock memory.
   ///
-  /// # Safety
+  /// ## Safety
   ///
   /// This function operates on raw pointers, but it should only be used on
   /// memory which the caller owns, to avoid compromising the `mlock` invariants
@@ -1536,7 +1536,7 @@ impl Allocator for Arena {
 
   /// Creates a new ARENA with the given options.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1551,7 +1551,7 @@ impl Allocator for Arena {
 
   /// Returns the offset to the start of the ARENA.
   ///
-  /// # Safety
+  /// ## Safety
   /// - `ptr` must be allocated by this ARENA.
   #[inline]
   unsafe fn offset(&self, ptr: *const u8) -> usize {
@@ -1559,18 +1559,6 @@ impl Allocator for Arena {
     offset as usize
   }
 
-  /// Returns the page size.
-  ///
-  /// # Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
-  /// let page_size = arena.page_size();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   fn page_size(&self) -> usize {
     self.page_size as usize
@@ -1578,7 +1566,7 @@ impl Allocator for Arena {
 
   /// Returns `true` if the arena is read-only.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1593,7 +1581,7 @@ impl Allocator for Arena {
 
   /// Returns the number of references to the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1608,7 +1596,7 @@ impl Allocator for Arena {
 
   /// Returns the number of bytes remaining bytes can be allocated by the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1628,7 +1616,7 @@ impl Allocator for Arena {
   /// > **WARNING:** Once set to `true`, the backed file will be removed when the ARENA is dropped, even though the file is opened in
   /// > read-only mode.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// # use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1646,7 +1634,7 @@ impl Allocator for Arena {
 
   /// Set back the ARENA's main memory cursor to the given position.
   ///
-  /// # Safety
+  /// ## Safety
   /// - If the current position is larger than the given position,
   ///   then the memory between the current position and the given position will be reclaimed,
   ///   so must ensure the memory chunk between the current position and the given position will not
@@ -1685,7 +1673,7 @@ impl Allocator for Arena {
 
   /// Try to lock the underlying file for exclusive access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1707,7 +1695,7 @@ impl Allocator for Arena {
 
   /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1729,7 +1717,7 @@ impl Allocator for Arena {
 
   /// Unlocks the underlying file, only works on mmap with a file backend.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
@@ -1755,7 +1743,7 @@ impl Allocator for Arena {
 
   /// Returns the version of the ARENA.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -1772,7 +1760,7 @@ impl Allocator for Arena {
 impl Arena {
   /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
   ///
-  /// # Example
+  /// ## Example
   ///
   /// ```rust
   /// # use rarena_allocator::{unsync::Arena, Allocator, ArenaOptions};
@@ -2528,7 +2516,6 @@ impl Arena {
       max_retries,
       data_offset: memory.data_offset() as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
-      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       page_size: *PAGE_SIZE,
     }
   }

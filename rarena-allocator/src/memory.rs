@@ -5,33 +5,37 @@ use either::Either;
 use super::{common::*, *};
 
 pub(crate) trait PathRefCounter: Clone {
-  #[cfg(feature = "std")]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn new(path: std::path::PathBuf) -> Self;
 
-  #[cfg(feature = "std")]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn as_path(&self) -> &std::path::Path;
-}
-
-#[cfg(feature = "std")]
-impl PathRefCounter for std::sync::Arc<std::path::PathBuf> {
-  fn new(path: std::path::PathBuf) -> Self {
-    std::sync::Arc::new(path)
-  }
-
-  fn as_path(&self) -> &std::path::Path {
-    self
-  }
 }
 
 #[cfg(not(feature = "std"))]
 impl<T> PathRefCounter for std::sync::Arc<T> {}
 
 #[cfg(feature = "std")]
+impl PathRefCounter for std::sync::Arc<std::path::PathBuf> {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn new(path: std::path::PathBuf) -> Self {
+    std::sync::Arc::new(path)
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  fn as_path(&self) -> &std::path::Path {
+    self
+  }
+}
+
+#[cfg(feature = "std")]
 impl PathRefCounter for std::rc::Rc<std::path::PathBuf> {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn new(path: std::path::PathBuf) -> Self {
     std::rc::Rc::new(path)
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn as_path(&self) -> &std::path::Path {
     self
   }
@@ -45,6 +49,7 @@ pub(crate) trait Header: Sized {
 
   fn load_min_segment_size(&self) -> u32;
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   fn load_allocated(&self) -> u32;
 }
 
@@ -694,7 +699,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     }
   }
 
-  /// # Safety
+  /// ## Safety
   /// - offset and len must be valid and in bounds.
   #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
   pub(crate) unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
@@ -729,7 +734,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     }
   }
 
-  /// # Safety
+  /// ## Safety
   /// - offset and len must be valid and in bounds.
   #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
   pub(crate) unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
