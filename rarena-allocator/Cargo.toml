@@ -1,6 +1,6 @@
 [package]
 name = "rarena-allocator"
-version = "0.2.12"
+version = "0.2.13"
 edition.workspace = true
 repository.workspace = true
 homepage = "https://github.com/al8n/rarena/tree/main/rarena-allocator"
@@ -26,7 +26,7 @@ reserved = ["alloc"]
 bitflags = { version = "2", default-features = false }
 byteorder = { version = "1", optional = true }
 crossbeam-utils.workspace = true 
-dbutils = { version = "0.3", default-features = false }
+dbutils = { version = "0.3", default-features = false, features = ["crc32fast"] }
 either = { version = "1", default-features = false }
 paste = "1"
 
@@ -47,6 +47,7 @@ wg = "0.9"
 crossbeam-queue = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 crc32fast = "1"
+rand = "0.8"
 
 [package.metadata.docs.rs]
 all-features = true

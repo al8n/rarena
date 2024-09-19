@@ -2,6 +2,8 @@
 
 use core::marker::PhantomData;
 
+use rand::RngCore;
+
 use crate::Memory as _;
 
 use super::*;
@@ -352,6 +354,58 @@ fn alloc_zst_mmap_anon_unify() {
   run(|| {
     let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     alloc_zst(Arena::map_anon(DEFAULT_ARENA_OPTIONS.with_unify(true), mmap_options).unwrap());
+  });
+}
+
+#[test]
+fn checksum() {
+  run(|| {
+    use dbutils::checksum::Crc32;
+
+    let arena = Arena::new(
+      DEFAULT_ARENA_OPTIONS
+        .with_reserved(0)
+        .with_capacity(1024 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();
+
+    buf.set_len(arena.page_size() * 2);
+    rand::thread_rng().fill_bytes(&mut buf);
+
+    let cks = Crc32::new();
+    let checksum = arena.checksum(&cks);
+
+    assert_eq!(
+      checksum,
+      Crc32::new().checksum_one(arena.allocated_memory())
+    );
+  });
+}
+
+#[test]
+fn checksum_with_reserved() {
+  run(|| {
+    use dbutils::checksum::Crc32;
+
+    let arena = Arena::new(
+      DEFAULT_ARENA_OPTIONS
+        .with_reserved(4)
+        .with_capacity(1024 * 1024 * 1024),
+    )
+    .unwrap();
+    let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();
+
+    buf.set_len(arena.page_size() * 2);
+    rand::thread_rng().fill_bytes(&mut buf);
+
+    let cks = Crc32::new();
+    let checksum = arena.checksum(&cks);
+
+    assert_eq!(
+      checksum,
+      Crc32::new().checksum_one(&arena.allocated_memory()[4..])
+    );
   });
 }
 

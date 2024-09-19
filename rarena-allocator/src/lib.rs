@@ -16,12 +16,15 @@ extern crate std;
 mod memory;
 
 mod error;
+use dbutils::checksum::{BuildChecksumer, Checksumer};
 pub use error::*;
 
 mod options;
 pub use options::*;
 
 use core::mem;
+
+pub use dbutils::checksum;
 
 pub use either;
 
@@ -1308,6 +1311,37 @@ pub trait Allocator: sealed::Sealed {
   /// let memory = arena.memory();
   /// ```
   fn memory(&self) -> &[u8];
+
+  /// Calculates the checksum of the allocated memory (not include the reserved memory specified by users) of the allocator.
+  fn checksum<S: BuildChecksumer>(&self, cks: &S) -> u64 {
+    let allocated_memory = self.allocated_memory(); // Get the memory to be checksummed
+    let reserved = self.reserved_slice().len();
+    let data = &allocated_memory[reserved..];
+    let page_size = self.page_size(); // Get the size of each page
+    let total_len = data.len(); // Total length of the allocated memory
+    let full_pages = total_len / page_size; // Calculate how many full pages there are
+    let remaining_bytes = total_len % page_size; // Calculate the number of remaining bytes
+
+    let mut hasher = cks.build_checksumer(); // Create the hasher
+
+    // Iterate over each full page
+    for page_id in 0..full_pages {
+      let start = page_id * page_size;
+      let end = start + page_size;
+
+      // Feed each page's slice into the hasher
+      hasher.update(&data[start..end]);
+    }
+
+    // Handle any remaining bytes that don’t fill a full page
+    if remaining_bytes > 0 {
+      let start = full_pages * page_size;
+      hasher.update(&data[start..total_len]); // Process the remaining bytes
+    }
+
+    // Finalize and return the checksum
+    hasher.digest()
+  }
 
   /// Returns the minimum segment size of the allocator.
   ///
