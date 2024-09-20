@@ -366,10 +366,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub(crate) fn map<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: Options,
-  ) -> std::io::Result<Self> {
+  pub(crate) fn map<P: AsRef<std::path::Path>>(path: P, opts: Options) -> std::io::Result<Self> {
     Self::map_in(path.as_ref().to_path_buf(), opts, mmap)
   }
 

@@ -70,9 +70,7 @@ fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec_unify() {
   run(|| {
-    allocate_slow_path_concurrent_acquire_from_segment(
-      OPTIONS.with_unify(true).alloc().unwrap(),
-    );
+    allocate_slow_path_concurrent_acquire_from_segment(OPTIONS.with_unify(true).alloc().unwrap());
   });
 }
 
