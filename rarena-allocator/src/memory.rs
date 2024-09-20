@@ -415,8 +415,25 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let reserved = opts.reserved();
     let magic_version = opts.magic_version();
 
+    let size = file.metadata()?.len();
+    let mmap_opts = {
+      let mut mopts = MmapOptions::new();
+      if opts.populate() {
+        mopts.populate();
+      }
+
+      let offset = opts.offset();
+      let cap = opts.capacity();
+      if offset > 0 {
+        mopts.offset(offset);
+      }
+
+      mopts.len((size - offset).min(cap as u64) as usize);
+      mopts
+    };
+
     unsafe {
-      f(opts.to_mmap_options(), &file).and_then(|mmap| {
+      f(mmap_opts, &file).and_then(|mmap| {
         let len = mmap.len();
         let reserved = reserved as usize;
 
