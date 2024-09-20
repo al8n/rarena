@@ -50,7 +50,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+    #[cfg(all(feature = "memmap", not(any(target_family = "wasm", windows))))]
     #[cfg_attr(miri, ignore)]
     fn test_construct_with_small_capacity_map() {
       $crate::tests::run(|| $crate::tests::small_capacity_map::<$ty>($prefix));

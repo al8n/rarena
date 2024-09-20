@@ -295,6 +295,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
         let ptr = mmap.as_mut_ptr();
 
+        // if the file is newly created, we need to initialize the memory
+        if create_new {
+          ptr::write_bytes(ptr, 0, cap);
+        }
+
         let reserved = opts.reserved() as usize;
 
         let data_offset = header_ptr_offset + mem::size_of::<H>();

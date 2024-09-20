@@ -771,6 +771,7 @@ impl Options {
 }
 
 impl Options {
+  /// Returns if the file is newly created and the file
   pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
     if self.create_new {
       return self
