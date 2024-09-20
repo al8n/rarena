@@ -86,10 +86,10 @@ macro_rules! define_leb128_utils {
 
 /// A trait for easily interacting with the sync and unsync allocator allocators.
 pub trait Allocator: sealed::Sealed {
-  /// Returns the reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
+  /// Returns the reserved bytes of the allocator specified in the [`Options::with_reserved`].
   fn reserved_slice(&self) -> &[u8];
 
-  /// Returns the mutable reserved bytes of the allocator specified in the [`ArenaOptions::with_reserved`].
+  /// Returns the mutable reserved bytes of the allocator specified in the [`Options::with_reserved`].
   ///
   /// ## Safety
   /// - The caller need to make sure there is no data-race
@@ -120,7 +120,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// ```ignore
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   ///
   /// {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -141,7 +141,7 @@ pub trait Allocator: sealed::Sealed {
   ///   data: Vec<u8>,
   /// }
   ///
-  /// let arena = ArenaOptions::new().with_create_new(1000).with_read(true).with_write(true).map_mut::<Arena, _>("path/to/file").unwrap();
+  /// let arena = Options::new().with_create_new(1000).with_read(true).with_write(true).map_mut::<Arena, _>("path/to/file").unwrap();
   ///
   /// let mut data = arena.alloc::<TypeOnHeap>().unwrap();
   /// data.detach();
@@ -150,7 +150,7 @@ pub trait Allocator: sealed::Sealed {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = ArenaOptions::new().with_read(true).map::<Arena, _>("path/to/file").unwrap();
+  /// let arena = Options::new().with_read(true).map::<Arena, _>("path/to/file").unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<TypeOnHeap>(offset as usize);
   /// let b = foo.data[1]; // undefined behavior, the `data`'s pointer stored in the file is not valid anymore.
@@ -163,7 +163,7 @@ pub trait Allocator: sealed::Sealed {
   /// ### Heap allocated type with carefull memory management
   ///
   /// ```ignore
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   ///
   /// // Do not invoke detach, so when the data is dropped, the drop logic will be handled by the allocator.
   /// // automatically.
@@ -193,7 +193,7 @@ pub trait Allocator: sealed::Sealed {
   ///   field2: AtomicU32,
   /// }
   ///
-  /// let arena = ArenaOptions::new().with_create_new(1000).with_read(true).with_write(true).map_mut::<Arena, _>("path/to/file").unwrap();
+  /// let arena = Options::new().with_create_new(1000).with_read(true).with_write(true).map_mut::<Arena, _>("path/to/file").unwrap();
   ///
   /// let mut data = arena.alloc::<Recoverable>().unwrap();
   /// data.write(Recoverable { field1: 10, field2: AtomicU32::new(20) });
@@ -202,7 +202,7 @@ pub trait Allocator: sealed::Sealed {
   /// drop(arena);
   ///
   /// // reopen the file
-  /// let arena = ArenaOptions::new().with_read(true).map::<Arena, _>("path/to/file").unwrap();
+  /// let arena = Options::new().with_read(true).map::<Arena, _>("path/to/file").unwrap();
   ///
   /// let foo = &*arena.get_aligned_pointer::<Recoverable>(offset as usize);
   ///
@@ -338,9 +338,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   ///
   /// unsafe {
   ///   let mut data = arena.alloc_owned::<u64>().unwrap();
@@ -377,9 +377,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let allocated = arena.allocated();
   /// ```
   fn allocated(&self) -> usize;
@@ -389,9 +389,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let memory = arena.allocated_memory();
   /// ```
   fn allocated_memory(&self) -> &[u8];
@@ -407,9 +407,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let capacity = arena.capacity();
   /// ```
   fn capacity(&self) -> usize;
@@ -435,9 +435,9 @@ pub trait Allocator: sealed::Sealed {
   /// Good practice:
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   ///
   /// unsafe {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -454,9 +454,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let data_offset = arena.data_offset();
   /// ```
   fn data_offset(&self) -> usize;
@@ -466,9 +466,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let data = arena.data();
   /// ```
   fn data(&self) -> &[u8];
@@ -489,9 +489,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// arena.discard_freelist();
   /// ```
   fn discard_freelist(&self) -> Result<u32, Error>;
@@ -501,9 +501,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let discarded = arena.discarded();
   /// ```
   fn discarded(&self) -> u32;
@@ -513,13 +513,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.flush().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -533,13 +533,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   ///
   /// arena.flush_async().unwrap();
   ///
@@ -554,13 +554,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.flush_range(0, 100).unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -574,13 +574,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   ///
   /// arena.flush_async_range(0, 100).unwrap();
   ///
@@ -738,9 +738,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// arena.increase_discarded(100);
   /// ```
   fn increase_discarded(&self, size: u32);
@@ -750,9 +750,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, Allocator, Options};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let is_mmap = arena.is_mmap();
   /// assert_eq!(is_mmap, false);
   /// ```
@@ -765,9 +765,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let is_ondisk = arena.is_ondisk();
   /// assert_eq!(is_ondisk, false);
   /// ```
@@ -778,9 +778,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let is_ondisk_and_mmap = arena.is_ondisk_and_mmap();
   /// assert_eq!(is_ondisk_and_mmap, false);
   /// ```
@@ -793,13 +793,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.lock_exclusive().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -813,13 +813,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.lock_shared().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -834,9 +834,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let magic_version = arena.magic_version();
   /// ```
   fn magic_version(&self) -> u16;
@@ -846,14 +846,14 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let memory = arena.memory();
   /// ```
   fn memory(&self) -> &[u8];
 
-  /// Calculates the checksum of the allocated memory (excluding the reserved memory specified by users through [`ArenaOptions::with_reserved`]) of the allocator.
+  /// Calculates the checksum of the allocated memory (excluding the reserved memory specified by users through [`Options::with_reserved`]) of the allocator.
   fn checksum<S: BuildChecksumer>(&self, cks: &S) -> u64 {
     let allocated_memory = self.allocated_memory(); // Get the memory to be checksummed
     let reserved = self.reserved_slice().len();
@@ -891,9 +891,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let min_segment_size = arena.minimum_segment_size();
   /// ```
   fn minimum_segment_size(&self) -> u32;
@@ -903,9 +903,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// arena.set_minimum_segment_size(100);
   /// ```
   fn set_minimum_segment_size(&self, size: u32);
@@ -1004,9 +1004,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let page_size = arena.page_size();
   /// ```
   fn page_size(&self) -> usize;
@@ -1016,9 +1016,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let read_only = arena.read_only();
   /// ```
   fn read_only(&self) -> bool;
@@ -1028,9 +1028,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let refs = arena.refs();
   /// ```
   fn refs(&self) -> usize;
@@ -1040,9 +1040,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let remaining = arena.remaining();
   /// ```
   fn remaining(&self) -> usize;
@@ -1057,9 +1057,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// # use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// # use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// # let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// # let arena = Options::new().alloc::<Arena>().unwrap();
   /// arena.remove_on_drop(true);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -1081,13 +1081,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.try_lock_exclusive().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -1101,13 +1101,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.try_lock_shared().unwrap();
   ///
   /// # std::fs::remove_file(path);
@@ -1121,13 +1121,13 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   ///
   ///
-  /// let mut arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// arena.lock_exclusive().unwrap();
   ///
   /// // do some thing
@@ -1144,9 +1144,9 @@ pub trait Allocator: sealed::Sealed {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().alloc::<Arena>().unwrap();
   /// let version = arena.version();
   /// ```
   fn version(&self) -> u16;

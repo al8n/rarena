@@ -5,9 +5,9 @@ use std::{
   path::Path,
 };
 
-use super::{Allocator, ArenaOptions};
+use super::{Allocator, Options};
 
-impl ArenaOptions {
+impl Options {
   /// Sets the option for read access.
   ///
   /// This option, when true, will indicate that the file should be
@@ -16,9 +16,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_read(true);
+  /// let opts = Options::new().with_read(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -39,9 +39,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_write(true);
+  /// let opts = Options::new().with_write(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -86,9 +86,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_append(true);
+  /// let opts = Options::new().with_append(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -109,9 +109,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_write(true).with_truncate(true);
+  /// let opts = Options::new().with_write(true).with_truncate(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -134,9 +134,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_write(true).with_create(true);
+  /// let opts = Options::new().with_write(true).with_create(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -167,9 +167,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let file = ArenaOptions::new()
+  /// let file = Options::new()
   ///   .with_write(true)
   ///   .with_create_new(true);
   /// ```
@@ -190,9 +190,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_offset(30);
+  /// let opts = Options::new().with_offset(30);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -211,9 +211,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let stack = ArenaOptions::new().with_stack(true);
+  /// let stack = Options::new().with_stack(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -236,9 +236,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let stack = ArenaOptions::new().with_huge(Some(8));
+  /// let stack = Options::new().with_huge(Some(8));
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -259,9 +259,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_populate(true);
+  /// let opts = Options::new().with_populate(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -272,15 +272,15 @@ impl ArenaOptions {
   }
 }
 
-impl ArenaOptions {
+impl Options {
   /// Returns `true` if the file should be opened with read access.
   ///
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_read(true);
+  /// let opts = Options::new().with_read(true);
   /// assert_eq!(opts.read(), true);
   /// ```
   #[inline]
@@ -295,9 +295,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_write(true);
+  /// let opts = Options::new().with_write(true);
   /// assert_eq!(opts.write(), true);
   /// ```
   #[inline]
@@ -312,9 +312,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_append(true);
+  /// let opts = Options::new().with_append(true);
   /// assert_eq!(opts.append(), true);
   /// ```
   #[inline]
@@ -329,9 +329,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_truncate(true);
+  /// let opts = Options::new().with_truncate(true);
   /// assert_eq!(opts.truncate(), true);
   /// ```
   #[inline]
@@ -346,9 +346,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_create(true);
+  /// let opts = Options::new().with_create(true);
   /// assert_eq!(opts.create(), true);
   /// ```
   #[inline]
@@ -363,9 +363,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_create_new(true);
+  /// let opts = Options::new().with_create_new(true);
   /// assert_eq!(opts.create_new(), true);
   /// ```
   #[inline]
@@ -380,9 +380,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_offset(30);
+  /// let opts = Options::new().with_offset(30);
   /// assert_eq!(opts.offset(), 30);
   /// ```
   #[inline]
@@ -397,9 +397,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_stack(true);
+  /// let opts = Options::new().with_stack(true);
   /// assert_eq!(opts.stack(), true);
   /// ```
   #[inline]
@@ -414,9 +414,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_huge(Some(8));
+  /// let opts = Options::new().with_huge(Some(8));
   /// assert_eq!(opts.huge(), Some(8));
   /// ```
   #[inline]
@@ -431,9 +431,9 @@ impl ArenaOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_populate(true);
+  /// let opts = Options::new().with_populate(true);
   /// assert_eq!(opts.populate(), true);
   /// ```
   #[inline]
@@ -444,15 +444,15 @@ impl ArenaOptions {
   }
 }
 
-impl ArenaOptions {
+impl Options {
   /// Creates a new allocator backed by an anonymous mmap.
   ///
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = ArenaOptions::new().with_capacity(100).map_anon::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).map_anon::<Arena>().unwrap();
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
@@ -473,18 +473,18 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   /// # {
-  /// #   let arena = unsafe {  ArenaOptions::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// #   let arena = unsafe {  Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
   ///
   ///
-  /// let arena = unsafe { ArenaOptions::new().with_read(true).map::<Arena, _>(&path,).unwrap() };
+  /// let arena = unsafe { Options::new().with_read(true).map::<Arena, _>(&path,).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -508,18 +508,18 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions};
+  /// use rarena_allocator::{sync::Arena, Allocator, Options};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   /// # {
-  /// #   let arena = unsafe { ArenaOptions::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// #   let arena = unsafe { Options::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
   ///
   ///
-  /// let arena = unsafe { ArenaOptions::new().with_read(true).map_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap() };
+  /// let arena = unsafe { Options::new().with_read(true).map_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -550,12 +550,12 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
-  /// let arena = unsafe { ArenaOptions::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_copy::<Arena, _>(&path,).unwrap() };
+  /// let arena = unsafe { Options::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_copy::<Arena, _>(&path,).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -584,12 +584,12 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
-  /// let arena = unsafe { ArenaOptions::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_copy_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf()),).unwrap() };
+  /// let arena = unsafe { Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_copy_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf()),).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -619,18 +619,18 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   /// # {
-  /// #   let arena = unsafe {  ArenaOptions::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// #   let arena = unsafe {  Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
   ///
   ///
-  /// let arena = unsafe { ArenaOptions::new().with_read(true).map_copy_read_only::<Arena, _>(&path,).unwrap() };
+  /// let arena = unsafe { Options::new().with_read(true).map_copy_read_only::<Arena, _>(&path,).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -657,7 +657,7 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
@@ -665,13 +665,13 @@ impl ArenaOptions {
   /// # {
   ///   #
   ///   #
-  ///   # let arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  ///   # let arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
   ///
   ///
   /// let arena = unsafe {
-  ///   ArenaOptions::new().with_read(true).map_copy_read_only_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
+  ///   Options::new().with_read(true).map_copy_read_only_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
   /// };
   ///
   /// # std::fs::remove_file(path);
@@ -701,13 +701,13 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   /// let arena = unsafe {
-  ///   ArenaOptions::new()
+  ///   Options::new()
   ///     .with_capacity(100)
   ///     .with_create_new(true)
   ///     .with_read(true)
@@ -740,13 +740,13 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
   /// # std::fs::remove_file(&path);
   ///
   /// let arena = unsafe {
-  ///   ArenaOptions::new()
+  ///   Options::new()
   ///     .with_create_new(true)
   ///     .with_read(true)
   ///     .with_write(true)
@@ -770,7 +770,7 @@ impl ArenaOptions {
   }
 }
 
-impl ArenaOptions {
+impl Options {
   pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
     if self.create_new {
       return self

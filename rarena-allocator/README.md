@@ -42,7 +42,7 @@ There are 3 kinds of freelist:
    freelist: `100 -> 96 -> 50`.
 
    The head segment size is `100`, we want `20`, then the head will be removed from the linked list, give out `20`, the remaining
-   `80` will be inserted back to the freelist if it is larger than `ArenaOptions::minimum_segment_size()`.
+   `80` will be inserted back to the freelist if it is larger than `Options::minimum_segment_size()`.
 
    After this allocation, the freelist will be `96 -> 80 -> 50`.
 
@@ -55,7 +55,7 @@ There are 3 kinds of freelist:
    freelist: `42 -> 84 -> 100`.
 
    If we want `50`, then the second segment will be removed from the linked list, give out `50`, the remaining
-   `34` will be inserted back to the freelist if it is larger than `ArenaOptions::minimum_segment_size()`.
+   `34` will be inserted back to the freelist if it is larger than `Options::minimum_segment_size()`.
 
    After this allocation, the freelist will be `34 -> 42 -> 100`.
 
@@ -75,7 +75,7 @@ This crate contains many unsafe code, although the main functionalities of this 
   --------------------------------------
   ```
 
-- Unify memory layout, all 3 backed memroy will use the same memory layout. Controlled by `ArenaOptions::with_unify(true)`
+- Unify memory layout, all 3 backed memroy will use the same memory layout. Controlled by `Options::with_unify(true)`
 
   ```text
   --------------------------------------------------------------------------------------------------------------

@@ -5,7 +5,7 @@ use super::*;
 use crate::tests::run;
 
 #[cfg(all(not(feature = "loom"), feature = "std"))]
-const OPTIONS: ArenaOptions = ArenaOptions::new().with_freelist(Freelist::Pessimistic);
+const OPTIONS: Options = Options::new().with_freelist(Freelist::Pessimistic);
 
 #[test]
 #[cfg(all(not(feature = "loom"), feature = "std"))]

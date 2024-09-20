@@ -171,7 +171,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     self.data_offset = data_offset;
   }
 
-  pub(crate) fn alloc(opts: ArenaOptions) -> Result<Self, Error> {
+  pub(crate) fn alloc(opts: Options) -> Result<Self, Error> {
     let vec_cap = opts.capacity();
     let alignment = opts.maximum_alignment();
     let min_segment_size = opts.minimum_segment_size();
@@ -226,7 +226,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_mut<P: AsRef<std::path::Path>>(
     path: P,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> std::io::Result<Self> {
     Self::map_mut_in(path.as_ref().to_path_buf(), opts, mmap_mut)
   }
@@ -234,7 +234,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_mut_with_path_builder<PB, E>(
     path_builder: PB,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
@@ -247,7 +247,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_copy<P: AsRef<std::path::Path>>(
     path: P,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> std::io::Result<Self> {
     Self::map_mut_in(path.as_ref().to_path_buf(), opts, mmap_copy)
   }
@@ -255,7 +255,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_copy_with_path_builder<PB, E>(
     path_builder: PB,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
@@ -268,7 +268,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_mut_in(
     path: std::path::PathBuf,
-    opts: ArenaOptions,
+    opts: Options,
     f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::MmapMut>,
   ) -> std::io::Result<Self> {
     let (create_new, file) = opts.open(path.as_path())?;
@@ -355,7 +355,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_with_path_builder<PB, E>(
     path_builder: PB,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
@@ -368,7 +368,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map<P: AsRef<std::path::Path>>(
     path: P,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> std::io::Result<Self> {
     Self::map_in(path.as_ref().to_path_buf(), opts, mmap)
   }
@@ -376,7 +376,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_copy_read_only_with_path_builder<PB, E>(
     path_builder: PB,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> Result<Self, Either<E, std::io::Error>>
   where
     PB: FnOnce() -> Result<std::path::PathBuf, E>,
@@ -389,7 +389,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_copy_read_only<P: AsRef<std::path::Path>>(
     path: P,
-    opts: ArenaOptions,
+    opts: Options,
   ) -> std::io::Result<Self> {
     Self::map_in(path.as_ref().to_path_buf(), opts, mmap_copy_read_only)
   }
@@ -397,7 +397,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_in(
     path: std::path::PathBuf,
-    opts: ArenaOptions,
+    opts: Options,
     f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::Mmap>,
   ) -> std::io::Result<Self> {
     use either::Either;
@@ -457,7 +457,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  pub(crate) fn map_anon(opts: ArenaOptions) -> std::io::Result<Self> {
+  pub(crate) fn map_anon(opts: Options) -> std::io::Result<Self> {
     opts.to_mmap_options().map_anon().and_then(|mut mmap| {
       let map_cap = mmap.len();
 

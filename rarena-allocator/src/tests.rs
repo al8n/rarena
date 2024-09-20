@@ -3,7 +3,7 @@ use core::fmt::Debug;
 use super::*;
 
 pub(crate) const RESERVED: u32 = 5;
-pub(crate) const DEFAULT_ARENA_OPTIONS: ArenaOptions = ArenaOptions::new();
+pub(crate) const DEFAULT_ARENA_OPTIONS: Options = Options::new();
 
 pub(crate) fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]
@@ -905,20 +905,20 @@ macro_rules! common_unit_tests {
 
 pub(crate) fn small_capacity_vec<A: Allocator + Debug>(unify: bool) {
   if !unify {
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_capacity(0)
       .with_unify(unify)
       .alloc::<A>()
       .unwrap_err();
     assert!(matches!(e, Error::InsufficientSpace { available: 0, .. }));
 
-    assert!(ArenaOptions::new()
+    assert!(Options::new()
       .with_capacity(1)
       .with_unify(unify)
       .alloc::<A>()
       .is_ok());
 
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_capacity(40)
       .with_unify(unify)
       .with_reserved(40)
@@ -926,14 +926,14 @@ pub(crate) fn small_capacity_vec<A: Allocator + Debug>(unify: bool) {
       .unwrap_err();
     assert!(matches!(e, Error::InsufficientSpace { available: 40, .. }));
   } else {
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_capacity(1)
       .with_unify(true)
       .alloc::<A>()
       .unwrap_err();
     assert!(matches!(e, Error::InsufficientSpace { available: 1, .. }));
 
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_capacity(40)
       .with_reserved(40)
       .with_unify(true)
@@ -946,25 +946,25 @@ pub(crate) fn small_capacity_vec<A: Allocator + Debug>(unify: bool) {
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 pub(crate) fn small_capacity_map_anon<A: Allocator + Debug>(unify: bool) {
   if !unify {
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_capacity(0)
       .with_unify(unify)
       .map_anon::<A>()
       .unwrap_err();
     assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
-    assert!(ArenaOptions::new()
+    assert!(Options::new()
       .with_capacity(1)
       .with_unify(unify)
       .map_anon::<A>()
       .is_ok());
   } else {
-    let e = ArenaOptions::new()
+    let e = Options::new()
       .with_unify(true)
       .with_capacity(1)
       .map_anon::<A>()
       .unwrap_err();
     assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
-    assert!(ArenaOptions::new()
+    assert!(Options::new()
       .with_unify(true)
       .with_capacity(41)
       .map_anon::<A>()
@@ -979,7 +979,7 @@ pub(crate) fn small_capacity_map_mut<A: Allocator + Debug>(prefix: &str) {
     "test_{prefix}_construct_with_small_capacity_map_mut"
   ));
   let e = unsafe {
-    ArenaOptions::new()
+    Options::new()
       .with_capacity(1)
       .with_create_new(true)
       .with_read(true)
@@ -1005,7 +1005,7 @@ pub(crate) fn small_capacity_map<A: Allocator + Debug>(prefix: &str) {
   drop(fs);
 
   let e = unsafe {
-    ArenaOptions::new()
+    Options::new()
       .with_read(true)
       .map::<A, _>(p)
       .unwrap_err()

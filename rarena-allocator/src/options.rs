@@ -45,7 +45,7 @@ impl TryFrom<u8> for Freelist {
 
 /// Options for creating an ARENA
 #[derive(Debug, Clone, Copy)]
-pub struct ArenaOptions {
+pub struct Options {
   maximum_alignment: usize,
   capacity: u32,
   minimum_segment_size: u32,
@@ -77,14 +77,14 @@ pub struct ArenaOptions {
   populate: bool,
 }
 
-impl Default for ArenaOptions {
+impl Default for Options {
   #[inline]
   fn default() -> Self {
     Self::new()
   }
 }
 
-impl ArenaOptions {
+impl Options {
   /// Create an options for creating an ARENA with default values.
   #[inline]
   pub const fn new() -> Self {
@@ -132,9 +132,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_reserved(8);
+  /// let opts = Options::new().with_reserved(8);
   /// ```
   #[inline]
   pub const fn with_reserved(mut self, reserved: u32) -> Self {
@@ -157,9 +157,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_maximum_alignment(16);
+  /// let opts = Options::new().with_maximum_alignment(16);
   /// ```
   #[inline]
   pub const fn with_maximum_alignment(mut self, alignment: usize) -> Self {
@@ -181,9 +181,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_capacity(2048);
+  /// let opts = Options::new().with_capacity(2048);
   /// ```
   #[inline]
   pub const fn with_capacity(mut self, capacity: u32) -> Self {
@@ -200,9 +200,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_minimum_segment_size(64);
+  /// let opts = Options::new().with_minimum_segment_size(64);
   /// ```
   #[inline]
   pub const fn with_minimum_segment_size(mut self, minimum_segment_size: u32) -> Self {
@@ -219,9 +219,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_maximum_retries(10);
+  /// let opts = Options::new().with_maximum_retries(10);
   /// ```
   #[inline]
   pub const fn with_maximum_retries(mut self, maximum_retries: u8) -> Self {
@@ -242,9 +242,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_unify(true);
+  /// let opts = Options::new().with_unify(true);
   /// ```
   #[inline]
   pub const fn with_unify(mut self, unify: bool) -> Self {
@@ -262,9 +262,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_magic_version(1);
+  /// let opts = Options::new().with_magic_version(1);
   /// ```
   #[inline]
   pub const fn with_magic_version(mut self, magic_version: u16) -> Self {
@@ -278,9 +278,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{ArenaOptions, Freelist};
+  /// use rarena_allocator::{Options, Freelist};
   ///
-  /// let opts = ArenaOptions::new().with_freelist(Freelist::Pessimistic);
+  /// let opts = Options::new().with_freelist(Freelist::Pessimistic);
   /// ```
   #[inline]
   pub const fn with_freelist(mut self, freelist: Freelist) -> Self {
@@ -299,9 +299,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_reserved(8);
+  /// let opts = Options::new().with_reserved(8);
   ///
   /// assert_eq!(opts.reserved(), 8);
   /// ```
@@ -315,9 +315,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_maximum_alignment(16);
+  /// let opts = Options::new().with_maximum_alignment(16);
   ///
   /// assert_eq!(opts.maximum_alignment(), 16);
   /// ```
@@ -331,9 +331,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_capacity(2048);
+  /// let opts = Options::new().with_capacity(2048);
   ///
   /// assert_eq!(opts.capacity(), 2048);
   /// ```
@@ -347,9 +347,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_minimum_segment_size(64);
+  /// let opts = Options::new().with_minimum_segment_size(64);
   ///
   /// assert_eq!(opts.minimum_segment_size(), 64);
   /// ```
@@ -366,9 +366,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_maximum_retries(10);
+  /// let opts = Options::new().with_maximum_retries(10);
   ///
   /// assert_eq!(opts.maximum_retries(), 10);
   /// ```
@@ -390,9 +390,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_unify(true);
+  /// let opts = Options::new().with_unify(true);
   ///
   /// assert_eq!(opts.unify(), true);
   /// ```
@@ -411,9 +411,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::ArenaOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = ArenaOptions::new().with_magic_version(1);
+  /// let opts = Options::new().with_magic_version(1);
   ///
   /// assert_eq!(opts.magic_version(), 1);
   /// ```
@@ -427,9 +427,9 @@ impl ArenaOptions {
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{ArenaOptions, Freelist};
+  /// use rarena_allocator::{Options, Freelist};
   ///
-  /// let opts = ArenaOptions::new().with_freelist(Freelist::Pessimistic);
+  /// let opts = Options::new().with_freelist(Freelist::Pessimistic);
   ///
   /// assert_eq!(opts.freelist(), Freelist::Pessimistic);
   /// ```
@@ -445,19 +445,19 @@ macro_rules! constructor {
   }};
 }
 
-impl ArenaOptions {
+impl Options {
   /// Create a new [`Allocator`](super::Allocator) which is backed by a `Vec`.
   ///
   /// ## Example
   ///
   /// ```rust
-  /// use rarena_allocator::{sync, unsync, ArenaOptions};
+  /// use rarena_allocator::{sync, unsync, Options};
   ///
   /// // Create a sync ARENA.
-  /// let arena = ArenaOptions::new().alloc::<sync::Arena>().unwrap();
+  /// let arena = Options::new().alloc::<sync::Arena>().unwrap();
   ///
   /// // Create a unsync ARENA.
-  /// let arena = ArenaOptions::new().alloc::<unsync::Arena>().unwrap();
+  /// let arena = Options::new().alloc::<unsync::Arena>().unwrap();
   /// ```
   #[inline]
   pub fn alloc<A: Allocator>(self) -> Result<A, Error> {
