@@ -192,7 +192,7 @@ pub struct BytesRefMut<'a, A: Allocator> {
   pub(super) detach: bool,
 }
 
-impl<'a, A: Allocator> ops::Deref for BytesRefMut<'a, A> {
+impl<A: Allocator> ops::Deref for BytesRefMut<'_, A> {
   type Target = [u8];
 
   #[inline]
@@ -206,7 +206,7 @@ impl<'a, A: Allocator> ops::Deref for BytesRefMut<'a, A> {
   }
 }
 
-impl<'a, A: Allocator> ops::DerefMut for BytesRefMut<'a, A> {
+impl<A: Allocator> ops::DerefMut for BytesRefMut<'_, A> {
   #[inline]
   fn deref_mut(&mut self) -> &mut Self::Target {
     if self.allocated.ptr_size == 0 {
@@ -218,14 +218,14 @@ impl<'a, A: Allocator> ops::DerefMut for BytesRefMut<'a, A> {
   }
 }
 
-impl<'a, A: Allocator> AsRef<[u8]> for BytesRefMut<'a, A> {
+impl<A: Allocator> AsRef<[u8]> for BytesRefMut<'_, A> {
   #[inline]
   fn as_ref(&self) -> &[u8] {
     self
   }
 }
 
-impl<'a, A: Allocator> AsMut<[u8]> for BytesRefMut<'a, A> {
+impl<A: Allocator> AsMut<[u8]> for BytesRefMut<'_, A> {
   #[inline]
   fn as_mut(&mut self) -> &mut [u8] {
     self
@@ -234,7 +234,7 @@ impl<'a, A: Allocator> AsMut<[u8]> for BytesRefMut<'a, A> {
 
 impl_write!(BytesRefMut<'a, A>);
 
-impl<'a, A: Allocator> crate::Memory for BytesRefMut<'a, A> {
+impl<A: Allocator> crate::Memory for BytesRefMut<'_, A> {
   #[inline]
   fn capacity(&self) -> usize {
     self.allocated.ptr_size as usize
@@ -379,7 +379,7 @@ impl<'a, A: Allocator> BytesRefMut<'a, A> {
   }
 }
 
-impl<'a, A: Allocator> Drop for BytesRefMut<'a, A> {
+impl<A: Allocator> Drop for BytesRefMut<'_, A> {
   #[inline]
   fn drop(&mut self) {
     if self.detach {

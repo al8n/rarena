@@ -196,7 +196,7 @@ pub struct RefMut<'a, T, A: Allocator> {
   pub(super) allocated: Meta,
 }
 
-impl<'a, T, A: Allocator> crate::Memory for RefMut<'a, T, A> {
+impl<T, A: Allocator> crate::Memory for RefMut<'_, T, A> {
   fn capacity(&self) -> usize {
     self.allocated.ptr_size as usize
   }
@@ -339,7 +339,7 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   }
 }
 
-impl<'a, T, A: Allocator> Drop for RefMut<'a, T, A> {
+impl<T, A: Allocator> Drop for RefMut<'_, T, A> {
   fn drop(&mut self) {
     match &mut self.kind {
       Kind::Slot(slot) => {

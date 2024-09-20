@@ -136,7 +136,7 @@ impl ArenaOptions {
   /// ```rust
   /// use rarena_allocator::ArenaOptions;
   ///
-  /// let opts = ArenaOptions::new().write(true).with_create(true);
+  /// let opts = ArenaOptions::new().with_write(true).with_create(true);
   /// ```
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -170,7 +170,7 @@ impl ArenaOptions {
   /// use rarena_allocator::ArenaOptions;
   ///
   /// let file = ArenaOptions::new()
-  ///   .write(true)
+  ///   .with_write(true)
   ///   .with_create_new(true);
   /// ```
   #[inline]
@@ -482,9 +482,9 @@ impl ArenaOptions {
   /// #   let arena = unsafe {  ArenaOptions::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { ArenaOptions::new().map::<Arena, _>(&path,).unwrap() };
+  ///
+  ///
+  /// let arena = unsafe { ArenaOptions::new().with_read(true).map::<Arena, _>(&path,).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -517,9 +517,9 @@ impl ArenaOptions {
   /// #   let arena = unsafe { ArenaOptions::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { ArenaOptions::new().map_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf()),).unwrap() };
+  ///
+  ///
+  /// let arena = unsafe { ArenaOptions::new().with_read(true).map_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -625,12 +625,12 @@ impl ArenaOptions {
   /// # std::fs::remove_file(&path);
   ///
   /// # {
-  /// #   let arena = unsafe {  ArenaOptions::new().with_capacity(100).with_create_new().with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// #   let arena = unsafe {  ArenaOptions::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { ArenaOptions::new().map_copy_read_only::<Arena, _>(&path,).unwrap() };
+  ///
+  ///
+  /// let arena = unsafe { ArenaOptions::new().with_read(true).map_copy_read_only::<Arena, _>(&path,).unwrap() };
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -663,15 +663,15 @@ impl ArenaOptions {
   /// # std::fs::remove_file(&path);
   ///
   /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut(&path).unwrap() };
+  ///   #
+  ///   #
+  ///   # let arena = unsafe { ArenaOptions::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   /// # }
   ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
+  ///
+  ///
   /// let arena = unsafe {
-  ///   ArenaOptions::new().map_copy_read_only_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
+  ///   ArenaOptions::new().with_read(true).map_copy_read_only_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
   /// };
   ///
   /// # std::fs::remove_file(path);

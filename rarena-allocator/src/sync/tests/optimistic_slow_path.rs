@@ -1,55 +1,17 @@
-#[cfg(not(feature = "loom"))]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
 use super::*;
 
-#[cfg(not(feature = "loom"))]
-const OPTIONS: ArenaOptions = ArenaOptions::new();
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+use crate::tests::run;
 
-#[test]
-#[cfg(not(feature = "loom"))]
-fn allocate_slow_path_optimistic_vec() {
-  run(|| {
-    allocate_slow_path(Arena::new(OPTIONS).unwrap());
-  });
-}
-
-#[test]
-#[cfg(not(feature = "loom"))]
-fn allocate_slow_path_optimistic_vec_unify() {
-  run(|| {
-    allocate_slow_path(Arena::new(OPTIONS.with_unify(true)).unwrap());
-  });
-}
-
-#[test]
-#[cfg_attr(miri, ignore)]
-#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
-fn allocate_slow_path_optimistic_mmap() {
-  run(|| unsafe {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("test_allocate_slow_path_mmap");
-    let open_options = OpenOptions::default()
-      .create_new(Some(ARENA_SIZE))
-      .read(true)
-      .write(true);
-    let mmap_options = MmapOptions::default();
-    allocate_slow_path(Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap());
-  });
-}
-
-#[test]
-#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
-fn allocate_slow_path_optimistic_mmap_anon() {
-  run(|| {
-    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    allocate_slow_path(Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap());
-  });
-}
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+const OPTIONS: ArenaOptions = ArenaOptions::new().with_freelist(Freelist::Optimistic);
 
 #[test]
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_optimistic_concurrent_create_segments_vec() {
   run(|| {
-    allocate_slow_path_concurrent_create_segments(Arena::new(OPTIONS).unwrap());
+    allocate_slow_path_concurrent_create_segments(OPTIONS.alloc().unwrap());
   });
 }
 
@@ -57,7 +19,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segments_vec() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_optimistic_concurrent_create_segments_vec_unify() {
   run(|| {
-    allocate_slow_path_concurrent_create_segments(Arena::new(OPTIONS.with_unify(true)).unwrap());
+    allocate_slow_path_concurrent_create_segments(OPTIONS.with_unify(true).alloc().unwrap());
   });
 }
 
@@ -70,14 +32,14 @@ fn allocate_slow_path_optimistic_concurrent_create_segments_mmap() {
     let p = dir
       .path()
       .join("test_allocate_slow_path_optimistic_concurrent_create_segments_mmap");
-    let open_options = OpenOptions::default()
-      .create_new(Some(ARENA_SIZE))
-      .read(true)
-      .write(true);
-    let mmap_options = MmapOptions::default();
-    allocate_slow_path_concurrent_create_segments(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
-    );
+
+    let arena = OPTIONS
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut(p)
+      .unwrap();
+    allocate_slow_path_concurrent_create_segments(arena);
   });
 }
 
@@ -85,10 +47,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segments_mmap() {
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_optimistic_concurrent_create_segments_mmap_anon() {
   run(|| {
-    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    allocate_slow_path_concurrent_create_segments(
-      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
-    );
+    allocate_slow_path_concurrent_create_segments(OPTIONS.map_anon().unwrap());
   });
 }
 
@@ -96,7 +55,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segments_mmap_anon() {
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_optimistic_concurrent_create_segments_mmap_anon_unify() {
   run(|| {
-    allocate_slow_path_concurrent_create_segments(Arena::new(OPTIONS.with_unify(true)).unwrap());
+    allocate_slow_path_concurrent_create_segments(OPTIONS.with_unify(true).map_anon().unwrap());
   });
 }
 
@@ -104,7 +63,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segments_mmap_anon_unify() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_vec() {
   run(|| {
-    allocate_slow_path_concurrent_acquire_from_segment(Arena::new(OPTIONS).unwrap());
+    allocate_slow_path_concurrent_acquire_from_segment(OPTIONS.alloc().unwrap());
   });
 }
 
@@ -112,9 +71,7 @@ fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_vec() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_vec_unify() {
   run(|| {
-    allocate_slow_path_concurrent_acquire_from_segment(
-      Arena::new(OPTIONS.with_unify(true)).unwrap(),
-    );
+    allocate_slow_path_concurrent_acquire_from_segment(OPTIONS.with_unify(true).alloc().unwrap());
   });
 }
 
@@ -127,14 +84,13 @@ fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap() {
     let p = dir
       .path()
       .join("test_allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap");
-    let open_options = OpenOptions::default()
-      .create_new(Some(ARENA_SIZE))
-      .read(true)
-      .write(true);
-    let mmap_options = MmapOptions::default();
-    allocate_slow_path_concurrent_acquire_from_segment(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
-    );
+    let arena = OPTIONS
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut(p)
+      .unwrap();
+    allocate_slow_path_concurrent_acquire_from_segment(arena);
   });
 }
 
@@ -142,10 +98,7 @@ fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap() {
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap_anon() {
   run(|| {
-    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
-    allocate_slow_path_concurrent_acquire_from_segment(
-      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
-    );
+    allocate_slow_path_concurrent_acquire_from_segment(OPTIONS.map_anon().unwrap());
   });
 }
 
@@ -154,7 +107,7 @@ fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap_anon() {
 fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap_anon_unify() {
   run(|| {
     allocate_slow_path_concurrent_acquire_from_segment(
-      Arena::new(OPTIONS.with_unify(true)).unwrap(),
+      OPTIONS.with_unify(true).map_anon().unwrap(),
     );
   });
 }
@@ -163,9 +116,7 @@ fn allocate_slow_path_optimistic_concurrent_acquire_from_segment_mmap_anon_unify
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_vec() {
   run(|| {
-    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      Arena::new(ArenaOptions::new()).unwrap(),
-    );
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(OPTIONS.alloc().unwrap());
   });
 }
 
@@ -174,7 +125,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
 fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_vec_unify() {
   run(|| {
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      Arena::new(OPTIONS.with_unify(true)).unwrap(),
+      OPTIONS.with_unify(true).map_anon().unwrap(),
     );
   });
 }
@@ -188,14 +139,13 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
     let p = dir.path().join(
       "test_allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_mmap",
     );
-    let open_options = OpenOptions::default()
-      .create_new(Some(ARENA_SIZE))
-      .read(true)
-      .write(true);
-    let mmap_options = MmapOptions::default();
-    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      Arena::map_mut(p, ArenaOptions::new(), open_options, mmap_options).unwrap(),
-    );
+    let arena = OPTIONS
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut(p)
+      .unwrap();
+    allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(arena);
   });
 }
 
@@ -203,9 +153,8 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
 fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_mmap_anon() {
   run(|| {
-    let mmap_options = MmapOptions::default().len(ARENA_SIZE);
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap(),
+      OPTIONS.map_anon().unwrap(),
     );
   });
 }
@@ -216,7 +165,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
 ) {
   run(|| {
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      Arena::new(OPTIONS.with_unify(true)).unwrap(),
+      OPTIONS.with_unify(true).map_anon().unwrap(),
     );
   });
 }
