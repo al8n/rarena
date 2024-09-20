@@ -1021,287 +1021,287 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   fn magic_version(&self) -> u16;
 
-  /// Opens a read only allocator backed by a mmap with the given options.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self>;
+  // /// Opens a read only allocator backed by a mmap with the given options.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// # {
+  // ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // ///   # let mmap_options = MmapOptions::new();
+  // ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // /// # }
+  // ///
+  // /// let open_options = OpenOptions::default().read(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map<P: AsRef<std::path::Path>>(
+  //   path: P,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> std::io::Result<Self>;
 
-  /// Opens a read only allocator backed by a mmap with the given options.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, either::Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>;
+  // /// Opens a read only allocator backed by a mmap with the given options.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, Allocator, ArenaOptions, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// # {
+  // ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // ///   # let mmap_options = MmapOptions::new();
+  // ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // /// # }
+  // ///
+  // /// let open_options = OpenOptions::default().read(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_with_path_builder<PB, E>(
+  //   path_builder: PB,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> Result<Self, either::Either<E, std::io::Error>>
+  // where
+  //   PB: FnOnce() -> Result<std::path::PathBuf, E>;
 
-  /// Creates a new allocator backed by an anonymous mmap with the given capacity.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, MmapOptions};
-  ///
-  /// let mmap_options = MmapOptions::new().len(100);
-  /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self>;
+  // /// Creates a new allocator backed by an anonymous mmap with the given capacity.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, MmapOptions};
+  // ///
+  // /// let mmap_options = MmapOptions::new().len(100);
+  // /// let arena = Arena::map_anon(ArenaOptions::new(), mmap_options).unwrap();
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // fn map_anon(opts: ArenaOptions, mmap_options: MmapOptions) -> std::io::Result<Self>;
 
-  /// Creates a new allocator backed by a copy-on-write memory map backed by a file.
-  ///
-  /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_copy<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self>;
+  // /// Creates a new allocator backed by a copy-on-write memory map backed by a file.
+  // ///
+  // /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_copy(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_copy<P: AsRef<std::path::Path>>(
+  //   path: P,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> std::io::Result<Self>;
 
-  /// Creates a new allocator backed by a copy-on-write memory map backed by a file with the given path builder.
-  ///
-  /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_copy_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, either::Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>;
+  // /// Creates a new allocator backed by a copy-on-write memory map backed by a file with the given path builder.
+  // ///
+  // /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_copy_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_copy_with_path_builder<PB, E>(
+  //   path_builder: PB,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> Result<Self, either::Either<E, std::io::Error>>
+  // where
+  //   PB: FnOnce() -> Result<std::path::PathBuf, E>;
 
-  /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_copy_read_only<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self>;
+  // /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// # {
+  // ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // ///   # let mmap_options = MmapOptions::new();
+  // ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // /// # }
+  // ///
+  // /// let open_options = OpenOptions::default().read(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_copy_read_only(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_copy_read_only<P: AsRef<std::path::Path>>(
+  //   path: P,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> std::io::Result<Self>;
 
-  /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// # {
-  ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  ///   # let mmap_options = MmapOptions::new();
-  ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  /// # }
-  ///
-  /// let open_options = OpenOptions::default().read(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_copy_read_only_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, either::Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>;
+  // /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// # {
+  // ///   # let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // ///   # let mmap_options = MmapOptions::new();
+  // ///   # let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // /// # }
+  // ///
+  // /// let open_options = OpenOptions::default().read(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_copy_read_only_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_copy_read_only_with_path_builder<PB, E>(
+  //   path_builder: PB,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> Result<Self, either::Either<E, std::io::Error>>
+  // where
+  //   PB: FnOnce() -> Result<std::path::PathBuf, E>;
 
-  /// Creates a new allocator backed by a mmap with the given options.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_mut<P: AsRef<std::path::Path>>(
-    path: P,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> std::io::Result<Self>;
+  // /// Creates a new allocator backed by a mmap with the given options.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_mut(&path, ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_mut<P: AsRef<std::path::Path>>(
+  //   path: P,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> std::io::Result<Self>;
 
-  /// Creates a new allocator backed by a mmap with the given options.
-  ///
-  /// ## Safety
-  ///
-  /// See the [type-level][MmapOptions] docs for why this function is unsafe.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
-  ///
-  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-  /// # std::fs::remove_file(&path);
-  ///
-  /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
-  /// let mmap_options = MmapOptions::new();
-  /// let arena = unsafe { Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
-  ///
-  /// # std::fs::remove_file(path);
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn map_mut_with_path_builder<PB, E>(
-    path_builder: PB,
-    opts: ArenaOptions,
-    open_options: OpenOptions,
-    mmap_options: MmapOptions,
-  ) -> Result<Self, either::Either<E, std::io::Error>>
-  where
-    PB: FnOnce() -> Result<std::path::PathBuf, E>;
+  // /// Creates a new allocator backed by a mmap with the given options.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// See the [type-level][MmapOptions] docs for why this function is unsafe.
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```rust
+  // /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator, OpenOptions, MmapOptions};
+  // ///
+  // /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  // /// # std::fs::remove_file(&path);
+  // ///
+  // /// let open_options = OpenOptions::default().create_new(Some(100)).read(true).write(true);
+  // /// let mmap_options = MmapOptions::new();
+  // /// let arena = unsafe { Arena::map_mut_with_path_builder::<_, std::io::Error>(|| Ok(path.to_path_buf()), ArenaOptions::new(), open_options, mmap_options).unwrap() };
+  // ///
+  // /// # std::fs::remove_file(path);
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn map_mut_with_path_builder<PB, E>(
+  //   path_builder: PB,
+  //   opts: ArenaOptions,
+  //   open_options: OpenOptions,
+  //   mmap_options: MmapOptions,
+  // ) -> Result<Self, either::Either<E, std::io::Error>>
+  // where
+  //   PB: FnOnce() -> Result<std::path::PathBuf, E>;
 
   /// Returns the whole main memory of the allocator as a byte slice.
   ///

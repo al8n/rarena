@@ -2,6 +2,7 @@
 
 use core::marker::PhantomData;
 
+#[cfg(not(feature = "loom"))]
 use rand::RngCore;
 
 use crate::Memory as _;
