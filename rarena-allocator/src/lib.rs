@@ -13,20 +13,18 @@ extern crate alloc as std;
 #[cfg(feature = "std")]
 extern crate std;
 
-mod memory;
-
 mod error;
-use dbutils::checksum::{BuildChecksumer, Checksumer};
-pub use error::*;
-
+mod memory;
 mod options;
-pub use options::*;
+mod sealed;
 
 use core::mem;
+use dbutils::checksum::{BuildChecksumer, Checksumer};
 
 pub use dbutils::checksum;
-
 pub use either;
+pub use error::*;
+pub use options::*;
 
 const FREELIST_OFFSET: usize = 1;
 const FREELIST_SIZE: usize = mem::size_of::<Freelist>();
@@ -120,10 +118,6 @@ pub trait Memory {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn flush_async(&self) -> std::io::Result<()>;
-}
-
-mod sealed {
-  pub trait Sealed: Sized + Clone {}
 }
 
 #[inline]
@@ -1451,17 +1445,6 @@ pub trait Allocator: sealed::Sealed {
     doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
   )]
   unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()>;
-
-  /// Creates a new allocator with the given options.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, ArenaOptions, Allocator};
-  ///
-  /// let arena = Arena::new(ArenaOptions::new()).unwrap();
-  /// ```
-  fn new(opts: ArenaOptions) -> Result<Self, Error>;
 
   /// Returns the offset to the start of the allocator.
   ///
