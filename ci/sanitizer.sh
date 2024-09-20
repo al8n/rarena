@@ -15,7 +15,7 @@ cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
 # Run memory sanitizer
 RUSTFLAGS="-Z sanitizer=memory" \
-cargo -Zbuild-std=test,std --tests --target x86_64-unknown-linux-gnu --features memmap
+cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
 # Run thread sanitizer
 RUSTFLAGS="-Z sanitizer=thread" \
