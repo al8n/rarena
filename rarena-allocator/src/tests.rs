@@ -50,7 +50,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(all(feature = "memmap", not(any(target_family = "wasm", windows))))]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
     #[cfg_attr(miri, ignore)]
     fn test_construct_with_small_capacity_map() {
       $crate::tests::run(|| $crate::tests::small_capacity_map::<$ty>($prefix));
@@ -1004,7 +1004,13 @@ pub(crate) fn small_capacity_map<A: Allocator + Debug>(prefix: &str) {
   fs.set_len(1).unwrap();
   drop(fs);
 
-  let e = unsafe { Options::new().with_read(true).map::<A, _>(p).unwrap_err() };
+  let e = unsafe {
+    Options::new()
+      .with_capacity(1)
+      .with_read(true)
+      .map::<A, _>(p)
+      .unwrap_err()
+  };
 
   assert!(
     matches!(e.kind(), std::io::ErrorKind::InvalidData),
