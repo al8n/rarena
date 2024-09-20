@@ -125,7 +125,7 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
 fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_vec_unify() {
   run(|| {
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      OPTIONS.with_unify(true).map_anon().unwrap(),
+      OPTIONS.with_unify(true).alloc().unwrap(),
     );
   });
 }

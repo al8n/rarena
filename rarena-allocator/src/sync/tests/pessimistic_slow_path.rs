@@ -19,7 +19,7 @@ fn allocate_slow_path_pessimistic_concurrent_create_segments_vec() {
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 fn allocate_slow_path_pessimistic_concurrent_create_segments_vec_unify() {
   run(|| {
-    allocate_slow_path_concurrent_create_segments(OPTIONS.with_unify(true).map_anon().unwrap());
+    allocate_slow_path_concurrent_create_segments(OPTIONS.with_unify(true).alloc().unwrap());
   });
 }
 
@@ -71,7 +71,7 @@ fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec() {
 fn allocate_slow_path_pessimistic_concurrent_acquire_from_segment_vec_unify() {
   run(|| {
     allocate_slow_path_concurrent_acquire_from_segment(
-      OPTIONS.with_unify(true).map_anon().unwrap(),
+      OPTIONS.with_unify(true).alloc().unwrap(),
     );
   });
 }
@@ -126,7 +126,7 @@ fn allocate_slow_path_pessimistic_concurrent_create_segment_and_acquire_from_seg
 fn allocate_slow_path_pessimistic_concurrent_create_segment_and_acquire_from_segment_vec_unify() {
   run(|| {
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
-      OPTIONS.with_unify(true).map_anon().unwrap(),
+      OPTIONS.with_unify(true).alloc().unwrap(),
     );
   });
 }
