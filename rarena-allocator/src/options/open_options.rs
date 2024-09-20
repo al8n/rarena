@@ -774,20 +774,26 @@ impl Options {
   /// Returns if the file is newly created and the file
   pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
     if self.create_new {
-      return self
-        .to_open_options()
-        .open(path)
-        .and_then(|f| f.set_len(self.capacity as u64).map(|_| (true, f)));
+      return self.to_open_options().open(path).and_then(|f| {
+        if let Some(cap) = self.capacity {
+          f.set_len(cap as u64).map(|_| (true, f))
+        } else {
+          Ok((true, f))
+        }
+      });
     }
 
     if self.create {
       return if path.as_ref().exists() {
         self.to_open_options().open(path).map(|f| (false, f))
       } else {
-        self
-          .to_open_options()
-          .open(path)
-          .and_then(|f| f.set_len(self.capacity as u64).map(|_| (true, f)))
+        self.to_open_options().open(path).and_then(|f| {
+          if let Some(cap) = self.capacity {
+            f.set_len(cap as u64).map(|_| (true, f))
+          } else {
+            Ok((true, f))
+          }
+        })
       };
     }
 
@@ -847,8 +853,8 @@ impl Options {
       mmap_opts.offset(self.offset);
     }
 
-    if self.capacity > 0 {
-      mmap_opts.len(self.capacity as usize);
+    if let Some(cap) = self.capacity {
+      mmap_opts.len(cap as usize);
     }
 
     mmap_opts

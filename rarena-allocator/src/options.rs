@@ -47,7 +47,7 @@ impl TryFrom<u8> for Freelist {
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
   maximum_alignment: usize,
-  capacity: u32,
+  capacity: Option<u32>,
   minimum_segment_size: u32,
   maximum_retries: u8,
   magic_version: u16,
@@ -90,7 +90,7 @@ impl Options {
   pub const fn new() -> Self {
     Self {
       maximum_alignment: 8,
-      capacity: 1024,
+      capacity: None,
       minimum_segment_size: 20,
       maximum_retries: 5,
       unify: false,
@@ -138,11 +138,7 @@ impl Options {
   /// ```
   #[inline]
   pub const fn with_reserved(mut self, reserved: u32) -> Self {
-    self.reserved = if self.capacity <= reserved {
-      self.capacity
-    } else {
-      reserved
-    };
+    self.reserved = reserved;
     self
   }
 
@@ -187,7 +183,7 @@ impl Options {
   /// ```
   #[inline]
   pub const fn with_capacity(mut self, capacity: u32) -> Self {
-    self.capacity = capacity;
+    self.capacity = Some(capacity);
     self
   }
 
@@ -338,7 +334,7 @@ impl Options {
   /// assert_eq!(opts.capacity(), 2048);
   /// ```
   #[inline]
-  pub const fn capacity(&self) -> u32 {
+  pub const fn capacity(&self) -> Option<u32> {
     self.capacity
   }
 
