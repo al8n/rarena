@@ -13,7 +13,6 @@ pub(crate) fn run(f: impl Fn() + Send + Sync + 'static) {
   loom::model(f);
 }
 
-#[macro_export]
 macro_rules! common_unit_tests {
   ($prefix: literal: $ty:ty {
     type Header = $header:ty;
