@@ -1006,7 +1006,6 @@ pub(crate) fn small_capacity_map<A: Allocator + Debug>(prefix: &str) {
 
   let e = unsafe {
     Options::new()
-      .with_capacity(1)
       .with_read(true)
       .map::<A, _>(p)
       .unwrap_err()
