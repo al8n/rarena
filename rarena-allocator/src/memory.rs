@@ -286,7 +286,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
 
     if file_size < capacity {
-      file.set_len(capacity as u64)?;
+      file.set_len(opts.offset() + capacity as u64)?;
     }
 
     unsafe {
