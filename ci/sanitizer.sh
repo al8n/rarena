@@ -3,7 +3,6 @@
 set -ex
 
 export ASAN_OPTIONS="detect_odr_violation=0 detect_leaks=0"
-export MSAN_OPTIONS="symbolize=1"
 
 # Run address sanitizer
 RUSTFLAGS="-Z sanitizer=address" \
@@ -14,7 +13,8 @@ RUSTFLAGS="-Z sanitizer=leak" \
 cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
 # Run memory sanitizer
-RUSTFLAGS="-Z sanitizer=memory" \
+RUSTFLAGS="-Z -Zsanitizer=memory -Zsanitizer-memory-track-origins" \
+# RUSTDOCFLAGS="-Zsanitizer=memory -Zsanitizer-memory-track-origins" \ 
 cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
 # Run thread sanitizer

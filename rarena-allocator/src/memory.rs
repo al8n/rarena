@@ -172,7 +172,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   pub(crate) fn alloc(opts: Options) -> Result<Self, Error> {
-    let vec_cap = opts.capacity();
+    let vec_cap = opts.capacity().unwrap_or(1024); // TODO: return error on none
     let alignment = opts.maximum_alignment();
     let min_segment_size = opts.minimum_segment_size();
     let unify = opts.unify();
@@ -278,8 +278,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let min_segment_size = opts.minimum_segment_size();
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
-    let capacity = opts.capacity();
-
+    let capacity = opts.capacity().unwrap_or(file_size);
     let size = file_size.max(capacity);
 
     let header_ptr_offset =
@@ -423,12 +422,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       }
 
       let offset = opts.offset();
-      let cap = opts.capacity();
+      let cap = opts.capacity().map(|cap| cap as u64).unwrap_or(size);
       if offset > 0 {
         mopts.offset(offset);
       }
 
-      mopts.len((size - offset).min(cap as u64) as usize);
+      mopts.len((size - offset).min(cap) as usize);
       mopts
     };
 
@@ -477,6 +476,13 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_anon(opts: Options) -> std::io::Result<Self> {
+    // TODO: return error on none
+    let opts = if opts.capacity().is_none() {
+      opts.with_capacity(1024)
+    } else {
+      opts
+    };
+
     opts.to_mmap_options().map_anon().and_then(|mut mmap| {
       let map_cap = mmap.len();
 
