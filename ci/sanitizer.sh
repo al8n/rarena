@@ -12,6 +12,10 @@ cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 RUSTFLAGS="-Z sanitizer=leak" \
 cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
+# Run memory sanitizer
+RUSTFLAGS="-Z sanitizer=memory" \
+cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
+
 # Run thread sanitizer
 RUSTFLAGS="-Z sanitizer=thread" \
 cargo -Zbuild-std test --tests --target x86_64-unknown-linux-gnu --features memmap

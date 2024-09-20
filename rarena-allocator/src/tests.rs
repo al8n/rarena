@@ -997,6 +997,7 @@ pub(crate) fn small_capacity_map<A: Allocator + Debug>(prefix: &str) {
     .join(format!("test_{prefix}_construct_with_small_capacity_map"));
   let fs = std::fs::OpenOptions::new()
     .create_new(true)
+    .read(true)
     .write(true)
     .open(&p)
     .unwrap();
@@ -1005,7 +1006,10 @@ pub(crate) fn small_capacity_map<A: Allocator + Debug>(prefix: &str) {
 
   let e = unsafe { Options::new().with_read(true).map::<A, _>(p).unwrap_err() };
 
-  assert!(matches!(e.kind(), std::io::ErrorKind::InvalidData), "{e} {e:?}");
+  assert!(
+    matches!(e.kind(), std::io::ErrorKind::InvalidData),
+    "{e} {e:?}"
+  );
 }
 
 pub(crate) fn alloc_bytes<A: Allocator>(a: A) {
