@@ -3,7 +3,7 @@ use core::fmt::Debug;
 use super::*;
 
 pub(crate) const RESERVED: u32 = 5;
-pub(crate) const DEFAULT_ARENA_OPTIONS: Options = Options::new();
+pub(crate) const DEFAULT_ARENA_OPTIONS: Options = Options::new().with_capacity(1024);
 
 pub(crate) fn run(f: impl Fn() + Send + Sync + 'static) {
   #[cfg(not(feature = "loom"))]

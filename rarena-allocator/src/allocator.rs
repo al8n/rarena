@@ -120,7 +120,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// ```ignore
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   ///
   /// {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -163,7 +163,7 @@ pub trait Allocator: sealed::Sealed {
   /// ### Heap allocated type with carefull memory management
   ///
   /// ```ignore
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   ///
   /// // Do not invoke detach, so when the data is dropped, the drop logic will be handled by the allocator.
   /// // automatically.
@@ -340,7 +340,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   ///
   /// unsafe {
   ///   let mut data = arena.alloc_owned::<u64>().unwrap();
@@ -379,7 +379,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let allocated = arena.allocated();
   /// ```
   fn allocated(&self) -> usize;
@@ -391,7 +391,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let memory = arena.allocated_memory();
   /// ```
   fn allocated_memory(&self) -> &[u8];
@@ -409,7 +409,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let capacity = arena.capacity();
   /// ```
   fn capacity(&self) -> usize;
@@ -437,7 +437,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   ///
   /// unsafe {
   ///   let mut data = arena.alloc::<Vec<u8>>().unwrap();
@@ -456,7 +456,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let data_offset = arena.data_offset();
   /// ```
   fn data_offset(&self) -> usize;
@@ -468,7 +468,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let data = arena.data();
   /// ```
   fn data(&self) -> &[u8];
@@ -491,7 +491,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// arena.discard_freelist();
   /// ```
   fn discard_freelist(&self) -> Result<u32, Error>;
@@ -503,7 +503,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let discarded = arena.discarded();
   /// ```
   fn discarded(&self) -> u32;
@@ -740,7 +740,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// arena.increase_discarded(100);
   /// ```
   fn increase_discarded(&self, size: u32);
@@ -752,7 +752,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Allocator, Options};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let is_mmap = arena.is_mmap();
   /// assert_eq!(is_mmap, false);
   /// ```
@@ -767,7 +767,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let is_ondisk = arena.is_ondisk();
   /// assert_eq!(is_ondisk, false);
   /// ```
@@ -780,7 +780,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let is_ondisk_and_mmap = arena.is_ondisk_and_mmap();
   /// assert_eq!(is_ondisk_and_mmap, false);
   /// ```
@@ -836,7 +836,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let magic_version = arena.magic_version();
   /// ```
   fn magic_version(&self) -> u16;
@@ -848,7 +848,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let memory = arena.memory();
   /// ```
   fn memory(&self) -> &[u8];
@@ -893,7 +893,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let min_segment_size = arena.minimum_segment_size();
   /// ```
   fn minimum_segment_size(&self) -> u32;
@@ -905,7 +905,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// arena.set_minimum_segment_size(100);
   /// ```
   fn set_minimum_segment_size(&self, size: u32);
@@ -1006,7 +1006,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let page_size = arena.page_size();
   /// ```
   fn page_size(&self) -> usize;
@@ -1018,7 +1018,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let read_only = arena.read_only();
   /// ```
   fn read_only(&self) -> bool;
@@ -1030,7 +1030,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let refs = arena.refs();
   /// ```
   fn refs(&self) -> usize;
@@ -1042,7 +1042,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let remaining = arena.remaining();
   /// ```
   fn remaining(&self) -> usize;
@@ -1059,7 +1059,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// # use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// # let arena = Options::new().alloc::<Arena>().unwrap();
+  /// # let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// arena.remove_on_drop(true);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -1146,7 +1146,7 @@ pub trait Allocator: sealed::Sealed {
   /// ```rust
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
-  /// let arena = Options::new().alloc::<Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let version = arena.version();
   /// ```
   fn version(&self) -> u16;

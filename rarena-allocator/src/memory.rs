@@ -172,7 +172,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   pub(crate) fn alloc(opts: Options) -> Result<Self, Error> {
-    let vec_cap = opts.capacity().unwrap_or(1024); // TODO: return error on none
+    let vec_cap = opts.capacity();
     let alignment = opts.maximum_alignment();
     let min_segment_size = opts.minimum_segment_size();
     let unify = opts.unify();
@@ -272,25 +272,32 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     f: impl FnOnce(MmapOptions, &std::fs::File) -> std::io::Result<memmap2::MmapMut>,
   ) -> std::io::Result<Self> {
     let (create_new, file) = opts.open(path.as_path())?;
-    let file_size = file.metadata()?.len() as u32;
+    let file_size = file.metadata()?.len();
     let reserved = opts.reserved() as usize;
 
     let min_segment_size = opts.minimum_segment_size();
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
-    let capacity = opts.capacity().unwrap_or(file_size);
-    let size = file_size.max(capacity);
 
-    let header_ptr_offset =
-      check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
+    let size = if let Some(cap) = opts.capacity {
+      file_size.max(cap as u64)
+    } else {
+      file_size
+    };
 
-    if file_size < capacity {
-      file.set_len(opts.offset() + capacity as u64)?;
+    check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
+
+    if let Some(cap) = opts.capacity {
+      if file_size < cap as u64 {
+        file.set_len(opts.offset() + cap as u64)?;
+      }
     }
 
     unsafe {
       f(opts.to_mmap_options(), &file).and_then(|mut mmap| {
         let cap = mmap.len();
+
+        let header_ptr_offset = check_capacity::<H>(reserved, true, cap).map_err(invalid_input)?;
 
         let ptr = mmap.as_mut_ptr();
 
@@ -422,12 +429,13 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       }
 
       let offset = opts.offset();
-      let cap = opts.capacity().map(|cap| cap as u64).unwrap_or(size);
       if offset > 0 {
         mopts.offset(offset);
       }
 
-      mopts.len((size - offset).min(cap) as usize);
+      if let Some(cap) = opts.capacity {
+        mopts.len((size - offset).min(cap as u64) as usize);
+      }
       mopts
     };
 
@@ -476,13 +484,6 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) fn map_anon(opts: Options) -> std::io::Result<Self> {
-    // TODO: return error on none
-    let opts = if opts.capacity().is_none() {
-      opts.with_capacity(1024)
-    } else {
-      opts
-    };
-
     opts.to_mmap_options().map_anon().and_then(|mut mmap| {
       let map_cap = mmap.len();
 

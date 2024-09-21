@@ -47,7 +47,7 @@ impl TryFrom<u8> for Freelist {
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
   maximum_alignment: usize,
-  capacity: Option<u32>,
+  pub(crate) capacity: Option<u32>,
   minimum_segment_size: u32,
   maximum_retries: u8,
   magic_version: u16,
@@ -170,9 +170,11 @@ impl Options {
   /// Set the capacity of the ARENA. If the ARENA is backed by a memory map and the original file size is less than the capacity,
   /// then the file will be resized to the capacity.
   ///
-  /// The capacity must be greater than the minimum capacity of the ARENA.
+  /// For vec backed ARENA and anonymous memory map backed ARENA, this configuration is required.
   ///
-  /// The default capacity is `1KB`.
+  /// For file backed ARENA, this configuration is optional, if the capacity is not set, then the capacity will be the original file size.
+  ///
+  /// The capacity must be greater than the minimum capacity of the ARENA.
   ///
   /// ## Example
   ///
@@ -334,8 +336,11 @@ impl Options {
   /// assert_eq!(opts.capacity(), 2048);
   /// ```
   #[inline]
-  pub const fn capacity(&self) -> Option<u32> {
-    self.capacity
+  pub const fn capacity(&self) -> u32 {
+    match self.capacity {
+      Some(capacity) => capacity,
+      None => 0,
+    }
   }
 
   /// Get the minimum segment size of the ARENA.
@@ -450,10 +455,10 @@ impl Options {
   /// use rarena_allocator::{sync, unsync, Options};
   ///
   /// // Create a sync ARENA.
-  /// let arena = Options::new().alloc::<sync::Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<sync::Arena>().unwrap();
   ///
   /// // Create a unsync ARENA.
-  /// let arena = Options::new().alloc::<unsync::Arena>().unwrap();
+  /// let arena = Options::new().with_capacity(100).alloc::<unsync::Arena>().unwrap();
   /// ```
   #[inline]
   pub fn alloc<A: Allocator>(self) -> Result<A, Error> {
