@@ -189,6 +189,31 @@ impl Options {
     self
   }
 
+  /// Set or unset the capacity of the ARENA. If the ARENA is backed by a memory map and the original file size is less than the capacity,
+  /// then the file will be resized to the capacity.
+  ///
+  /// For vec backed ARENA and anonymous memory map backed ARENA, this configuration is required.
+  ///
+  /// For file backed ARENA, this configuration is optional, if the capacity is not set, then the capacity will be the original file size.
+  ///
+  /// The capacity must be greater than the minimum capacity of the ARENA.
+  ///
+  /// ## Example
+  ///
+  /// ```
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_capacity(2048);
+  ///
+  /// /// some business logic
+  /// let opts = opts.maybe_capacity(None);
+  /// ```
+  #[inline]
+  pub const fn maybe_capacity(mut self, capacity: Option<u32>) -> Self {
+    self.capacity = capacity;
+    self
+  }
+
   /// Set the minimum segment size of the ARENA.
   ///
   /// This value controls the size of the holes.
