@@ -13,9 +13,9 @@ RUSTFLAGS="-Z sanitizer=leak" \
 cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
 
 # Run memory sanitizer
-RUSTFLAGS="-Z -Zsanitizer=memory -Zsanitizer-memory-track-origins" \
-# RUSTDOCFLAGS="-Zsanitizer=memory -Zsanitizer-memory-track-origins" \ 
-cargo test --tests --target x86_64-unknown-linux-gnu --features memmap
+RUSTFLAGS="-Zsanitizer=memory -Zsanitizer-memory-track-origins" \
+RUSTDOCFLAGS="-Zsanitizer=memory -Zsanitizer-memory-track-origins" \
+cargo test -Z build-std --all --release --target x86_64-unknown-linux-gnu --features memmap
 
 # Run thread sanitizer
 RUSTFLAGS="-Z sanitizer=thread" \
