@@ -1,6 +1,6 @@
 [package]
 name = "rarena-allocator"
-version = "0.2.13"
+version = "0.3.0"
 edition.workspace = true
 repository.workspace = true
 homepage = "https://github.com/al8n/rarena/tree/main/rarena-allocator"
@@ -18,9 +18,6 @@ std = ["byteorder", "either/default", "dbutils/std", "rustix/std"]
 memmap = ["memmap2", "fs4", "std", "bitflags/std"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
-
-# A feature only used for testing purposes.
-reserved = ["alloc"]
 
 [dependencies]
 bitflags = { version = "2", default-features = false }
@@ -53,3 +50,10 @@ rand = "0.8"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.rust]
+rust_2018_idioms = "warn"
+single_use_lifetimes = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(loom)',
+] }

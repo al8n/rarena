@@ -5,6 +5,10 @@ ignore:
   - "**/integration/"
   - "**/examples/"
   - "**/benches/"
+  - "rarena-allocator/tests.rs"
+  - "rarena-allocator/unsync/tests.rs"
+  - "rarena-allocator/sync/tests.rs"
+  - "rarena-allocator/sync/tests/"
 
 coverage:
   status:

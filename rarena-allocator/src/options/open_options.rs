@@ -1,66 +1,13 @@
-use memmap2::MmapOptions as Mmap2Options;
+use memmap2::MmapOptions;
 use std::{
-  fs::{File, OpenOptions as StdOpenOptions},
+  fs::{File, OpenOptions},
   io,
   path::Path,
 };
 
-/// Options for opening a file for memory mapping.
-#[derive(Debug, Clone)]
-pub struct OpenOptions {
-  opts: StdOpenOptions,
-  pub(crate) create: Option<u32>,
-  pub(crate) create_new: Option<u32>,
-}
+use super::{Allocator, Options};
 
-impl From<StdOpenOptions> for OpenOptions {
-  fn from(opts: StdOpenOptions) -> Self {
-    Self {
-      opts,
-      create_new: None,
-      create: None,
-    }
-  }
-}
-
-impl Default for OpenOptions {
-  /// Creates a blank new set of options ready for configuration.
-  ///
-  /// All options are initially set to `false`.
-  ///
-  /// ## Examples
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let options = OpenOptions::default();
-  /// ```
-  fn default() -> Self {
-    Self::new()
-  }
-}
-
-impl OpenOptions {
-  /// Creates a blank new set of options ready for configuration.
-  ///
-  /// All options are initially set to `false`.
-  ///
-  /// ## Examples
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let mut options = OpenOptions::new();
-  /// ```
-  #[inline]
-  pub fn new() -> Self {
-    Self {
-      opts: StdOpenOptions::new(),
-      create: None,
-      create_new: None,
-    }
-  }
-
+impl Options {
   /// Sets the option for read access.
   ///
   /// This option, when true, will indicate that the file should be
@@ -69,13 +16,15 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = OpenOptions::new().read(true);
+  /// let opts = Options::new().with_read(true);
   /// ```
   #[inline]
-  pub fn read(mut self, read: bool) -> Self {
-    self.opts.read(read);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_read(mut self, read: bool) -> Self {
+    self.read = read;
     self
   }
 
@@ -90,13 +39,15 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = OpenOptions::new().write(true);
+  /// let opts = Options::new().with_write(true);
   /// ```
   #[inline]
-  pub fn write(mut self, write: bool) -> Self {
-    self.opts.write(write);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_write(mut self, write: bool) -> Self {
+    self.write = write;
     self
   }
 
@@ -135,13 +86,16 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = OpenOptions::new().append(true);
+  /// let opts = Options::new().with_append(true);
   /// ```
   #[inline]
-  pub fn append(mut self, append: bool) -> Self {
-    self.opts.append(append);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_append(mut self, append: bool) -> Self {
+    self.write = true;
+    self.append = append;
     self
   }
 
@@ -155,13 +109,16 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = OpenOptions::new().write(true).truncate(true);
+  /// let opts = Options::new().with_write(true).with_truncate(true);
   /// ```
   #[inline]
-  pub fn truncate(mut self, truncate: bool) -> Self {
-    self.opts.truncate(truncate);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_truncate(mut self, truncate: bool) -> Self {
+    self.truncate = truncate;
+    self.write = true;
     self
   }
 
@@ -177,28 +134,15 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = OpenOptions::new().write(true).create(Some(1000));
-  /// ```
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let opts = OpenOptions::new().write(true).create(None);
+  /// let opts = Options::new().with_write(true).with_create(true);
   /// ```
   #[inline]
-  pub fn create(mut self, size: Option<u32>) -> Self {
-    match size {
-      Some(size) => {
-        self.opts.create(true);
-        self.create = Some(size);
-      }
-      None => {
-        self.opts.create(false);
-        self.create = None;
-      }
-    }
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_create(mut self, val: bool) -> Self {
+    self.create = val;
     self
   }
 
@@ -223,134 +167,38 @@ impl OpenOptions {
   /// ## Examples
   ///
   /// ```rust
-  /// use rarena_allocator::OpenOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let file = OpenOptions::new()
-  ///   .write(true)
-  ///   .create_new(Some(1000));
-  /// ```
-  ///
-  /// ```rust
-  /// use rarena_allocator::OpenOptions;
-  ///
-  /// let opts = OpenOptions::new()
-  ///   .write(true)
-  ///   .create_new(None);
+  /// let file = Options::new()
+  ///   .with_write(true)
+  ///   .with_create_new(true);
   /// ```
   #[inline]
-  pub fn create_new(mut self, size: Option<u32>) -> Self {
-    match size {
-      Some(size) => {
-        self.opts.create_new(true);
-        self.create_new = Some(size);
-      }
-      None => {
-        self.opts.create_new(false);
-        self.create_new = None;
-      }
-    }
-    self
-  }
-
-  pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
-    if let Some(size) = self.create_new {
-      return self
-        .opts
-        .open(path)
-        .and_then(|f| f.set_len(size as u64).map(|_| (true, f)));
-    }
-
-    if let Some(size) = self.create {
-      return if path.as_ref().exists() {
-        self.opts.open(path).map(|f| (false, f))
-      } else {
-        self
-          .opts
-          .open(path)
-          .and_then(|f| f.set_len(size as u64).map(|_| (true, f)))
-      };
-    }
-
-    self.opts.open(path).map(|f| (false, f))
-  }
-}
-
-/// A memory map options for file backed [`Allocator`](crate::Allocator),
-/// providing advanced options and flags for specifying memory map behavior.
-///
-/// ## Safety
-///
-/// All file-backed memory map constructors are marked `unsafe` because of the potential for
-/// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
-/// out of process. Applications must consider the risk and take appropriate precautions when
-/// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
-/// unlinked) files exist but are platform specific and limited.
-#[derive(Clone, Debug)]
-pub struct MmapOptions(Mmap2Options);
-
-impl Default for MmapOptions {
-  fn default() -> Self {
-    Self::new()
-  }
-}
-
-impl From<Mmap2Options> for MmapOptions {
-  fn from(opts: Mmap2Options) -> Self {
-    Self(opts)
-  }
-}
-
-impl MmapOptions {
-  /// Creates a new set of options for configuring and creating a memory map.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::MmapOptions;
-  ///
-  /// // Create a new memory map options.
-  /// let mut mmap_options = MmapOptions::new();
-  /// ```
-  #[inline]
-  pub fn new() -> Self {
-    Self(Mmap2Options::new())
-  }
-
-  /// Configures the created memory mapped buffer to be `len` bytes long.
-  ///
-  /// This option is mandatory for anonymous memory maps.
-  ///
-  /// For file-backed memory maps, the length will default to the file length.
-  ///
-  /// ## Example
-  ///
-  /// ```
-  /// use rarena_allocator::MmapOptions;
-  ///
-  /// let opts = MmapOptions::new().len(9);
-  /// ```
-  #[inline]
-  pub fn len(mut self, len: u32) -> Self {
-    self.0.len(len as usize);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_create_new(mut self, val: bool) -> Self {
+    self.create_new = val;
     self
   }
 
   /// Configures the memory map to start at byte `offset` from the beginning of the file.
   ///
-  /// This option has no effect on anonymous memory maps.
+  /// This option has no effect on anonymous memory maps or vec backed [`Allocator`](crate::Allocator).
   ///
   /// By default, the offset is 0.
   ///
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::MmapOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let opts = MmapOptions::new().offset(30);
+  /// let opts = Options::new().with_offset(30);
   /// ```
   #[inline]
-  pub fn offset(mut self, offset: u32) -> Self {
-    self.0.offset(offset as u64);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_offset(mut self, offset: u64) -> Self {
+    self.offset = offset;
     self
   }
 
@@ -358,18 +206,20 @@ impl MmapOptions {
   ///
   /// This option corresponds to the `MAP_STACK` flag on Linux. It has no effect on Windows.
   ///
-  /// This option has no effect on file-backed memory maps.
+  /// This option has no effect on file-backed memory maps and vec backed [`Allocator`](crate::Allocator).
   ///
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::MmapOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let stack = MmapOptions::new().stack();
+  /// let stack = Options::new().with_stack(true);
   /// ```
   #[inline]
-  pub fn stack(mut self) -> Self {
-    self.0.stack();
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_stack(mut self, stack: bool) -> Self {
+    self.stack = stack;
     self
   }
 
@@ -381,18 +231,20 @@ impl MmapOptions {
   /// default is requested. The requested length should be a multiple of this, or the mapping
   /// will fail.
   ///
-  /// This option has no effect on file-backed memory maps.
+  /// This option has no effect on file-backed memory maps and vec backed [`Allocator`](crate::Allocator).
   ///
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::MmapOptions;
+  /// use rarena_allocator::Options;
   ///
-  /// let stack = MmapOptions::new().huge(Some(21)).len(2*1024*1024);
+  /// let stack = Options::new().with_huge(Some(8));
   /// ```
   #[inline]
-  pub fn huge(mut self, page_bits: Option<u8>) -> Self {
-    self.0.huge(page_bits);
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_huge(mut self, page_bits: Option<u8>) -> Self {
+    self.huge = page_bits;
     self
   }
 
@@ -402,56 +254,609 @@ impl MmapOptions {
   ///
   /// This option corresponds to the `MAP_POPULATE` flag on Linux. It has no effect on Windows.
   ///
+  /// This option has no effect on vec backed [`Allocator`](crate::Allocator).
+  ///
   /// ## Example
   ///
   /// ```
-  /// use rarena_allocator::MmapOptions;
+  /// use rarena_allocator::Options;
   ///
-  ///
-  /// let opts = MmapOptions::new().populate();
+  /// let opts = Options::new().with_populate(true);
   /// ```
   #[inline]
-  pub fn populate(mut self) -> Self {
-    self.0.populate();
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn with_populate(mut self, populate: bool) -> Self {
+    self.populate = populate;
     self
-  }
-
-  #[inline]
-  pub(crate) unsafe fn map(&self, file: &File) -> io::Result<memmap2::Mmap> {
-    self.0.map(file)
-  }
-
-  #[inline]
-  pub(crate) unsafe fn map_mut(&self, file: &File) -> io::Result<memmap2::MmapMut> {
-    self.0.map_mut(file)
-  }
-
-  #[inline]
-  pub(crate) unsafe fn map_copy(&self, file: &File) -> io::Result<memmap2::MmapMut> {
-    self.0.map_copy(file)
-  }
-
-  #[inline]
-  pub(crate) unsafe fn map_copy_read_only(&self, file: &File) -> io::Result<memmap2::Mmap> {
-    self.0.map_copy_read_only(file)
-  }
-
-  #[inline]
-  pub(crate) fn map_anon(&self) -> io::Result<memmap2::MmapMut> {
-    self.0.map_anon()
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
+impl Options {
+  /// Returns `true` if the file should be opened with read access.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_read(true);
+  /// assert_eq!(opts.read(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn read(&self) -> bool {
+    self.read
+  }
 
-  #[test]
-  fn test_from() {
-    let opts = StdOpenOptions::new();
-    let _open_opts = OpenOptions::from(opts);
+  /// Returns `true` if the file should be opened with write access.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_write(true);
+  /// assert_eq!(opts.write(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn write(&self) -> bool {
+    self.write
+  }
 
-    let opts = Mmap2Options::new();
-    let _mmap_opts = MmapOptions::from(opts);
+  /// Returns `true` if the file should be opened with append access.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_append(true);
+  /// assert_eq!(opts.append(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn append(&self) -> bool {
+    self.append
+  }
+
+  /// Returns `true` if the file should be opened with truncate access.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_truncate(true);
+  /// assert_eq!(opts.truncate(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn truncate(&self) -> bool {
+    self.truncate
+  }
+
+  /// Returns `true` if the file should be created if it does not exist.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_create(true);
+  /// assert_eq!(opts.create(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn create(&self) -> bool {
+    self.create
+  }
+
+  /// Returns `true` if the file should be created if it does not exist and fail if it does.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_create_new(true);
+  /// assert_eq!(opts.create_new(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn create_new(&self) -> bool {
+    self.create_new
+  }
+
+  /// Returns the offset of the memory map.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_offset(30);
+  /// assert_eq!(opts.offset(), 30);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn offset(&self) -> u64 {
+    self.offset
+  }
+
+  /// Returns `true` if the memory map should be suitable for a process or thread stack.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_stack(true);
+  /// assert_eq!(opts.stack(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn stack(&self) -> bool {
+    self.stack
+  }
+
+  /// Returns the page bits of the memory map.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_huge(Some(8));
+  /// assert_eq!(opts.huge(), Some(8));
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn huge(&self) -> Option<u8> {
+    self.huge
+  }
+
+  /// Returns `true` if the memory map should populate (prefault) page tables for a mapping.
+  ///
+  /// ## Examples
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_populate(true);
+  /// assert_eq!(opts.populate(), true);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn populate(&self) -> bool {
+    self.populate
+  }
+}
+
+impl Options {
+  /// Creates a new allocator backed by an anonymous mmap.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).map_anon::<Arena>().unwrap();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub fn map_anon<A: Allocator>(self) -> std::io::Result<A> {
+    constructor!(self.map_anon())
+  }
+
+  /// Opens a read only allocator backed by a mmap file.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  /// #   let arena = unsafe {  Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// # }
+  ///
+  ///
+  ///
+  /// let arena = unsafe { Options::new().with_read(true).map::<Arena, _>(&path,).unwrap() };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub unsafe fn map<A: Allocator, P: AsRef<std::path::Path>>(self, p: P) -> std::io::Result<A> {
+    constructor!(self.map(p))
+  }
+
+  /// Opens a read only allocator backed by a mmap file with the given path builder.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Allocator, Options};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  /// #   let arena = unsafe { Options::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// # }
+  ///
+  ///
+  ///
+  /// let arena = unsafe { Options::new().with_read(true).map_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap() };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub unsafe fn map_with_path_builder<A: Allocator, PB, E>(
+    self,
+    path_builder: PB,
+  ) -> Result<A, either::Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    constructor!(self.map_with_path_builder(path_builder))
+  }
+
+  /// Creates a new allocator backed by a copy-on-write memory map backed by a file.
+  ///
+  /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let arena = unsafe { Options::new().with_capacity(100).with_read(true).with_write(true).with_create_new(true).map_copy::<Arena, _>(&path,).unwrap() };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn map_copy<A: Allocator, P: AsRef<std::path::Path>>(
+    self,
+    path: P,
+  ) -> std::io::Result<A> {
+    constructor!(self.map_copy(path))
+  }
+
+  /// Creates a new allocator backed by a copy-on-write memory map backed by a file with the given path builder.
+  ///
+  /// Data written to the allocator will not be visible by other processes, and will not be carried through to the underlying file.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let arena = unsafe { Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_copy_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf()),).unwrap() };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn map_copy_with_path_builder<A: Allocator, PB, E>(
+    self,
+    path_builder: PB,
+  ) -> Result<A, either::Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    constructor!(self.map_copy_with_path_builder(path_builder))
+  }
+
+  /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  /// #   let arena = unsafe {  Options::new().with_capacity(100).with_create_new(true).with_read(true).with_write(true).map_mut::<Arena, _>(&path).unwrap() };
+  /// # }
+  ///
+  ///
+  ///
+  /// let arena = unsafe { Options::new().with_read(true).map_copy_read_only::<Arena, _>(&path,).unwrap() };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn map_copy_read_only<A: Allocator, P: AsRef<std::path::Path>>(
+    self,
+    path: P,
+  ) -> std::io::Result<A> {
+    constructor!(self.map_copy_read_only(path))
+  }
+
+  /// Opens a read only allocator backed by a copy-on-write read-only memory map backed by a file with the given path builder.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// # {
+  ///   #
+  ///   #
+  ///   # let arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// # }
+  ///
+  ///
+  ///
+  /// let arena = unsafe {
+  ///   Options::new().with_read(true).map_copy_read_only_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
+  /// };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub unsafe fn map_copy_read_only_with_path_builder<A: Allocator, PB, E>(
+    self,
+    path_builder: PB,
+  ) -> Result<A, either::Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    constructor!(self.map_copy_read_only_with_path_builder(path_builder))
+  }
+
+  /// Creates a new allocator backed by a mmap with the given path.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let arena = unsafe {
+  ///   Options::new()
+  ///     .with_capacity(100)
+  ///     .with_create_new(true)
+  ///     .with_read(true)
+  ///     .with_write(true)
+  ///     .map_mut::<Arena, _>(&path).unwrap()
+  /// };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  pub unsafe fn map_mut<A: Allocator, P: AsRef<std::path::Path>>(
+    self,
+    path: P,
+  ) -> std::io::Result<A> {
+    constructor!(self.map_mut(path))
+  }
+
+  /// Creates a new allocator backed by a mmap with the given path builder.
+  ///
+  /// ## Safety
+  ///
+  /// All file-backed memory map constructors are marked `unsafe` because of the potential for
+  /// *Undefined Behavior* (UB) using the map if the underlying file is subsequently modified, in or
+  /// out of process. Applications must consider the risk and take appropriate precautions when
+  /// using file-backed maps. Solutions such as file permissions, locks or process-private (e.g.
+  /// unlinked) files exist but are platform specific and limited.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  /// let arena = unsafe {
+  ///   Options::new()
+  ///     .with_create_new(true)
+  ///     .with_read(true)
+  ///     .with_write(true)
+  ///     .with_capacity(100)
+  ///     .map_mut_with_path_builder::<Arena, _, std::io::Error>(|| Ok(path.to_path_buf())).unwrap()
+  /// };
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub unsafe fn map_mut_with_path_builder<A: Allocator, PB, E>(
+    self,
+    path_builder: PB,
+  ) -> Result<A, either::Either<E, std::io::Error>>
+  where
+    PB: FnOnce() -> Result<std::path::PathBuf, E>,
+  {
+    constructor!(self.map_mut_with_path_builder(path_builder))
+  }
+}
+
+impl Options {
+  /// Returns if the file is newly created and the file
+  pub(crate) fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<(bool, File)> {
+    if self.create_new {
+      return self.to_open_options().open(path).and_then(|f| {
+        if let Some(cap) = self.capacity {
+          f.set_len(cap as u64).map(|_| (true, f))
+        } else {
+          Ok((true, f))
+        }
+      });
+    }
+
+    if self.create {
+      return if path.as_ref().exists() {
+        self.to_open_options().open(path).map(|f| (false, f))
+      } else {
+        self.to_open_options().open(path).and_then(|f| {
+          if let Some(cap) = self.capacity {
+            f.set_len(cap as u64).map(|_| (true, f))
+          } else {
+            Ok((true, f))
+          }
+        })
+      };
+    }
+
+    self.to_open_options().open(path).map(|f| (false, f))
+  }
+
+  #[allow(clippy::wrong_self_convention)]
+  #[inline]
+  pub(crate) fn to_open_options(&self) -> OpenOptions {
+    let mut open_opts = OpenOptions::new();
+
+    if self.read {
+      open_opts.read(true);
+    }
+
+    if self.write {
+      open_opts.write(true);
+    }
+
+    if self.append {
+      open_opts.append(true);
+    }
+
+    if self.truncate {
+      open_opts.truncate(true);
+    }
+
+    if self.create {
+      open_opts.create(true);
+    }
+
+    if self.create_new {
+      open_opts.create_new(true);
+    }
+
+    open_opts
+  }
+
+  #[allow(clippy::wrong_self_convention)]
+  #[inline]
+  pub(crate) fn to_mmap_options(&self) -> MmapOptions {
+    let mut mmap_opts = MmapOptions::new();
+
+    if self.stack {
+      mmap_opts.stack();
+    }
+
+    if let Some(page_bits) = self.huge {
+      mmap_opts.huge(Some(page_bits));
+    }
+
+    if self.populate {
+      mmap_opts.populate();
+    }
+
+    if self.offset > 0 {
+      mmap_opts.offset(self.offset);
+    }
+
+    if let Some(cap) = self.capacity {
+      mmap_opts.len(cap as usize);
+    }
+
+    mmap_opts
   }
 }

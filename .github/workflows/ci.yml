@@ -305,32 +305,32 @@ jobs:
       - name: Loom tests
         run: cargo test --tests --features loom,memmap
   
-  # valgrind
-  valgrind:
-    name: valgrind
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Cache cargo build and registry
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-valgrind-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-valgrind-
+  # # valgrind
+  # valgrind:
+  #   name: valgrind
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - name: Cache cargo build and registry
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry
+  #           ~/.cargo/git
+  #           target
+  #         key: ubuntu-latest-valgrind-${{ hashFiles('**/Cargo.lock') }}
+  #         restore-keys: |
+  #           ubuntu-latest-valgrind-
 
-      - name: Install Rust ${{ env.stable }}
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: ${{ env.stable }}
-            override: true
-      - name: Install Valgrind
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y valgrind
+  #     - name: Install Rust ${{ env.stable }}
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #           toolchain: ${{ env.stable }}
+  #           override: true
+  #     - name: Install Valgrind
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y valgrind
       # Compile tests
       # - name: cargo build foo
       #   run: cargo build --bin foo
