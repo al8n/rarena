@@ -23,7 +23,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_read(mut self, read: bool) -> Self {
+  pub const fn with_read(mut self, read: bool) -> Self {
     self.read = read;
     self
   }
@@ -46,7 +46,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_write(mut self, write: bool) -> Self {
+  pub const fn with_write(mut self, write: bool) -> Self {
     self.write = write;
     self
   }
@@ -93,7 +93,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_append(mut self, append: bool) -> Self {
+  pub const fn with_append(mut self, append: bool) -> Self {
     self.write = true;
     self.append = append;
     self
@@ -116,7 +116,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_truncate(mut self, truncate: bool) -> Self {
+  pub const fn with_truncate(mut self, truncate: bool) -> Self {
     self.truncate = truncate;
     self.write = true;
     self
@@ -141,7 +141,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_create(mut self, val: bool) -> Self {
+  pub const fn with_create(mut self, val: bool) -> Self {
     self.create = val;
     self
   }
@@ -173,7 +173,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_create_new(mut self, val: bool) -> Self {
+  pub const fn with_create_new(mut self, val: bool) -> Self {
     self.create_new = val;
     self
   }
@@ -194,7 +194,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_offset(mut self, offset: u64) -> Self {
+  pub const fn with_offset(mut self, offset: u64) -> Self {
     self.offset = offset;
     self
   }
@@ -215,7 +215,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_stack(mut self, stack: bool) -> Self {
+  pub const fn with_stack(mut self, stack: bool) -> Self {
     self.stack = stack;
     self
   }
@@ -240,7 +240,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_huge(mut self, page_bits: Option<u8>) -> Self {
+  pub const fn with_huge(mut self, page_bits: Option<u8>) -> Self {
     self.huge = page_bits;
     self
   }
@@ -263,7 +263,7 @@ impl Options {
   #[inline]
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  pub fn with_populate(mut self, populate: bool) -> Self {
+  pub const fn with_populate(mut self, populate: bool) -> Self {
     self.populate = populate;
     self
   }
