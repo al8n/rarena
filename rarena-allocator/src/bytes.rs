@@ -57,7 +57,7 @@ impl<A: Allocator> AsMut<[u8]> for BytesMut<A> {
 
 impl_write!(BytesMut<A>);
 
-impl<A: Allocator> crate::Memory for BytesMut<A> {
+impl<A: Allocator> crate::Buffer for BytesMut<A> {
   #[inline]
   fn capacity(&self) -> usize {
     self.allocated.ptr_size as usize
@@ -69,12 +69,12 @@ impl<A: Allocator> crate::Memory for BytesMut<A> {
   }
 
   #[inline]
-  fn memory_offset(&self) -> usize {
+  fn buffer_offset(&self) -> usize {
     self.allocated.memory_offset as usize
   }
 
   #[inline]
-  fn memory_capacity(&self) -> usize {
+  fn buffer_capacity(&self) -> usize {
     self.allocated.memory_size as usize
   }
 
@@ -234,7 +234,7 @@ impl<A: Allocator> AsMut<[u8]> for BytesRefMut<'_, A> {
 
 impl_write!(BytesRefMut<'a, A>);
 
-impl<A: Allocator> crate::Memory for BytesRefMut<'_, A> {
+impl<A: Allocator> crate::Buffer for BytesRefMut<'_, A> {
   #[inline]
   fn capacity(&self) -> usize {
     self.allocated.ptr_size as usize
@@ -246,12 +246,12 @@ impl<A: Allocator> crate::Memory for BytesRefMut<'_, A> {
   }
 
   #[inline]
-  fn memory_offset(&self) -> usize {
+  fn buffer_offset(&self) -> usize {
     self.allocated.memory_offset as usize
   }
 
   #[inline]
-  fn memory_capacity(&self) -> usize {
+  fn buffer_capacity(&self) -> usize {
     self.allocated.memory_size as usize
   }
 

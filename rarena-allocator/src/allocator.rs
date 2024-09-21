@@ -103,7 +103,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// ## Safety
   ///
-  /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`](Allocator::RefMut::detach),
+  /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`](crate::RefMut::detach),
   ///   then the caller must ensure that the `T` is dropped before the allocator is dropped.
   ///   Otherwise, it will lead to memory leaks.
   ///
@@ -289,9 +289,9 @@ pub trait Allocator: sealed::Sealed {
 
   /// Allocates a slice of memory in the allocator.
   ///
-  /// The [`BytesRefMut`](Allocator::BytesRefMut) is zeroed out.
+  /// The [`BytesRefMut`](crate::BytesRefMut) is zeroed out.
   ///
-  /// If you want a [`BytesMut`](Allocator::BytesMut), see [`alloc_bytes_owned`](Allocator::alloc_bytes_owned).
+  /// If you want a [`BytesMut`](crate::BytesMut), see [`alloc_bytes_owned`](Allocator::alloc_bytes_owned).
   fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
 
   /// Allocates an owned slice of memory in the allocator.
@@ -320,9 +320,9 @@ pub trait Allocator: sealed::Sealed {
   /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
   /// this method will still return an error.
   ///
-  /// The [`BytesRefMut`](Allocator::BytesRefMut) is zeroed out.
+  /// The [`BytesRefMut`](crate::BytesRefMut) is zeroed out.
   ///
-  /// If you want a [`BytesMut`](Allocator::BytesMut), see [`alloc_bytes_owned_within_page`](Allocator::alloc_bytes_owned_within_page).
+  /// If you want a [`BytesMut`](crate::BytesMut), see [`alloc_bytes_owned_within_page`](Allocator::alloc_bytes_owned_within_page).
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
@@ -829,7 +829,7 @@ pub trait Allocator: sealed::Sealed {
   fn lock_shared(&self) -> std::io::Result<()>;
 
   /// Returns the magic version of the allocator. This value can be used to check the compatibility for application using
-  /// [`Arena`].
+  /// [`Allocator`].
   ///
   /// ## Example
   ///

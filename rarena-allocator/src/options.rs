@@ -251,8 +251,8 @@ impl Options {
   }
 
   /// Set the external version of the ARENA,
-  /// this is used by the application using [`Arena`](crate::Arena)
-  /// to ensure that it doesn't open the [`Arena`](crate::Arena)
+  /// this is used by the application using [`Allocator`](crate::Allocator)
+  /// to ensure that it doesn't open the [`Allocator`](crate::Allocator)
   /// with incompatible data format.
   ///
   /// The default value is `0`.
@@ -403,8 +403,8 @@ impl Options {
   }
 
   /// Get the external version of the ARENA,
-  /// this is used by the application using [`Arena`](crate::Arena)
-  /// to ensure that it doesn't open the [`Arena`](crate::Arena)
+  /// this is used by the application using [`Allocator`](crate::Allocator)
+  /// to ensure that it doesn't open the [`Allocator`](crate::Allocator)
   /// with incompatible data format.
   ///
   /// The default value is `0`.

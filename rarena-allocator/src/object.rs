@@ -38,7 +38,7 @@ pub struct Owned<T, A: Allocator> {
 unsafe impl<A: Allocator + Send, T> Send for Owned<T, A> {}
 unsafe impl<A: Allocator + Sync, T> Sync for Owned<T, A> {}
 
-impl<T, A: Allocator> crate::Memory for Owned<T, A> {
+impl<T, A: Allocator> crate::Buffer for Owned<T, A> {
   /// Returns how many bytes of `T` occupies.
   ///
   /// If this value is `0`, then the `T` is ZST (zero sized type).
@@ -55,11 +55,11 @@ impl<T, A: Allocator> crate::Memory for Owned<T, A> {
     self.allocated.ptr_offset as usize
   }
 
-  /// Returns how many bytes of memory the value occupies.
+  /// Returns how many bytes of buffer the value occupies.
   ///
   /// If this value is `0`, then the `T` is ZST (zero sized type).
   #[inline]
-  fn memory_capacity(&self) -> usize {
+  fn buffer_capacity(&self) -> usize {
     self.allocated.memory_size as usize
   }
 
@@ -67,10 +67,11 @@ impl<T, A: Allocator> crate::Memory for Owned<T, A> {
   ///
   /// If this value is `0`, then the `T` is ZST (zero sized type).
   #[inline]
-  fn memory_offset(&self) -> usize {
+  fn buffer_offset(&self) -> usize {
     self.allocated.memory_offset as usize
   }
 
+  #[inline]
   unsafe fn detach(&mut self) {
     self.detached = true;
   }
@@ -196,20 +197,24 @@ pub struct RefMut<'a, T, A: Allocator> {
   pub(super) allocated: Meta,
 }
 
-impl<T, A: Allocator> crate::Memory for RefMut<'_, T, A> {
+impl<T, A: Allocator> crate::Buffer for RefMut<'_, T, A> {
+  #[inline]
   fn capacity(&self) -> usize {
     self.allocated.ptr_size as usize
   }
 
+  #[inline]
   fn offset(&self) -> usize {
     self.allocated.ptr_offset as usize
   }
 
-  fn memory_capacity(&self) -> usize {
+  #[inline]
+  fn buffer_capacity(&self) -> usize {
     self.allocated.memory_size as usize
   }
 
-  fn memory_offset(&self) -> usize {
+  #[inline]
+  fn buffer_offset(&self) -> usize {
     self.allocated.memory_offset as usize
   }
 
@@ -218,6 +223,7 @@ impl<T, A: Allocator> crate::Memory for RefMut<'_, T, A> {
   ///
   /// ## Safety
   /// - If `T` is not inlined ([`core::mem::needs_drop::<T>()`](core::mem::needs_drop) returns `true`), then users should take care of dropping the value by themselves.
+  #[inline]
   unsafe fn detach(&mut self) {
     self.detached = true;
   }

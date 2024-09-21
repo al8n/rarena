@@ -68,8 +68,7 @@ static PAGE_SIZE: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| {
 #[cfg(not(all(feature = "std", not(target_family = "wasm"))))]
 static PAGE_SIZE: &u32 = &4096;
 
-/// Enumeration of possible methods to seek within an [`Arena`] allocator.
-///
+/// Enumeration of possible methods to seek within an [`Allocator`].
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum ArenaPosition {
   /// Sets the offset to the provided number of bytes.
@@ -96,21 +95,21 @@ bitflags::bitflags! {
 }
 
 /// The memory chunk allocated from the allocator.
-pub trait Memory {
-  /// Returns how many bytes of accessible memory occupies.
+pub trait Buffer {
+  /// Returns how many bytes of accessible buffer occupies.
   fn capacity(&self) -> usize;
 
   /// Returns the accessible offset to the pointer of the allocator.
   fn offset(&self) -> usize;
 
-  /// Returns how many bytes of the whole memory occupies.
-  fn memory_capacity(&self) -> usize;
+  /// Returns how many bytes of the whole buffer occupies.
+  fn buffer_capacity(&self) -> usize;
 
   /// Returns the offset to the pointer of the allocator.
-  fn memory_offset(&self) -> usize;
+  fn buffer_offset(&self) -> usize;
 
   /// Detach the value from the ARENA, which means when the value is dropped,
-  /// the underlying memory will not be collected for futhur allocation.
+  /// the underlying buffer will not be collected for futhur allocation.
   ///
   /// ## Safety
   /// - The caller must ensure the value is dropped before the ARENA is dropped.
@@ -434,12 +433,12 @@ macro_rules! impl_bytes_mut_utils {
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
-    /// You may want to use [`put_aligned`] instead of this method.
+    /// You may want to use `put_aligned` instead of this method.
     ///
     /// ## Safety
     ///
-    /// - Must invoke [`align_to`] before invoking this method, if `T` is not ZST.
-    /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
+    /// - Must invoke `align_to` before invoking this method, if `T` is not ZST.
+    /// - If `T` needs to be dropped and callers invoke [`detach`](crate::Buffer::detach),
     ///   then the caller must ensure that the `T` is dropped before the allocator is dropped.
     ///   Otherwise, it will lead to memory leaks.
     ///
@@ -468,7 +467,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// ## Safety
     ///
-    /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`],
+    /// - If `T` needs to be dropped and callers invoke [`RefMut::detach`](crate::RefMut::detach),
     ///   then the caller must ensure that the `T` is dropped before the allocator is dropped.
     ///   Otherwise, it will lead to memory leaks.
     ///
