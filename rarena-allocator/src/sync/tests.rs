@@ -1,8 +1,5 @@
 #![allow(dead_code)]
 
-#[cfg(all(not(feature = "loom"), feature = "std"))]
-use crate::Memory as _;
-
 use super::*;
 
 mod optimistic_slow_path;
