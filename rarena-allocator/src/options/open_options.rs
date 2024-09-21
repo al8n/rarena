@@ -76,7 +76,7 @@ impl Options {
   /// ## Note
   ///
   /// This function doesn't create the file if it doesn't exist. Use the
-  /// [`OpenOptions::create`] method to do so.
+  /// [`Options::with_create`] method to do so.
   ///
   /// [`write()`]: std::io::Write::write "io::Write::write"
   /// [`flush()`]: std::io::Write::flush "io::Write::flush"
@@ -125,8 +125,8 @@ impl Options {
   /// Sets the option to create a new file, or open it if it already exists.
   /// If the file does not exist, it is created and set the lenght of the file to the given size.
   ///
-  /// In order for the file to be created, [`OpenOptions::write`] or
-  /// [`OpenOptions::append`] access must be used.
+  /// In order for the file to be created, [`Options::with_write`] or
+  /// [`Options::with_append`] access must be used.
   ///
   /// See also [`std::fs::write()`][std::fs::write] for a simple function to
   /// create a file with some given data.
@@ -155,14 +155,11 @@ impl Options {
   /// whether a file exists and creating a new one, the file may have been
   /// created by another process (a TOCTOU race condition / attack).
   ///
-  /// If `.create_new(true)` is set, [`.create()`] and [`.truncate()`] are
+  /// If `.with_create_new(true)` is set, [`.with_create()`](Options::with_create) and [`.with_truncate()`](Options::with_truncate) are
   /// ignored.
   ///
   /// The file must be opened with write or append access in order to create
   /// a new file.
-  ///
-  /// [`.create()`]: OpenOptions::create
-  /// [`.truncate()`]: OpenOptions::truncate
   ///
   /// ## Examples
   ///
