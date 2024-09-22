@@ -289,7 +289,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
     if let Some(cap) = opts.capacity {
       if file_size < cap as u64 {
-        file.set_len(opts.offset() + cap as u64)?;
+        file.set_len(cap as u64)?;
       }
     }
 

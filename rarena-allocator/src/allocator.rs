@@ -1,3 +1,5 @@
+use core::ptr::NonNull;
+
 use super::*;
 
 macro_rules! impl_bytes_utils_for_allocator {
@@ -90,6 +92,9 @@ pub trait Allocator: sealed::Sealed {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   type Path;
+
+  /// Returns the number of bytes that are reserved by the allocator.
+  fn reserved_bytes(&self) -> usize;
 
   /// Returns the reserved bytes of the allocator specified in the [`Options::with_reserved`].
   fn reserved_slice(&self) -> &[u8];
@@ -399,7 +404,11 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let memory = arena.allocated_memory();
   /// ```
-  fn allocated_memory(&self) -> &[u8];
+  #[inline]
+  fn allocated_memory(&self) -> &[u8] {
+    let allocated = self.allocated();
+    unsafe { core::slice::from_raw_parts(self.raw_ptr(), allocated) }
+  }
 
   /// Returns the start pointer of the main memory of the allocator.
   fn raw_mut_ptr(&self) -> *mut u8;
@@ -476,7 +485,14 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let data = arena.data();
   /// ```
-  fn data(&self) -> &[u8];
+  fn data(&self) -> &[u8] {
+    unsafe {
+      let offset = self.data_offset();
+      let ptr = self.raw_ptr().add(offset);
+      let allocated = self.allocated();
+      core::slice::from_raw_parts(ptr, allocated - offset)
+    }
+  }
 
   /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
   /// returns `true` if the deallocation is successful.
@@ -599,7 +615,14 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// ## Safety
   /// - `offset` must be less than the capacity of the allocator.
-  unsafe fn get_pointer(&self, offset: usize) -> *const u8;
+  #[inline]
+  unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
+    if offset == 0 {
+      return self.raw_ptr();
+    }
+
+    self.raw_ptr().add(offset)
+  }
 
   /// Returns a pointer to the memory at the given offset.
   /// If the allocator is read-only, then this method will return a null pointer.
@@ -609,14 +632,31 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// # Panic
   /// - If the allocator is read-only, then this method will panic.
-  unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8;
+  #[inline]
+  unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
+    assert!(!self.read_only(), "ARENA is read-only");
+
+    if offset == 0 {
+      return self.raw_mut_ptr();
+    }
+
+    self.raw_mut_ptr().add(offset)
+  }
 
   /// Returns an aligned pointer to the memory at the given offset.
   ///
   /// ## Safety
   /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
   /// - `offset` must be less than the capacity of the allocator.
-  unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T;
+  #[inline]
+  unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
+    if offset == 0 {
+      return core::ptr::null();
+    }
+
+    let align_offset = align_offset::<T>(offset as u32) as usize;
+    self.raw_ptr().add(align_offset).cast()
+  }
 
   /// Returns an aligned pointer to the memory at the given offset.
   /// If the allocator is read-only, then this method will return a null pointer.
@@ -627,7 +667,17 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// # Panic
   /// - If the allocator is read-only, then this method will panic.
-  unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> core::ptr::NonNull<T>;
+  unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> core::ptr::NonNull<T> {
+    assert!(!self.read_only(), "ARENA is read-only");
+
+    if offset == 0 {
+      return NonNull::dangling();
+    }
+
+    let align_offset = align_offset::<T>(offset as u32) as usize;
+    let ptr = self.raw_mut_ptr().add(align_offset).cast();
+    NonNull::new_unchecked(ptr)
+  }
 
   /// Returns a bytes slice from the allocator.
   ///
@@ -636,7 +686,14 @@ pub trait Allocator: sealed::Sealed {
   /// - `offset` must be less than the capacity of the allocator.
   /// - `size` must be less than the capacity of the allocator.
   /// - `offset + size` must be less than the capacity of the allocator.
-  unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8];
+  unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
+    if size == 0 {
+      return &[];
+    }
+
+    let ptr = self.get_pointer(offset);
+    core::slice::from_raw_parts(ptr, size)
+  }
 
   /// Returns a `u8` from the allocator.
   fn get_u8(&self, offset: usize) -> Result<u8, Error> {
@@ -736,7 +793,14 @@ pub trait Allocator: sealed::Sealed {
   /// # Panic
   /// - If the allocator is read-only, then this method will panic.
   #[allow(clippy::mut_from_ref)]
-  unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8];
+  unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
+    if size == 0 {
+      return &mut [];
+    }
+
+    let ptr = self.get_pointer_mut(offset);
+    core::slice::from_raw_parts_mut(ptr, size)
+  }
 
   /// Forcelly increases the discarded bytes.
   ///
@@ -856,7 +920,10 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let memory = arena.memory();
   /// ```
-  fn memory(&self) -> &[u8];
+  #[inline]
+  fn memory(&self) -> &[u8] {
+    unsafe { core::slice::from_raw_parts(self.raw_ptr(), self.capacity()) }
+  }
 
   /// Calculates the checksum of the allocated memory (excluding the reserved memory specified by users through [`Options::with_reserved`]) of the allocator.
   fn checksum<S: BuildChecksumer>(&self, cks: &S) -> u64 {

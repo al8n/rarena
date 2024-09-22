@@ -238,6 +238,12 @@ impl Allocator for Arena {
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   type Path = std::sync::Arc<std::path::PathBuf>;
 
+  #[inline]
+  fn reserved_bytes(&self) -> usize {
+    self.reserved
+  }
+
+  #[inline]
   fn reserved_slice(&self) -> &[u8] {
     if self.reserved == 0 {
       return &[];
@@ -247,6 +253,7 @@ impl Allocator for Arena {
     unsafe { slice::from_raw_parts(self.ptr, self.reserved) }
   }
 
+  #[inline]
   unsafe fn reserved_slice_mut(&self) -> &mut [u8] {
     if self.reserved == 0 {
       return &mut [];
@@ -515,26 +522,12 @@ impl Allocator for Arena {
     self.header().allocated.load(Ordering::Acquire) as usize
   }
 
-  /// Returns the whole main memory of the ARENA as a byte slice.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, Options};
-  ///
-  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let memory = arena.memory();
-  /// ```
   #[inline]
-  fn allocated_memory(&self) -> &[u8] {
-    let allocated = self.header().allocated.load(Ordering::Acquire);
-    unsafe { slice::from_raw_parts(self.ptr, allocated as usize) }
-  }
-
   fn raw_mut_ptr(&self) -> *mut u8 {
     self.ptr
   }
 
+  #[inline]
   fn raw_ptr(&self) -> *const u8 {
     self.ptr
   }
@@ -611,25 +604,6 @@ impl Allocator for Arena {
   #[inline]
   fn data_offset(&self) -> usize {
     self.data_offset as usize
-  }
-
-  /// Returns the data section of the ARENA as a byte slice, header is not included.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, Options};
-  ///
-  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let data = arena.data();
-  /// ```
-  #[inline]
-  fn data(&self) -> &[u8] {
-    unsafe {
-      let ptr = self.ptr.add(self.data_offset as usize);
-      let allocated = self.header().allocated.load(Ordering::Acquire);
-      slice::from_raw_parts(ptr, (allocated - self.data_offset) as usize)
-    }
   }
 
   /// Deallocates the memory at the given offset and size, the `offset..offset + size` will be made to a segment,
@@ -857,119 +831,6 @@ impl Allocator for Arena {
     Ok(())
   }
 
-  /// Returns a pointer to the memory at the given offset.
-  ///
-  /// ## Safety
-  /// - `offset` must be less than the capacity of the ARENA.
-  #[inline]
-  unsafe fn get_pointer(&self, offset: usize) -> *const u8 {
-    if offset == 0 {
-      return self.ptr;
-    }
-    self.ptr.add(offset)
-  }
-
-  /// Returns a pointer to the memory at the given offset.
-  /// If the ARENA is read-only, then this method will return a null pointer.
-  ///
-  /// ## Safety
-  /// - `offset` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[inline]
-  unsafe fn get_pointer_mut(&self, offset: usize) -> *mut u8 {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return self.ptr;
-    }
-
-    self.ptr.add(offset)
-  }
-
-  /// Returns an aligned pointer to the memory at the given offset.
-  ///
-  /// ## Safety
-  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  #[inline]
-  unsafe fn get_aligned_pointer<T>(&self, offset: usize) -> *const T {
-    if offset == 0 {
-      return ptr::null();
-    }
-
-    let align_offset = align_offset::<T>(offset as u32) as usize;
-    self.ptr.add(align_offset).cast()
-  }
-
-  /// Returns an aligned pointer to the memory at the given offset.
-  /// If the ARENA is read-only, then this method will return a null pointer.
-  ///
-  /// ## Safety
-  /// - `offset..offset + mem::size_of::<T>() + padding` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[inline]
-  unsafe fn get_aligned_pointer_mut<T>(&self, offset: usize) -> NonNull<T> {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return NonNull::dangling();
-    }
-
-    let align_offset = align_offset::<T>(offset as u32) as usize;
-    let ptr = self.ptr.add(align_offset).cast();
-    NonNull::new_unchecked(ptr)
-  }
-
-  /// Returns a bytes slice from the ARENA.
-  ///
-  /// ## Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  #[inline]
-  unsafe fn get_bytes(&self, offset: usize, size: usize) -> &[u8] {
-    if offset == 0 {
-      return &[];
-    }
-
-    let ptr = self.get_pointer(offset);
-    slice::from_raw_parts(ptr, size)
-  }
-
-  /// Returns a mutable bytes slice from the ARENA.
-  /// If the ARENA is read-only, then this method will return an empty slice.
-  ///
-  /// ## Safety
-  /// - `offset..offset + size` must be allocated memory.
-  /// - `offset` must be less than the capacity of the ARENA.
-  /// - `size` must be less than the capacity of the ARENA.
-  /// - `offset + size` must be less than the capacity of the ARENA.
-  ///
-  /// # Panic
-  /// - If the ARENA is read-only, then this method will panic.
-  #[allow(clippy::mut_from_ref)]
-  #[inline]
-  unsafe fn get_bytes_mut(&self, offset: usize, size: usize) -> &mut [u8] {
-    assert!(!self.ro, "ARENA is read-only");
-
-    if offset == 0 {
-      return &mut [];
-    }
-
-    let ptr = self.get_pointer_mut(offset);
-    if ptr.is_null() {
-      return &mut [];
-    }
-
-    slice::from_raw_parts_mut(ptr, size)
-  }
-
   /// Forcelly increases the discarded bytes.
   ///
   /// ## Example
@@ -1100,21 +961,6 @@ impl Allocator for Arena {
   #[inline]
   fn magic_version(&self) -> u16 {
     self.magic_version
-  }
-
-  /// Returns the whole main memory of the ARENA as a byte slice.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// use rarena_allocator::{sync::Arena, Allocator, Options};
-  ///
-  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let memory = arena.memory();
-  /// ```
-  #[inline]
-  fn memory(&self) -> &[u8] {
-    unsafe { slice::from_raw_parts(self.ptr, self.cap as usize) }
   }
 
   /// Returns the minimum segment size of the ARENA.
