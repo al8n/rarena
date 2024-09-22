@@ -123,7 +123,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   #[inline]
   pub(crate) const fn unify(&self) -> bool {
-    self.unify
+    self.unify || self.flag.contains(MemoryFlags::ON_DISK)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

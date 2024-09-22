@@ -86,6 +86,11 @@ macro_rules! define_leb128_utils {
 
 /// A trait for easily interacting with the sync and unsync allocator allocators.
 pub trait Allocator: sealed::Sealed {
+  /// The path type of the allocator.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  type Path;
+
   /// Returns the reserved bytes of the allocator specified in the [`Options::with_reserved`].
   fn reserved_slice(&self) -> &[u8];
 
@@ -909,6 +914,20 @@ pub trait Allocator: sealed::Sealed {
   /// arena.set_minimum_segment_size(100);
   /// ```
   fn set_minimum_segment_size(&self, size: u32);
+
+  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// # use rarena_allocator::{unsync::Arena, Allocator, Options};
+  ///
+  /// # let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
+  /// let path = arena.path();
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn path(&self) -> Option<&Self::Path>;
 
   /// `mlock(ptr, len)`—Lock memory into RAM.
   ///

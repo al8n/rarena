@@ -234,6 +234,10 @@ impl Sealed for Arena {
 }
 
 impl Allocator for Arena {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  type Path = std::sync::Arc<std::path::PathBuf>;
+
   fn reserved_slice(&self) -> &[u8] {
     if self.reserved == 0 {
       return &[];
@@ -1146,6 +1150,14 @@ impl Allocator for Arena {
       .store(size, Ordering::Release);
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn path(&self) -> Option<&Self::PathRefCounter> {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().path() }
+  }
+
   /// `mlock(ptr, len)`—Lock memory into RAM.
   ///
   /// ## Safety
@@ -1445,24 +1457,6 @@ unsafe impl Send for Arena {}
 unsafe impl Sync for Arena {}
 
 impl Arena {
-  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{sync::Arena, Allocator, Options};
-  ///
-  /// # let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let path = arena.path();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub const fn path(&self) -> Option<&std::sync::Arc<std::path::PathBuf>> {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().path() }
-  }
-
   #[inline]
   fn header(&self) -> &sealed::Header {
     // Safety:

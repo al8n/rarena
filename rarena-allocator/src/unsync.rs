@@ -239,6 +239,10 @@ impl Sealed for Arena {
 }
 
 impl Allocator for Arena {
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  type Path = std::rc::Rc<std::path::PathBuf>;
+
   fn reserved_slice(&self) -> &[u8] {
     if self.reserved == 0 {
       return &[];
@@ -258,14 +262,6 @@ impl Allocator for Arena {
     }
 
     slice::from_raw_parts_mut(self.ptr, self.reserved)
-  }
-
-  fn raw_mut_ptr(&self) -> *mut u8 {
-    self.ptr
-  }
-
-  fn raw_ptr(&self) -> *const u8 {
-    self.ptr
   }
 
   /// Allocates a `T` in the ARENA.
@@ -538,6 +534,14 @@ impl Allocator for Arena {
   fn allocated_memory(&self) -> &[u8] {
     let allocated = self.header().allocated;
     unsafe { slice::from_raw_parts(self.ptr, allocated as usize) }
+  }
+
+  fn raw_mut_ptr(&self) -> *mut u8 {
+    self.ptr
+  }
+
+  fn raw_ptr(&self) -> *const u8 {
+    self.ptr
   }
 
   /// Returns the capacity of the ARENA.
@@ -1125,6 +1129,14 @@ impl Allocator for Arena {
     self.header_mut().min_segment_size = size;
   }
 
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn path(&self) -> Option<&Self::Path> {
+    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
+    unsafe { self.inner.as_ref().path() }
+  }
+
   /// `mlock(ptr, len)`—Lock memory into RAM.
   ///
   /// ## Safety
@@ -1420,24 +1432,6 @@ impl Allocator for Arena {
 }
 
 impl Arena {
-  /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
-  ///
-  /// ## Example
-  ///
-  /// ```rust
-  /// # use rarena_allocator::{unsync::Arena, Allocator, Options};
-  ///
-  /// # let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let path = arena.path();
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  pub fn path(&self) -> Option<&std::rc::Rc<std::path::PathBuf>> {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().path() }
-  }
-
   #[inline]
   fn header(&self) -> &sealed::Header {
     // Safety:
