@@ -982,6 +982,21 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   fn set_minimum_segment_size(&self, size: u32);
 
+  /// Returns `true` if the allocator is unify memory layout.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
+  /// assert_eq!(arena.unify(), false);
+  ///
+  /// let arena = Options::new().with_capacity(100).with_unify(true).alloc::<Arena>().unwrap();
+  /// assert_eq!(arena.unify(), true);
+  /// ```
+  fn unify(&self) -> bool;
+
   /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
   ///
   /// ## Example
