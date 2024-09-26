@@ -18,8 +18,14 @@ pub(crate) fn run(f: impl Fn() + Send + Sync + 'static) {
 fn test_unsync_sync_same_layout() {
   assert_eq!(crate::sync::header_align(), crate::unsync::header_align());
   assert_eq!(crate::sync::header_size(), crate::unsync::header_size());
-  assert_eq!(crate::sync::segment_node_align(), crate::unsync::segment_node_align());
-  assert_eq!(crate::sync::segment_node_size(), crate::unsync::segment_node_size());
+  assert_eq!(
+    crate::sync::segment_node_align(),
+    crate::unsync::segment_node_align()
+  );
+  assert_eq!(
+    crate::sync::segment_node_size(),
+    crate::unsync::segment_node_size()
+  );
 }
 
 macro_rules! common_unit_tests {
