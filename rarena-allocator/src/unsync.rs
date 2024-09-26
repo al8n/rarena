@@ -76,7 +76,7 @@ mod sealed {
   }
 }
 
-#[repr(align(8))]
+#[repr(C, align(8))]
 struct SegmentNode(
   /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
