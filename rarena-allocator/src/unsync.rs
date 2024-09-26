@@ -19,26 +19,6 @@ type Memory = super::memory::Memory<UnsafeCell<usize>, std::rc::Rc<()>, sealed::
 
 const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
 
-#[cfg(test)]
-pub(crate) const fn segment_node_align() -> usize {
-  mem::align_of::<SegmentNode>()
-}
-
-#[cfg(test)]
-pub(crate) const fn segment_node_size() -> usize {
-  mem::size_of::<SegmentNode>()
-}
-
-#[cfg(test)]
-pub(crate) const fn header_size() -> usize {
-  mem::size_of::<sealed::Header>()
-}
-
-#[cfg(test)]
-pub(crate) const fn header_align() -> usize {
-  mem::align_of::<sealed::Header>()
-}
-
 mod sealed {
   use super::*;
 
@@ -76,7 +56,7 @@ mod sealed {
   }
 }
 
-#[repr(C, align(8))]
+#[repr(transparent)]
 struct SegmentNode(
   /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
