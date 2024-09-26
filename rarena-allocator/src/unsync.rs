@@ -521,7 +521,7 @@ impl Allocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn is_mmap(&self) -> bool {
+  fn is_map(&self) -> bool {
     self.flag.contains(MemoryFlags::MMAP)
   }
 
@@ -530,13 +530,9 @@ impl Allocator for Arena {
     self.flag.contains(MemoryFlags::ON_DISK)
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn is_ondisk_and_mmap(&self) -> bool {
-    self
-      .flag
-      .contains(MemoryFlags::ON_DISK.union(MemoryFlags::MMAP))
+  fn is_inmemory(&self) -> bool {
+    !self.flag.contains(MemoryFlags::ON_DISK)
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
