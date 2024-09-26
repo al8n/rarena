@@ -77,7 +77,7 @@ impl Drop for AlignedVec {
 impl AlignedVec {
   #[inline]
   pub(super) fn new<H>(capacity: usize, align: usize) -> Self {
-    let align = align.max(mem::align_of::<H>()).min(8);
+    let align = align.max(mem::align_of::<H>());
     assert!(
       capacity <= Self::max_capacity(align),
       "`capacity` cannot exceed isize::MAX - {}",
