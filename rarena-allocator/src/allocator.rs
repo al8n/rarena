@@ -851,7 +851,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let is_inmemory = arena.is_inmemory();
-  /// assert_eq!(is_inmemory, false);
+  /// assert_eq!(is_inmemory, true);
   /// ```
   fn is_inmemory(&self) -> bool;
 
