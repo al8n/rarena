@@ -76,16 +76,16 @@ mod sealed {
   }
 }
 
-#[repr(transparent)]
-struct SegmentNode {
+#[repr(align(8))]
+struct SegmentNode(
   /// The first 32 bits are the size of the memory,
   /// the last 32 bits are the offset of the next segment node.
-  size_and_next: UnsafeCell<u64>,
-}
+  UnsafeCell<u64>,
+);
 
 impl core::fmt::Debug for SegmentNode {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let (offset, next) = decode_segment_node(*self.size_and_next.as_inner_ref());
+    let (offset, next) = decode_segment_node(*self.0.as_inner_ref());
     f.debug_struct("SegmentNode")
       .field("offset", &offset)
       .field("next", &next)
@@ -98,25 +98,23 @@ impl core::ops::Deref for SegmentNode {
 
   #[inline]
   fn deref(&self) -> &Self::Target {
-    &self.size_and_next
+    &self.0
   }
 }
 
 impl SegmentNode {
   #[inline]
   fn sentinel() -> Self {
-    Self {
-      size_and_next: UnsafeCell::new(encode_segment_node(
-        SENTINEL_SEGMENT_NODE_OFFSET,
-        SENTINEL_SEGMENT_NODE_OFFSET,
-      )),
-    }
+    Self(UnsafeCell::new(encode_segment_node(
+      SENTINEL_SEGMENT_NODE_OFFSET,
+      SENTINEL_SEGMENT_NODE_OFFSET,
+    )))
   }
 
   #[allow(clippy::mut_from_ref)]
   #[inline]
   fn as_inner_mut(&self) -> &mut u64 {
-    unsafe { &mut *self.size_and_next.as_inner_mut() }
+    unsafe { &mut *self.0.as_inner_mut() }
   }
 }
 
