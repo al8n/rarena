@@ -822,12 +822,12 @@ pub trait Allocator: sealed::Sealed {
   /// use rarena_allocator::{sync::Arena, Allocator, Options};
   ///
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let is_mmap = arena.is_mmap();
-  /// assert_eq!(is_mmap, false);
+  /// let is_map = arena.is_map();
+  /// assert_eq!(is_map, false);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn is_mmap(&self) -> bool;
+  fn is_map(&self) -> bool;
 
   /// Returns `true` if the allocator is on disk.
   ///
@@ -842,6 +842,36 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   fn is_ondisk(&self) -> bool;
 
+  /// Returns `true` if the allocator is in memory.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
+  /// let is_inmemory = arena.is_inmemory();
+  /// assert_eq!(is_inmemory, true);
+  /// ```
+  fn is_inmemory(&self) -> bool;
+
+  /// Returns `true` if the allocator is on-disk and created through memory map.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).map_anon::<Arena>().unwrap();
+  /// let is_map_anon = arena.is_map_anon();
+  /// assert_eq!(is_map_anon, true);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  fn is_map_anon(&self) -> bool {
+    self.is_map() && !self.is_ondisk()
+  }
+
   /// Returns `true` if the allocator is on-disk and created through memory map.
   ///
   /// ## Example
@@ -850,12 +880,14 @@ pub trait Allocator: sealed::Sealed {
   /// use rarena_allocator::{sync::Arena, Options, Allocator};
   ///
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
-  /// let is_ondisk_and_mmap = arena.is_ondisk_and_mmap();
-  /// assert_eq!(is_ondisk_and_mmap, false);
+  /// let is_map_file = arena.is_map_file();
+  /// assert_eq!(is_map_file, false);
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn is_ondisk_and_mmap(&self) -> bool;
+  fn is_map_file(&self) -> bool {
+    self.is_map() && self.is_ondisk()
+  }
 
   /// Locks the underlying file for exclusive access, only works on mmap with a file backend.
   ///

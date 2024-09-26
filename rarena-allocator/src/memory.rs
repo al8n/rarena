@@ -173,7 +173,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   pub(crate) fn alloc(opts: Options) -> Result<Self, Error> {
     let vec_cap = opts.capacity();
-    let alignment = opts.maximum_alignment();
+    let alignment = opts.maximum_alignment().max(8);
     let min_segment_size = opts.minimum_segment_size();
     let unify = opts.unify();
     let reserved = opts.reserved() as usize;
