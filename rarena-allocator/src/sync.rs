@@ -22,6 +22,26 @@ type Memory = super::memory::Memory<AtomicUsize, std::sync::Arc<()>, sealed::Hea
 const SEGMENT_NODE_SIZE: usize = mem::size_of::<SegmentNode>();
 const REMOVED_SEGMENT_NODE: u32 = 0;
 
+#[cfg(test)]
+pub(crate) const fn segment_node_align() -> usize {
+  mem::align_of::<SegmentNode>()
+}
+
+#[cfg(test)]
+pub(crate) const fn segment_node_size() -> usize {
+  mem::size_of::<SegmentNode>()
+}
+
+#[cfg(test)]
+pub(crate) const fn header_size() -> usize {
+  mem::size_of::<sealed::Header>()
+}
+
+#[cfg(test)]
+pub(crate) const fn header_align() -> usize {
+  mem::align_of::<sealed::Header>()
+}
+
 mod sealed {
   use super::*;
 
