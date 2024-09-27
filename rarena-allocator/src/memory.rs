@@ -628,7 +628,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   /// ## Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
@@ -669,7 +669,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   /// ## Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {

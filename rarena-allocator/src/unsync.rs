@@ -568,24 +568,30 @@ impl Allocator for Arena {
     unsafe { self.inner.as_ref().path() }
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().mlock(offset, len) }
+    #[cfg(not(windows))]
+    unsafe {
+      self.inner.as_ref().mlock(offset, len)
+    }
+
+    #[cfg(windows)]
+    Ok(())
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().munlock(offset, len) }
+    #[cfg(not(windows))]
+    unsafe {
+      self.inner.as_ref().munlock(offset, len)
+    }
+
+    #[cfg(windows)]
+    Ok(())
   }
 
   #[inline]
