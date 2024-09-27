@@ -56,6 +56,8 @@ pub struct Options {
   reserved: u32,
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  lock_meta: bool,
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   create_new: bool,
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   create: bool,
@@ -98,6 +100,8 @@ impl Options {
       freelist: Freelist::Optimistic,
       reserved: 0,
 
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      lock_meta: false,
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       create_new: false,
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

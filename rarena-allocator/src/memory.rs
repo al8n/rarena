@@ -39,7 +39,9 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   refs: R,
   reserved: usize,
   cap: u32,
+  header_offset: usize,
   data_offset: usize,
+  lock_meta: bool,
   flag: MemoryFlags,
   header_ptr: Either<*mut u8, H>,
   ptr: *mut u8,
@@ -206,6 +208,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       Ok(Self {
         cap: vec_cap,
+        lock_meta: false,
+        header_offset: header_ptr_offset,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
         flag: MemoryFlags::empty(),
@@ -278,6 +282,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let min_segment_size = opts.minimum_segment_size();
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
+    let lock_meta = opts.lock_meta();
 
     if !create_new {
       let (_, prefix_size) = header_meta::<H>(reserved, true);
@@ -338,6 +343,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: cap as u32,
           reserved,
+          header_offset: header_ptr_offset,
+          lock_meta,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
@@ -356,6 +363,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           read_only: false,
           max_retries: opts.maximum_retries(),
         };
+
+        if lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       })
@@ -462,6 +473,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: len as u32,
           reserved,
+          header_offset: header_ptr_offset,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
@@ -479,7 +491,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: true,
           max_retries: opts.maximum_retries(),
+          lock_meta: opts.lock_meta(),
         };
+
+        if this.lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       })
@@ -533,6 +550,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
         let this = Self {
           reserved: reserved as usize,
+          header_offset: header_ptr_offset,
           flag: MemoryFlags::MMAP,
           cap: map_cap as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
@@ -546,7 +564,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          lock_meta: opts.lock_meta(),
         };
+
+        if this.lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       }
@@ -630,6 +653,16 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
+      MemoryBackend::AnonymousMmap { buf } => {
+        let buf_len = buf.len();
+        if offset + len > buf_len {
+          return Err(range_out_of_bounds(offset, len, buf_len));
+        }
+
+        let ptr = buf.as_ref().as_ptr().add(offset);
+        rustix::mm::mlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
       _ => Ok(()),
     }
   }
@@ -652,6 +685,16 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       }
       MemoryBackend::Mmap { buf, .. } => {
         let buf = &**buf;
+        let buf_len = buf.len();
+        if offset + len > buf_len {
+          return Err(range_out_of_bounds(offset, len, buf_len));
+        }
+
+        let ptr = buf.as_ref().as_ptr().add(offset);
+        rustix::mm::munlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      MemoryBackend::AnonymousMmap { buf, .. } => {
         let buf_len = buf.len();
         if offset + len > buf_len {
           return Err(range_out_of_bounds(offset, len, buf_len));
@@ -763,6 +806,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
   pub(crate) unsafe fn unmount(&mut self) {
+    if self.lock_meta {
+      let _ = self.munlock(self.header_offset, mem::size_of::<H>());
+    }
+
     // Any errors during unmapping/closing are ignored as the only way
     // to report them would be through panicking which is highly discouraged
     // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97

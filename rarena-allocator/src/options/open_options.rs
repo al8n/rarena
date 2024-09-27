@@ -8,6 +8,30 @@ use std::{
 use super::{Allocator, Options};
 
 impl Options {
+  /// Set if lock the meta of the [`Allocator`](crate::Allocator) in the memory to prevent OS from swapping out the header of [`Allocator`](crate::Allocator).
+  /// When using memory map backed [`Allocator`](crate::Allocator), the meta of the [`Allocator`](crate::Allocator)
+  /// is in the header, meta is frequently accessed,
+  /// lock (`mlock` on the header) the meta can reduce the page fault,
+  /// but yes, this means that one [`Allocator`](crate::Allocator) will have one page are locked in memory,
+  /// and will not be swapped out. So, this is a trade-off between performance and memory usage.
+  ///
+  /// Default is `true`.
+  ///
+  /// This configuration has no effect on windows and vec backed [`Allocator`](crate::Allocator).
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_lock_meta(false);
+  /// ```
+  #[inline]
+  pub const fn with_lock_meta(mut self, lock_meta: bool) -> Self {
+    self.lock_meta = lock_meta;
+    self
+  }
+
   /// Sets the option for read access.
   ///
   /// This option, when true, will indicate that the file should be
@@ -270,6 +294,28 @@ impl Options {
 }
 
 impl Options {
+  /// Get if lock the meta of the [`Allocator`](crate::Allocator) in the memory to prevent OS from swapping out the header of [`Allocator`](crate::Allocator).
+  /// When using memory map backed [`Allocator`](crate::Allocator), the meta of the [`Allocator`](crate::Allocator)
+  /// is in the header, meta is frequently accessed,
+  /// lock (`mlock` on the header) the meta can reduce the page fault,
+  /// but yes, this means that one [`Allocator`](crate::Allocator) will have one page are locked in memory,
+  /// and will not be swapped out. So, this is a trade-off between performance and memory usage.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_lock_meta(false);
+  /// assert_eq!(opts.lock_meta(), false);
+  /// ```
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub const fn lock_meta(&self) -> bool {
+    self.lock_meta
+  }
+
   /// Returns `true` if the file should be opened with read access.
   ///
   /// ## Examples
