@@ -630,6 +630,53 @@ pub trait Allocator: sealed::Sealed {
     self.as_ref().flush_async_range(offset, len)
   }
 
+  /// Flushes outstanding memory map modifications in `Allocator`'s header to disk.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  ///
+  ///
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// arena.flush_header().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn flush_header(&self) -> std::io::Result<()> {
+    self.flush_header_and_range(0, 0)
+  }
+
+  /// Asynchronously flushes outstanding memory map modifications `Allocator`'s header to disk.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  ///
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  ///
+  /// arena.flush_async_header().unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn flush_async_header(&self) -> std::io::Result<()> {
+    self.flush_async_header_and_range(0, 0)
+  }
+
   /// Flushes outstanding memory map modifications in the range and `Allocator`'s header to disk.
   ///
   /// ## Example
@@ -642,7 +689,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   ///
   /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
-  /// arena.flush_range(0, 100).unwrap();
+  /// arena.flush_header_and_range(0, 100).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
@@ -666,7 +713,7 @@ pub trait Allocator: sealed::Sealed {
   ///
   /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
   ///
-  /// arena.flush_async_range(0, 100).unwrap();
+  /// arena.flush_async_header_and_range(0, 100).unwrap();
   ///
   /// # std::fs::remove_file(path);
   /// ```
