@@ -196,6 +196,31 @@ fn invalid_input<E: Into<std::boxed::Box<dyn std::error::Error + Send + Sync>>>(
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[inline]
+fn range_out_of_bounds(offset: usize, len: usize, cap: usize) -> std::io::Error {
+  #[derive(Debug)]
+  struct Err {
+    offset: usize,
+    len: usize,
+    cap: usize,
+  }
+
+  impl std::fmt::Display for Err {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      write!(
+        f,
+        "range [{}..{}] out of bounds (cap={})",
+        self.offset, self.len, self.cap
+      )
+    }
+  }
+
+  impl std::error::Error for Err {}
+
+  std::io::Error::new(std::io::ErrorKind::InvalidInput, Err { offset, len, cap })
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+#[inline]
 fn bad_magic() -> std::io::Error {
   std::io::Error::new(std::io::ErrorKind::InvalidData, "arena has bad magic")
 }

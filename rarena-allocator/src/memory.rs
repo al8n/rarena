@@ -609,28 +609,24 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        let ptr = buf.as_ptr().add(offset);
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr();
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
@@ -644,28 +640,24 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::munlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr();
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::munlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
@@ -695,7 +687,15 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_range(offset, len) },
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        mmap.flush_range(offset, len)
+      },
       _ => Ok(()),
     }
   }
@@ -705,7 +705,13 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
-        (**mmap).flush_async_range(offset, len)
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        mmap.flush_async_range(offset, len)
       },
       _ => Ok(()),
     }
