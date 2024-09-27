@@ -42,7 +42,7 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   header_offset: usize,
   data_offset: usize,
   lock_meta: bool,
-  flag: MemoryFlags,
+  pub(crate) flag: MemoryFlags,
   header_ptr: Either<*mut u8, H>,
   ptr: *mut u8,
   #[allow(dead_code)]
@@ -771,6 +771,102 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         }
 
         mmap.flush_async_range(offset, len)
+      },
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub(crate) fn flush_header_and_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    match &self.backend {
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if len == 0 {
+          return mmap.flush_range(self.header_offset, mem::size_of::<H>());
+        }
+
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        let header_offset = self.header_offset;
+        let header_size = mem::size_of::<H>();
+        let page_size = (*PAGE_SIZE) as usize;
+
+        let header_range_start = header_offset;
+        let header_range_end = header_offset + header_size;
+        let header_start_page = header_range_start / page_size;
+        let header_end_page = (header_range_end + page_size - 1) / page_size;
+
+        let flush_end = offset + len;
+        let range_start_page = offset / page_size;
+        let range_end_page = (flush_end + page_size - 1) / page_size;
+
+        if header_start_page == range_start_page && header_end_page == range_end_page {
+          let start = header_offset.min(offset);
+          return mmap.flush_range(start, header_range_end.max(flush_end) - start);
+        }
+
+        if offset <= header_offset && header_range_end <= flush_end {
+          return mmap.flush_range(offset, len);
+        }
+
+        mmap
+          .flush_range(header_offset, header_size)
+          .and_then(|_| mmap.flush_range(offset, len))
+      },
+      _ => Ok(()),
+    }
+  }
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  pub(crate) fn flush_async_header_and_range(
+    &self,
+    offset: usize,
+    len: usize,
+  ) -> std::io::Result<()> {
+    match &self.backend {
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if len == 0 {
+          return mmap.flush_async_range(self.header_offset, mem::size_of::<H>());
+        }
+
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        let header_offset = self.header_offset;
+        let header_size = mem::size_of::<H>();
+        let page_size = (*PAGE_SIZE) as usize;
+
+        let header_range_start = header_offset;
+        let header_range_end = header_offset + header_size;
+        let header_start_page = header_range_start / page_size;
+        let header_end_page = (header_range_end + page_size - 1) / page_size;
+
+        let flush_end = offset + len;
+        let range_start_page = offset / page_size;
+        let range_end_page = (flush_end + page_size - 1) / page_size;
+
+        if header_start_page == range_start_page && header_end_page == range_end_page {
+          let start = header_offset.min(offset);
+          return mmap.flush_async_range(start, header_range_end.max(flush_end) - start);
+        }
+
+        if offset <= header_offset && header_range_end <= flush_end {
+          return mmap.flush_async_range(offset, len);
+        }
+
+        mmap
+          .flush_async_range(header_offset, header_size)
+          .and_then(|_| mmap.flush_async_range(offset, len))
       },
       _ => Ok(()),
     }

@@ -233,6 +233,14 @@ impl Sealed for Arena {
   type PathRefCounter = std::sync::Arc<()>;
 }
 
+impl AsRef<Memory> for Arena {
+  #[inline]
+  fn as_ref(&self) -> &Memory {
+    // Safety: the inner is always non-null.
+    unsafe { self.inner.as_ref() }
+  }
+}
+
 impl Allocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
@@ -365,17 +373,6 @@ impl Allocator for Arena {
     self.ptr
   }
 
-  #[inline]
-  fn capacity(&self) -> usize {
-    self.cap as usize
-  }
-
-  #[inline]
-  fn unify(&self) -> bool {
-    // Safety: the inner is always non-null.
-    unsafe { self.inner.as_ref().unify() }
-  }
-
   unsafe fn clear(&self) -> Result<(), Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -385,11 +382,6 @@ impl Allocator for Arena {
     memory.clear();
 
     Ok(())
-  }
-
-  #[inline]
-  fn data_offset(&self) -> usize {
-    self.data_offset as usize
   }
 
   #[inline]
@@ -432,131 +424,12 @@ impl Allocator for Arena {
     self.header().discarded.load(Ordering::Acquire)
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_async(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().flush_async() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    if self.is_map_file() {
-      if len == 0 {
-        return Ok(());
-      }
-
-      let page_size = (*PAGE_SIZE) as usize;
-
-      // Calculate start page
-      let start_page_offset = (offset / page_size) * page_size;
-
-      // Calculate end page. The end offset is the last byte that needs to be flushed.
-      let end_offset = offset + len - 1;
-      let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-
-      // Check if the end of the last page exceeds the capacity of the memory map
-      let end_flush_offset = end_page_offset.min(self.cap as usize);
-
-      // Ensure that the flush does not start beyond the capacity
-      if start_page_offset >= self.cap as usize {
-        return Err(std::io::Error::new(
-          std::io::ErrorKind::InvalidInput,
-          "Offset is out of bounds",
-        ));
-      }
-
-      unsafe {
-        return self
-          .inner
-          .as_ref()
-          .flush_range(start_page_offset, end_flush_offset - start_page_offset);
-      }
-    }
-
-    Ok(())
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    if self.is_map_file() {
-      if len == 0 {
-        return Ok(());
-      }
-
-      let page_size = (*PAGE_SIZE) as usize;
-
-      // Calculate start page
-      let start_page_offset = (offset / page_size) * page_size;
-
-      // Calculate end page. The end offset is the last byte that needs to be flushed.
-      let end_offset = offset + len - 1;
-      let end_page_offset = ((end_offset / page_size) + 1) * page_size;
-
-      // Check if the end of the last page exceeds the capacity of the memory map
-      let end_flush_offset = end_page_offset.min(self.cap as usize);
-
-      // Ensure that the flush does not start beyond the capacity
-      if start_page_offset >= self.cap as usize {
-        return Err(std::io::Error::new(
-          std::io::ErrorKind::InvalidInput,
-          "Offset is out of bounds",
-        ));
-      }
-
-      unsafe {
-        return self
-          .inner
-          .as_ref()
-          .flush_async_range(start_page_offset, end_flush_offset - start_page_offset);
-      }
-    }
-
-    Ok(())
-  }
-
   #[inline]
   fn increase_discarded(&self, size: u32) {
     #[cfg(feature = "tracing")]
     tracing::debug!("discard {size} bytes");
 
     self.header().discarded.fetch_add(size, Ordering::Release);
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn is_map(&self) -> bool {
-    self.flag.contains(MemoryFlags::MMAP)
-  }
-
-  #[inline]
-  fn is_ondisk(&self) -> bool {
-    self.flag.contains(MemoryFlags::ON_DISK)
-  }
-
-  #[inline]
-  fn is_inmemory(&self) -> bool {
-    !self.flag.contains(MemoryFlags::ON_DISK)
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn lock_exclusive(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().lock_exclusive() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn lock_shared(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().lock_shared() }
   }
 
   #[inline]
@@ -580,35 +453,9 @@ impl Allocator for Arena {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn path(&self) -> Option<&Self::PathRefCounter> {
+  fn path(&self) -> Option<&Self::Path> {
     // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
     unsafe { self.inner.as_ref().path() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    #[cfg(not(windows))]
-    unsafe {
-      self.inner.as_ref().mlock(offset, len)
-    }
-
-    #[cfg(windows)]
-    Ok(())
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    #[cfg(not(windows))]
-    unsafe {
-      self.inner.as_ref().munlock(offset, len)
-    }
-
-    #[cfg(windows)]
-    Ok(())
   }
 
   #[inline]
@@ -635,14 +482,6 @@ impl Allocator for Arena {
   #[inline]
   fn remaining(&self) -> usize {
     (self.cap as usize).saturating_sub(self.allocated())
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn remove_on_drop(&self, remove_on_drop: bool) {
-    // Safety: the inner is always non-null, we only deallocate it when the memory refs is 1.
-    unsafe { self.inner.as_ref().set_remove_on_drop(remove_on_drop) }
   }
 
   unsafe fn rewind(&self, pos: ArenaPosition) {
@@ -675,25 +514,6 @@ impl Allocator for Arena {
     };
 
     header.allocated.store(final_offset, Ordering::Release);
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn try_lock_exclusive(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().try_lock_exclusive() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn try_lock_shared(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().try_lock_shared() }
-  }
-
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn unlock(&self) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().unlock() }
   }
 
   #[inline]

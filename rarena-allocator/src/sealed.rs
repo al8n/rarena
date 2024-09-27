@@ -94,7 +94,10 @@ pub trait Header: Sized {
 /// Sealed trait to prevent users from implementing the trait, so allowing the clippy warning here is okay.
 #[allow(private_bounds)]
 pub trait Sealed:
-  Sized + Clone + From<super::memory::Memory<Self::RefCounter, Self::PathRefCounter, Self::Header>>
+  Sized
+  + Clone
+  + From<super::memory::Memory<Self::RefCounter, Self::PathRefCounter, Self::Header>>
+  + AsRef<super::memory::Memory<Self::RefCounter, Self::PathRefCounter, Self::Header>>
 {
   type PathRefCounter: PathRefCounter;
   type RefCounter: RefCounter;

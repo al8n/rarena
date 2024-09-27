@@ -426,7 +426,10 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let capacity = arena.capacity();
   /// ```
-  fn capacity(&self) -> usize;
+  #[inline]
+  fn capacity(&self) -> usize {
+    self.as_ref().cap() as usize
+  }
 
   /// Clear the allocator.
   ///
@@ -473,7 +476,10 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let data_offset = arena.data_offset();
   /// ```
-  fn data_offset(&self) -> usize;
+  #[inline]
+  fn data_offset(&self) -> usize {
+    self.as_ref().data_offset()
+  }
 
   /// Returns the data section of the allocator as a byte slice, header is not included.
   ///
@@ -485,6 +491,7 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let data = arena.data();
   /// ```
+  #[inline]
   fn data(&self) -> &[u8] {
     unsafe {
       let offset = self.data_offset();
@@ -547,7 +554,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush(&self) -> std::io::Result<()>;
+  #[inline]
+  fn flush(&self) -> std::io::Result<()> {
+    self.as_ref().flush()
+  }
 
   /// Flushes the memory-mapped file to disk asynchronously.
   ///
@@ -568,7 +578,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_async(&self) -> std::io::Result<()>;
+  #[inline]
+  fn flush_async(&self) -> std::io::Result<()> {
+    self.as_ref().flush_async()
+  }
 
   /// Flushes outstanding memory map modifications in the range to disk.
   ///
@@ -588,7 +601,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()>;
+  #[inline]
+  fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().flush_range(offset, len)
+  }
 
   /// Asynchronously flushes outstanding memory map modifications in the range to disk.
   ///
@@ -609,7 +625,57 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()>;
+  #[inline]
+  fn flush_async_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().flush_async_range(offset, len)
+  }
+
+  /// Flushes outstanding memory map modifications in the range and `Allocator`'s header to disk.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  ///
+  ///
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  /// arena.flush_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn flush_header_and_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().flush_header_and_range(offset, len)
+  }
+
+  /// Asynchronously flushes outstanding memory map modifications in the range and `Allocator`'s header to disk.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// # let path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+  /// # std::fs::remove_file(&path);
+  ///
+  ///
+  /// let mut arena = unsafe { Options::new().with_create_new(true).with_read(true).with_write(true).with_capacity(100).map_mut::<Arena, _>(&path).unwrap() };
+  ///
+  /// arena.flush_async_range(0, 100).unwrap();
+  ///
+  /// # std::fs::remove_file(path);
+  /// ```
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  #[inline]
+  fn flush_async_header_and_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().flush_async_header_and_range(offset, len)
+  }
 
   /// Returns a pointer to the memory at the given offset.
   ///
@@ -827,7 +893,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn is_map(&self) -> bool;
+  #[inline]
+  fn is_map(&self) -> bool {
+    self.as_ref().flag.contains(MemoryFlags::MMAP)
+  }
 
   /// Returns `true` if the allocator is on disk.
   ///
@@ -840,7 +909,10 @@ pub trait Allocator: sealed::Sealed {
   /// let is_ondisk = arena.is_ondisk();
   /// assert_eq!(is_ondisk, false);
   /// ```
-  fn is_ondisk(&self) -> bool;
+  #[inline]
+  fn is_ondisk(&self) -> bool {
+    self.as_ref().flag.contains(MemoryFlags::ON_DISK)
+  }
 
   /// Returns `true` if the allocator is in memory.
   ///
@@ -853,7 +925,10 @@ pub trait Allocator: sealed::Sealed {
   /// let is_inmemory = arena.is_inmemory();
   /// assert_eq!(is_inmemory, true);
   /// ```
-  fn is_inmemory(&self) -> bool;
+  #[inline]
+  fn is_inmemory(&self) -> bool {
+    !self.is_ondisk()
+  }
 
   /// Returns `true` if the allocator is on-disk and created through memory map.
   ///
@@ -907,7 +982,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn lock_exclusive(&self) -> std::io::Result<()>;
+  #[inline]
+  fn lock_exclusive(&self) -> std::io::Result<()> {
+    self.as_ref().lock_exclusive()
+  }
 
   /// Locks the underlying file for shared access, only works on mmap with a file backend.
   ///
@@ -927,7 +1005,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn lock_shared(&self) -> std::io::Result<()>;
+  #[inline]
+  fn lock_shared(&self) -> std::io::Result<()> {
+    self.as_ref().lock_shared()
+  }
 
   /// Returns the magic version of the allocator. This value can be used to check the compatibility for application using
   /// [`Allocator`].
@@ -1027,7 +1108,10 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).with_unify(true).alloc::<Arena>().unwrap();
   /// assert_eq!(arena.unify(), true);
   /// ```
-  fn unify(&self) -> bool;
+  #[inline]
+  fn unify(&self) -> bool {
+    self.as_ref().unify()
+  }
 
   /// Returns the path of the mmap file, only returns `Some` when the ARENA is backed by a mmap file.
   ///
@@ -1079,7 +1163,9 @@ pub trait Allocator: sealed::Sealed {
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-mlock
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()>;
+  unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().mlock(offset, len)
+  }
 
   /// `munlock(ptr, len)`—Unlock memory.
   ///
@@ -1115,7 +1201,9 @@ pub trait Allocator: sealed::Sealed {
   /// [glibc]: https://www.gnu.org/software/libc/manual/html_node/Page-Lock-Functions.html#index-munlock
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()>;
+  unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    self.as_ref().munlock(offset, len)
+  }
 
   /// Returns the offset to the start of the allocator.
   ///
@@ -1148,7 +1236,10 @@ pub trait Allocator: sealed::Sealed {
   /// let arena = Options::new().with_capacity(100).alloc::<Arena>().unwrap();
   /// let read_only = arena.read_only();
   /// ```
-  fn read_only(&self) -> bool;
+  #[inline]
+  fn read_only(&self) -> bool {
+    self.as_ref().read_only()
+  }
 
   /// Returns the number of references to the allocator.
   ///
@@ -1191,7 +1282,9 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn remove_on_drop(&self, remove_on_drop: bool);
+  fn remove_on_drop(&self, remove_on_drop: bool) {
+    self.as_ref().set_remove_on_drop(remove_on_drop);
+  }
 
   /// Set back the allocator's main memory cursor to the given position.
   ///
@@ -1221,7 +1314,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn try_lock_exclusive(&self) -> std::io::Result<()>;
+  #[inline]
+  fn try_lock_exclusive(&self) -> std::io::Result<()> {
+    self.as_ref().try_lock_exclusive()
+  }
 
   /// Try to lock the underlying file for shared access, only works on mmap with a file backend.
   ///
@@ -1241,7 +1337,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn try_lock_shared(&self) -> std::io::Result<()>;
+  #[inline]
+  fn try_lock_shared(&self) -> std::io::Result<()> {
+    self.as_ref().try_lock_shared()
+  }
 
   /// Unlocks the underlying file, only works on mmap with a file backend.
   ///
@@ -1264,7 +1363,10 @@ pub trait Allocator: sealed::Sealed {
   /// ```
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn unlock(&self) -> std::io::Result<()>;
+  #[inline]
+  fn unlock(&self) -> std::io::Result<()> {
+    self.as_ref().unlock()
+  }
 
   /// Returns the version of the allocator.
   ///
