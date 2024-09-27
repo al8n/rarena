@@ -39,7 +39,9 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   refs: R,
   reserved: usize,
   cap: u32,
+  header_offset: usize,
   data_offset: usize,
+  lock_meta: bool,
   flag: MemoryFlags,
   header_ptr: Either<*mut u8, H>,
   ptr: *mut u8,
@@ -206,6 +208,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       Ok(Self {
         cap: vec_cap,
+        lock_meta: false,
+        header_offset: header_ptr_offset,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
         flag: MemoryFlags::empty(),
@@ -278,18 +282,18 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let min_segment_size = opts.minimum_segment_size();
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
+    let lock_meta = opts.lock_meta();
 
-    let size = if let Some(cap) = opts.capacity {
-      file_size.max(cap as u64)
-    } else {
-      file_size
-    };
-
-    check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
+    if !create_new {
+      let (_, prefix_size) = header_meta::<H>(reserved, true);
+      if file_size.checked_sub(opts.offset).unwrap_or_default() < prefix_size as u64 {
+        return Err(invalid_input("file is not in a valid layout"));
+      }
+    }
 
     if let Some(cap) = opts.capacity {
-      if file_size < cap as u64 {
-        file.set_len(cap as u64)?;
+      if file_size < opts.offset + cap as u64 {
+        file.set_len(opts.offset + cap as u64)?;
       }
     }
 
@@ -339,6 +343,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: cap as u32,
           reserved,
+          header_offset: header_ptr_offset,
+          lock_meta,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
@@ -357,6 +363,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           read_only: false,
           max_retries: opts.maximum_retries(),
         };
+
+        if lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       })
@@ -439,6 +449,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       mopts
     };
 
+    let (_, prefix_size) = header_meta::<H>(reserved as usize, true);
+    if size.checked_sub(opts.offset).unwrap_or_default() < prefix_size as u64 {
+      return Err(invalid_input("file is not in a valid layout"));
+    }
+
     unsafe {
       f(mmap_opts, &file).and_then(|mmap| {
         let len = mmap.len();
@@ -458,6 +473,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: len as u32,
           reserved,
+          header_offset: header_ptr_offset,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
@@ -475,7 +491,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: true,
           max_retries: opts.maximum_retries(),
+          lock_meta: opts.lock_meta(),
         };
+
+        if this.lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       })
@@ -529,6 +550,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
         let this = Self {
           reserved: reserved as usize,
+          header_offset: header_ptr_offset,
           flag: MemoryFlags::MMAP,
           cap: map_cap as u32,
           backend: MemoryBackend::AnonymousMmap { buf: mmap },
@@ -542,7 +564,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          lock_meta: opts.lock_meta(),
         };
+
+        if this.lock_meta {
+          this.mlock(header_ptr_offset, mem::size_of::<H>())?;
+        }
 
         Ok(this)
       }
@@ -601,71 +628,99 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
   /// ## Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    #[cfg(not(windows))]
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        let ptr = buf.as_ptr().add(offset);
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr();
+        let ptr = buf.as_ref().as_ptr().add(offset);
+        rustix::mm::mlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      MemoryBackend::AnonymousMmap { buf } => {
+        let buf_len = buf.len();
+        if offset + len > buf_len {
+          return Err(range_out_of_bounds(offset, len, buf_len));
+        }
+
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       _ => Ok(()),
     }
+
+    #[cfg(windows)]
+    {
+      let _ = offset;
+      let _ = len;
+      Ok(())
+    }
   }
 
   /// ## Safety
   /// - offset and len must be valid and in bounds.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
+    #[cfg(not(windows))]
     match &self.backend {
       MemoryBackend::MmapMut { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr().add(offset);
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::munlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       MemoryBackend::Mmap { buf, .. } => {
-        let buf_len = (**buf).len();
+        let buf = &**buf;
+        let buf_len = buf.len();
         if offset + len > buf_len {
-          return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "offset and len must be valid and in bounds",
-          ));
+          return Err(range_out_of_bounds(offset, len, buf_len));
         }
 
-        let ptr = (**buf).as_ref().as_ptr();
+        let ptr = buf.as_ref().as_ptr().add(offset);
+        rustix::mm::munlock(ptr as _, len)
+          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+      }
+      MemoryBackend::AnonymousMmap { buf, .. } => {
+        let buf_len = buf.len();
+        if offset + len > buf_len {
+          return Err(range_out_of_bounds(offset, len, buf_len));
+        }
+
+        let ptr = buf.as_ref().as_ptr().add(offset);
         rustix::mm::munlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
       _ => Ok(()),
+    }
+
+    #[cfg(windows)]
+    {
+      let _ = offset;
+      let _ = len;
+      Ok(())
     }
   }
 
@@ -691,7 +746,15 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn flush_range(&self, offset: usize, len: usize) -> std::io::Result<()> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe { (**mmap).flush_range(offset, len) },
+      MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        mmap.flush_range(offset, len)
+      },
       _ => Ok(()),
     }
   }
@@ -701,7 +764,13 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     match &self.backend {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       MemoryBackend::MmapMut { buf: mmap, .. } => unsafe {
-        (**mmap).flush_async_range(offset, len)
+        let mmap = &**mmap;
+        let mmap_len = mmap.len();
+        if offset + len > mmap_len {
+          return Err(range_out_of_bounds(offset, len, mmap_len));
+        }
+
+        mmap.flush_async_range(offset, len)
       },
       _ => Ok(()),
     }
@@ -753,6 +822,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
   pub(crate) unsafe fn unmount(&mut self) {
+    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+    if self.lock_meta {
+      let _ = self.munlock(self.header_offset, mem::size_of::<H>());
+    }
+
     // Any errors during unmapping/closing are ignored as the only way
     // to report them would be through panicking which is highly discouraged
     // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
@@ -798,13 +872,18 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 }
 
 #[inline]
-fn check_capacity<H>(reserved: usize, unify: bool, capacity: usize) -> Result<usize, Error> {
-  let (header_ptr_offset, prefix_size) = if unify {
+fn header_meta<H>(reserved: usize, unify: bool) -> (usize, usize) {
+  if unify {
     let offset = align_offset::<H>(reserved as u32) as usize + mem::align_of::<H>();
     (offset, offset + mem::size_of::<H>())
   } else {
     (reserved + 1, reserved + 1)
-  };
+  }
+}
+
+#[inline]
+fn check_capacity<H>(reserved: usize, unify: bool, capacity: usize) -> Result<usize, Error> {
+  let (header_ptr_offset, prefix_size) = header_meta::<H>(reserved, unify);
 
   if prefix_size > capacity {
     return Err(Error::InsufficientSpace {

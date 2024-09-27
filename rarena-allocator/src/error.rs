@@ -147,14 +147,13 @@ pub enum Error {
   /// The arena is read-only
   ReadOnly,
 
-  /// The requested size is larger than the page size
-  LargerThanPageSize {
-    /// The requested size
-    requested: u32,
-    /// The page size
-    page_size: u32,
-  },
-
+  // /// The requested size is larger than the page size
+  // LargerThanPageSize {
+  //   /// The requested size
+  //   requested: u32,
+  //   /// The page size
+  //   page_size: u32,
+  // },
   /// Index is out of range
   OutOfBounds {
     /// The offset
@@ -174,16 +173,16 @@ impl From<dbutils::leb128::DecodeVarintError> for Error {
   }
 }
 
-impl Error {
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  pub(crate) const fn larger_than_page_size(requested: u32, page_size: u32) -> Self {
-    Self::LargerThanPageSize {
-      requested,
-      page_size,
-    }
-  }
-}
+// impl Error {
+//   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+//   #[inline]
+//   pub(crate) const fn larger_than_page_size(requested: u32, page_size: u32) -> Self {
+//     Self::LargerThanPageSize {
+//       requested,
+//       page_size,
+//     }
+//   }
+// }
 
 impl core::fmt::Display for Error {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -197,14 +196,14 @@ impl core::fmt::Display for Error {
         requested, available
       ),
       Self::ReadOnly => write!(f, "Arena is read-only"),
-      Self::LargerThanPageSize {
-        requested,
-        page_size,
-      } => write!(
-        f,
-        "Allocation failed: cannot allocate in the same page, requested size is {}, but the page size is {}",
-        requested, page_size
-      ),
+      // Self::LargerThanPageSize {
+      //   requested,
+      //   page_size,
+      // } => write!(
+      //   f,
+      //   "Allocation failed: cannot allocate in the same page, requested size is {}, but the page size is {}",
+      //   requested, page_size
+      // ),
       Self::OutOfBounds { offset, allocated } => write!(
         f,
         "Index out of bounds: offset {} is out of range, the current allocated size is {}",

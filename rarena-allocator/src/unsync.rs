@@ -299,17 +299,17 @@ impl Allocator for Arena {
     })
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
-    self
-      .alloc_aligned_bytes_within_page_in::<T>(size)
-      .map(|a| match a {
-        None => BytesRefMut::null(self),
-        Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-      })
-  }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // #[inline]
+  // fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
+  //   self
+  //     .alloc_aligned_bytes_within_page_in::<T>(size)
+  //     .map(|a| match a {
+  //       None => BytesRefMut::null(self),
+  //       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //     })
+  // }
 
   #[inline]
   fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
@@ -319,39 +319,39 @@ impl Allocator for Arena {
     })
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
-    self.alloc_bytes_within_page_in(size).map(|a| match a {
-      None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
-    })
-  }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // #[inline]
+  // fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
+  //   self.alloc_bytes_within_page_in(size).map(|a| match a {
+  //     None => BytesRefMut::null(self),
+  //     Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //   })
+  // }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  #[inline]
-  unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
-    if mem::size_of::<T>() == 0 {
-      return Ok(RefMut::new_zst(self));
-    }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // #[inline]
+  // unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error> {
+  //   if mem::size_of::<T>() == 0 {
+  //     return Ok(RefMut::new_zst(self));
+  //   }
 
-    let allocated = self
-      .alloc_within_page_in::<T>()?
-      .expect("allocated size is not zero, but get None");
-    let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.memory_offset as usize) };
-    if mem::needs_drop::<T>() {
-      unsafe {
-        let ptr: *mut MaybeUninit<T> = ptr.as_ptr().cast();
-        ptr::write(ptr, MaybeUninit::uninit());
+  //   let allocated = self
+  //     .alloc_within_page_in::<T>()?
+  //     .expect("allocated size is not zero, but get None");
+  //   let ptr = unsafe { self.get_aligned_pointer_mut::<T>(allocated.memory_offset as usize) };
+  //   if mem::needs_drop::<T>() {
+  //     unsafe {
+  //       let ptr: *mut MaybeUninit<T> = ptr.as_ptr().cast();
+  //       ptr::write(ptr, MaybeUninit::uninit());
 
-        Ok(RefMut::new(ptr::read(ptr), allocated, self))
-      }
-    } else {
-      Ok(RefMut::new_inline(ptr, allocated, self))
-    }
-  }
+  //       Ok(RefMut::new(ptr::read(ptr), allocated, self))
+  //     }
+  //   } else {
+  //     Ok(RefMut::new_inline(ptr, allocated, self))
+  //   }
+  // }
 
   #[inline]
   fn allocated(&self) -> usize {
@@ -568,24 +568,30 @@ impl Allocator for Arena {
     unsafe { self.inner.as_ref().path() }
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().mlock(offset, len) }
+    #[cfg(not(windows))]
+    unsafe {
+      self.inner.as_ref().mlock(offset, len)
+    }
+
+    #[cfg(windows)]
+    Ok(())
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows)))]
-  #[cfg_attr(
-    docsrs,
-    doc(cfg(all(feature = "memmap", not(target_family = "wasm"), not(windows))))
-  )]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
   unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    unsafe { self.inner.as_ref().munlock(offset, len) }
+    #[cfg(not(windows))]
+    unsafe {
+      self.inner.as_ref().munlock(offset, len)
+    }
+
+    #[cfg(windows)]
+    Ok(())
   }
 
   #[inline]
@@ -888,72 +894,72 @@ impl Arena {
     }
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn alloc_bytes_within_page_in(&self, size: u32) -> Result<Option<Meta>, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // fn alloc_bytes_within_page_in(&self, size: u32) -> Result<Option<Meta>, Error> {
+  //   if self.ro {
+  //     return Err(Error::ReadOnly);
+  //   }
 
-    if size == 0 {
-      return Ok(None);
-    }
+  //   if size == 0 {
+  //     return Ok(None);
+  //   }
 
-    if size > self.page_size {
-      return Err(Error::larger_than_page_size(size, self.page_size));
-    }
+  //   if size > self.page_size {
+  //     return Err(Error::larger_than_page_size(size, self.page_size));
+  //   }
 
-    let header = self.header_mut();
-    let mut padding_to_next_page = 0;
+  //   let header = self.header_mut();
+  //   let mut padding_to_next_page = 0;
 
-    let page_boundary = self.nearest_page_boundary(header.allocated);
-    let mut want = header.allocated + size;
+  //   let page_boundary = self.nearest_page_boundary(header.allocated);
+  //   let mut want = header.allocated + size;
 
-    // Ensure that the allocation will fit within page
-    if want > page_boundary {
-      // Adjust the allocation to start at the next page boundary
-      padding_to_next_page = page_boundary - header.allocated;
-      want += padding_to_next_page;
-    }
+  //   // Ensure that the allocation will fit within page
+  //   if want > page_boundary {
+  //     // Adjust the allocation to start at the next page boundary
+  //     padding_to_next_page = page_boundary - header.allocated;
+  //     want += padding_to_next_page;
+  //   }
 
-    if want <= self.cap {
-      let offset = header.allocated;
-      header.allocated = want;
+  //   if want <= self.cap {
+  //     let offset = header.allocated;
+  //     header.allocated = want;
 
-      #[cfg(feature = "tracing")]
-      tracing::debug!(
-        "allocate {} bytes at offset {} from memory",
-        size + padding_to_next_page,
-        offset
-      );
+  //     #[cfg(feature = "tracing")]
+  //     tracing::debug!(
+  //       "allocate {} bytes at offset {} from memory",
+  //       size + padding_to_next_page,
+  //       offset
+  //     );
 
-      let mut allocated = Meta::new(self.ptr as _, offset, size + padding_to_next_page);
-      allocated.ptr_offset = allocated.memory_offset + padding_to_next_page;
-      allocated.ptr_size = size;
-      unsafe { allocated.clear(self) };
+  //     let mut allocated = Meta::new(self.ptr as _, offset, size + padding_to_next_page);
+  //     allocated.ptr_offset = allocated.memory_offset + padding_to_next_page;
+  //     allocated.ptr_size = size;
+  //     unsafe { allocated.clear(self) };
 
-      #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
-      self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+  //     #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+  //     self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
 
-      return Ok(Some(allocated));
-    }
+  //     return Ok(Some(allocated));
+  //   }
 
-    Err(Error::InsufficientSpace {
-      requested: want - header.allocated,
-      available: self.remaining() as u32,
-    })
-  }
+  //   Err(Error::InsufficientSpace {
+  //     requested: want - header.allocated,
+  //     available: self.remaining() as u32,
+  //   })
+  // }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  fn nearest_page_boundary(&self, offset: u32) -> u32 {
-    // Calculate the nearest page boundary after the offset
-    let remainder = offset % self.page_size;
-    if remainder == 0 {
-      offset // Already at a page boundary
-    } else {
-      offset + (self.page_size - remainder)
-    }
-  }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[inline]
+  // fn nearest_page_boundary(&self, offset: u32) -> u32 {
+  //   // Calculate the nearest page boundary after the offset
+  //   let remainder = offset % self.page_size;
+  //   if remainder == 0 {
+  //     offset // Already at a page boundary
+  //   } else {
+  //     offset + (self.page_size - remainder)
+  //   }
+  // }
 
   fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
@@ -1012,64 +1018,64 @@ impl Arena {
     }
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn alloc_aligned_bytes_within_page_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // fn alloc_aligned_bytes_within_page_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
+  //   if self.ro {
+  //     return Err(Error::ReadOnly);
+  //   }
 
-    let t_size = mem::size_of::<T>();
+  //   let t_size = mem::size_of::<T>();
 
-    if t_size == 0 {
-      return self.alloc_bytes_within_page_in(extra);
-    }
+  //   if t_size == 0 {
+  //     return self.alloc_bytes_within_page_in(extra);
+  //   }
 
-    let header = self.header_mut();
-    let allocated = header.allocated;
+  //   let header = self.header_mut();
+  //   let allocated = header.allocated;
 
-    let page_boundary = self.nearest_page_boundary(allocated);
-    let mut aligned_offset = align_offset::<T>(allocated);
-    let size = t_size as u32;
-    let mut want = aligned_offset + size + extra;
-    let mut estimated_size = want - allocated;
+  //   let page_boundary = self.nearest_page_boundary(allocated);
+  //   let mut aligned_offset = align_offset::<T>(allocated);
+  //   let size = t_size as u32;
+  //   let mut want = aligned_offset + size + extra;
+  //   let mut estimated_size = want - allocated;
 
-    // Ensure that the allocation will fit within page
-    if want > page_boundary {
-      aligned_offset = align_offset::<T>(page_boundary);
-      want = aligned_offset + size + extra;
-      estimated_size = (aligned_offset - page_boundary) + size + extra;
-    }
+  //   // Ensure that the allocation will fit within page
+  //   if want > page_boundary {
+  //     aligned_offset = align_offset::<T>(page_boundary);
+  //     want = aligned_offset + size + extra;
+  //     estimated_size = (aligned_offset - page_boundary) + size + extra;
+  //   }
 
-    if estimated_size > self.page_size {
-      return Err(Error::larger_than_page_size(estimated_size, self.page_size));
-    }
+  //   if estimated_size > self.page_size {
+  //     return Err(Error::larger_than_page_size(estimated_size, self.page_size));
+  //   }
 
-    if want <= self.cap {
-      let offset = header.allocated;
-      header.allocated = want;
+  //   if want <= self.cap {
+  //     let offset = header.allocated;
+  //     header.allocated = want;
 
-      let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
-      allocated.ptr_offset = aligned_offset;
-      allocated.ptr_size = size + extra;
-      unsafe { allocated.clear(self) };
+  //     let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
+  //     allocated.ptr_offset = aligned_offset;
+  //     allocated.ptr_size = size + extra;
+  //     unsafe { allocated.clear(self) };
 
-      #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
-      self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+  //     #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+  //     self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
 
-      #[cfg(feature = "tracing")]
-      tracing::debug!(
-        "allocate {} bytes at offset {} from memory",
-        want - offset,
-        offset
-      );
-      return Ok(Some(allocated));
-    }
+  //     #[cfg(feature = "tracing")]
+  //     tracing::debug!(
+  //       "allocate {} bytes at offset {} from memory",
+  //       want - offset,
+  //       offset
+  //     );
+  //     return Ok(Some(allocated));
+  //   }
 
-    Err(Error::InsufficientSpace {
-      requested: want,
-      available: self.remaining() as u32,
-    })
-  }
+  //   Err(Error::InsufficientSpace {
+  //     requested: want,
+  //     available: self.remaining() as u32,
+  //   })
+  // }
 
   fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
     if self.ro {
@@ -1127,68 +1133,68 @@ impl Arena {
     }
   }
 
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  fn alloc_within_page_in<T>(&self) -> Result<Option<Meta>, Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
-    }
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // fn alloc_within_page_in<T>(&self) -> Result<Option<Meta>, Error> {
+  //   if self.ro {
+  //     return Err(Error::ReadOnly);
+  //   }
 
-    let t_size = mem::size_of::<T>();
+  //   let t_size = mem::size_of::<T>();
 
-    if t_size == 0 {
-      return Ok(None);
-    }
+  //   if t_size == 0 {
+  //     return Ok(None);
+  //   }
 
-    if t_size as u32 > self.page_size {
-      return Err(Error::larger_than_page_size(t_size as u32, self.page_size));
-    }
+  //   if t_size as u32 > self.page_size {
+  //     return Err(Error::larger_than_page_size(t_size as u32, self.page_size));
+  //   }
 
-    let header = self.header_mut();
-    let allocated = header.allocated;
-    let page_boundary = self.nearest_page_boundary(allocated);
-    let mut aligned_offset = align_offset::<T>(allocated);
-    let size = mem::size_of::<T>() as u32;
-    let mut want = aligned_offset + size;
-    let mut estimated_size = want - allocated;
+  //   let header = self.header_mut();
+  //   let allocated = header.allocated;
+  //   let page_boundary = self.nearest_page_boundary(allocated);
+  //   let mut aligned_offset = align_offset::<T>(allocated);
+  //   let size = mem::size_of::<T>() as u32;
+  //   let mut want = aligned_offset + size;
+  //   let mut estimated_size = want - allocated;
 
-    // Ensure that the allocation will fit within page
-    if want > page_boundary {
-      aligned_offset = align_offset::<T>(page_boundary);
-      want = aligned_offset + size;
-      estimated_size = (aligned_offset - page_boundary) + size;
-    }
+  //   // Ensure that the allocation will fit within page
+  //   if want > page_boundary {
+  //     aligned_offset = align_offset::<T>(page_boundary);
+  //     want = aligned_offset + size;
+  //     estimated_size = (aligned_offset - page_boundary) + size;
+  //   }
 
-    if estimated_size > self.page_size {
-      return Err(Error::larger_than_page_size(estimated_size, self.page_size));
-    }
+  //   if estimated_size > self.page_size {
+  //     return Err(Error::larger_than_page_size(estimated_size, self.page_size));
+  //   }
 
-    if want <= self.cap {
-      let offset = header.allocated;
-      header.allocated = want;
-      let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
-      allocated.ptr_offset = aligned_offset;
-      allocated.ptr_size = size;
-      unsafe { allocated.clear(self) };
+  //   if want <= self.cap {
+  //     let offset = header.allocated;
+  //     header.allocated = want;
+  //     let mut allocated = Meta::new(self.ptr as _, offset, want - offset);
+  //     allocated.ptr_offset = aligned_offset;
+  //     allocated.ptr_size = size;
+  //     unsafe { allocated.clear(self) };
 
-      #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
-      self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
+  //     #[cfg(all(test, feature = "memmap", not(target_family = "wasm")))]
+  //     self.check_page_boundary(allocated.ptr_offset, allocated.ptr_size);
 
-      #[cfg(feature = "tracing")]
-      tracing::debug!(
-        "allocate {} bytes at offset {} from memory",
-        want - offset,
-        offset
-      );
+  //     #[cfg(feature = "tracing")]
+  //     tracing::debug!(
+  //       "allocate {} bytes at offset {} from memory",
+  //       want - offset,
+  //       offset
+  //     );
 
-      unsafe { allocated.clear(self) };
-      return Ok(Some(allocated));
-    }
+  //     unsafe { allocated.clear(self) };
+  //     return Ok(Some(allocated));
+  //   }
 
-    Err(Error::InsufficientSpace {
-      requested: want,
-      available: self.remaining() as u32,
-    })
-  }
+  //   Err(Error::InsufficientSpace {
+  //     requested: want,
+  //     available: self.remaining() as u32,
+  //   })
+  // }
 
   fn alloc_slow_path_pessimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
@@ -1416,23 +1422,23 @@ impl Arena {
     size + align - 1
   }
 
-  #[cfg(test)]
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[inline]
-  fn check_page_boundary(&self, offset: u32, len: u32) {
-    if len == 0 {
-      return; // A zero-length range is trivially within the same "page"
-    }
+  // #[cfg(test)]
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[inline]
+  // fn check_page_boundary(&self, offset: u32, len: u32) {
+  //   if len == 0 {
+  //     return; // A zero-length range is trivially within the same "page"
+  //   }
 
-    // Calculate the page boundary of the start and end of the range
-    let start_page = offset / self.page_size;
-    let end_page = (offset + len - 1) / self.page_size;
+  //   // Calculate the page boundary of the start and end of the range
+  //   let start_page = offset / self.page_size;
+  //   let end_page = (offset + len - 1) / self.page_size;
 
-    assert_eq!(
-      start_page, end_page,
-      "start and end of range must be in the same page"
-    );
-  }
+  //   assert_eq!(
+  //     start_page, end_page,
+  //     "start and end of range must be in the same page"
+  //   );
+  // }
 
   #[cfg(test)]
   #[cfg(feature = "std")]
