@@ -188,7 +188,9 @@ fn invalid_data<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[inline]
-fn invalid_input<E: std::error::Error + Send + Sync + 'static>(e: E) -> std::io::Error {
+fn invalid_input<E: Into<std::boxed::Box<dyn std::error::Error + Send + Sync>>>(
+  e: E,
+) -> std::io::Error {
   std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
 }
 

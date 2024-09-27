@@ -68,7 +68,7 @@ pub struct Options {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   truncate: bool,
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  offset: u64,
+  pub(crate) offset: u64,
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   stack: bool,
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]

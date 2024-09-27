@@ -279,17 +279,16 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let freelist = opts.freelist();
     let magic_version = opts.magic_version();
 
-    let size = if let Some(cap) = opts.capacity {
-      file_size.max(cap as u64)
-    } else {
-      file_size
-    };
-
-    check_capacity::<H>(reserved, true, size as usize).map_err(invalid_input)?;
+    if !create_new {
+      let (_, prefix_size) = header_meta::<H>(reserved, true);
+      if file_size.checked_sub(opts.offset).unwrap_or_default() < prefix_size as u64 {
+        return Err(invalid_input("file is not in a valid layout"));
+      }
+    }
 
     if let Some(cap) = opts.capacity {
-      if file_size < cap as u64 {
-        file.set_len(cap as u64)?;
+      if file_size < opts.offset + cap as u64 {
+        file.set_len(opts.offset + cap as u64)?;
       }
     }
 
@@ -438,6 +437,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       }
       mopts
     };
+
+    let (_, prefix_size) = header_meta::<H>(reserved as usize, true);
+    if size.checked_sub(opts.offset).unwrap_or_default() < prefix_size as u64 {
+      return Err(invalid_input("file is not in a valid layout"));
+    }
 
     unsafe {
       f(mmap_opts, &file).and_then(|mmap| {
@@ -798,13 +802,18 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 }
 
 #[inline]
-fn check_capacity<H>(reserved: usize, unify: bool, capacity: usize) -> Result<usize, Error> {
-  let (header_ptr_offset, prefix_size) = if unify {
+fn header_meta<H>(reserved: usize, unify: bool) -> (usize, usize) {
+  if unify {
     let offset = align_offset::<H>(reserved as u32) as usize + mem::align_of::<H>();
     (offset, offset + mem::size_of::<H>())
   } else {
     (reserved + 1, reserved + 1)
-  };
+  }
+}
+
+#[inline]
+fn check_capacity<H>(reserved: usize, unify: bool, capacity: usize) -> Result<usize, Error> {
+  let (header_ptr_offset, prefix_size) = header_meta::<H>(reserved, unify);
 
   if prefix_size > capacity {
     return Err(Error::InsufficientSpace {
