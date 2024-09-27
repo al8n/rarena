@@ -257,45 +257,45 @@ pub trait Allocator: sealed::Sealed {
       .map(|mut b| b.to_owned())
   }
 
-  /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// ## Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_owned_within_page::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self
-      .alloc_aligned_bytes_within_page::<T>(size)
-      .map(|mut b| b.to_owned())
-  }
+  // /// Allocates an owned byte slice that can hold a well-aligned `T` and extra `size` bytes.
+  // ///
+  // /// The layout of the allocated memory is:
+  // ///
+  // /// ```text
+  // /// | T | [u8; size] |
+  // /// ```
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```ignore
+  // /// let mut bytes = arena.alloc_aligned_bytes_owned_within_page::<T>(extra).unwrap();
+  // /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // fn alloc_aligned_bytes_owned_within_page<T>(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+  //   self
+  //     .alloc_aligned_bytes_within_page::<T>(size)
+  //     .map(|mut b| b.to_owned())
+  // }
 
-  /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
-  ///
-  /// The layout of the allocated memory is:
-  ///
-  /// ```text
-  /// | T | [u8; size] |
-  /// ```
-  ///
-  /// ## Example
-  ///
-  /// ```ignore
-  /// let mut bytes = arena.alloc_aligned_bytes_within_page::<T>(extra).unwrap();
-  /// bytes.put(val).unwrap(); // write `T` to the byte slice.
-  /// ```
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
+  // /// Allocates a byte slice that can hold a well-aligned `T` and extra `size` bytes within a page.
+  // ///
+  // /// The layout of the allocated memory is:
+  // ///
+  // /// ```text
+  // /// | T | [u8; size] |
+  // /// ```
+  // ///
+  // /// ## Example
+  // ///
+  // /// ```ignore
+  // /// let mut bytes = arena.alloc_aligned_bytes_within_page::<T>(extra).unwrap();
+  // /// bytes.put(val).unwrap(); // write `T` to the byte slice.
+  // /// ```
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // fn alloc_aligned_bytes_within_page<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
 
   /// Allocates a slice of memory in the allocator.
   ///
@@ -311,31 +311,31 @@ pub trait Allocator: sealed::Sealed {
     self.alloc_bytes(size).map(|mut b| b.to_owned())
   }
 
-  /// Allocates an owned slice of memory in the allocator in the same page.
-  ///
-  /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Allocator::alloc_bytes_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
-    self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
-  }
+  // /// Allocates an owned slice of memory in the allocator in the same page.
+  // ///
+  // /// Compared to [`alloc_bytes_owned`](Self::alloc_bytes_owned), this method only allocates from the main memory, so
+  // /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  // /// this method will still return an error.
+  // ///
+  // /// The cost of this method is an extra atomic operation, compared to [`alloc_bytes_within_page`](Allocator::alloc_bytes_within_page).
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // fn alloc_bytes_owned_within_page(&self, size: u32) -> Result<BytesMut<Self>, Error> {
+  //   self.alloc_bytes_within_page(size).map(|mut b| b.to_owned())
+  // }
 
-  /// Allocates a slice of memory in the allocator in the same page.
-  ///
-  /// Compared to [`alloc_bytes`](Allocator::alloc_bytes), this method only allocates from the main memory, so
-  /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
-  /// this method will still return an error.
-  ///
-  /// The [`BytesRefMut`](crate::BytesRefMut) is zeroed out.
-  ///
-  /// If you want a [`BytesMut`](crate::BytesMut), see [`alloc_bytes_owned_within_page`](Allocator::alloc_bytes_owned_within_page).
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
+  // /// Allocates a slice of memory in the allocator in the same page.
+  // ///
+  // /// Compared to [`alloc_bytes`](Allocator::alloc_bytes), this method only allocates from the main memory, so
+  // /// the it means that if main memory does not have enough space but the freelist has segments can hold the size,
+  // /// this method will still return an error.
+  // ///
+  // /// The [`BytesRefMut`](crate::BytesRefMut) is zeroed out.
+  // ///
+  // /// If you want a [`BytesMut`](crate::BytesMut), see [`alloc_bytes_owned_within_page`](Allocator::alloc_bytes_owned_within_page).
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error>;
 
   /// Allocates a `T` in the allocator. Like [`alloc`](Allocator::alloc), but returns an `Owned`.
   ///
@@ -363,24 +363,24 @@ pub trait Allocator: sealed::Sealed {
     self.alloc::<T>().map(|mut r| r.to_owned())
   }
 
-  /// Allocates a `T` in the allocator in the same page. Like [`alloc_within_page`](Allocator::alloc_within_page), but returns an `Owned`.
-  ///
-  /// ## Safety
-  /// - See [`alloc`](Allocator::alloc) for safety.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
-    self.alloc_within_page::<T>().map(|mut r| r.to_owned())
-  }
+  // /// Allocates a `T` in the allocator in the same page. Like [`alloc_within_page`](Allocator::alloc_within_page), but returns an `Owned`.
+  // ///
+  // /// ## Safety
+  // /// - See [`alloc`](Allocator::alloc) for safety.
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn alloc_owned_within_page<T>(&self) -> Result<Owned<T, Self>, Error> {
+  //   self.alloc_within_page::<T>().map(|mut r| r.to_owned())
+  // }
 
-  /// Allocates a `T` in the allocator in the same page.
-  ///
-  /// ## Safety
-  ///
-  /// - See [`alloc`](Allocator::alloc) for safety.
-  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
-  unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error>;
+  // /// Allocates a `T` in the allocator in the same page.
+  // ///
+  // /// ## Safety
+  // ///
+  // /// - See [`alloc`](Allocator::alloc) for safety.
+  // #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  // #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
+  // unsafe fn alloc_within_page<T>(&self) -> Result<RefMut<'_, T, Self>, Error>;
 
   /// Returns the number of bytes allocated by the allocator.
   ///
