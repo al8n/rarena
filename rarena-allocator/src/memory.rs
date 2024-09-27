@@ -806,6 +806,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
   pub(crate) unsafe fn unmount(&mut self) {
+    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
     if self.lock_meta {
       let _ = self.munlock(self.header_offset, mem::size_of::<H>());
     }
