@@ -137,12 +137,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn truncate(&mut self, allocated: usize, size: usize) {
     match &mut self.backend {
       MemoryBackend::Vec(aligned_vec, _) => {
-        let mut new = AlignedVec::new::<H>(size, aligned_vec.align);
+        let new = AlignedVec::new::<H>(size, aligned_vec.align);
 
         unsafe {
-          new
-            .as_mut_ptr()
-            .copy_from(aligned_vec.as_mut_ptr(), allocated);
+          let ptr = new.ptr.as_ptr();
+          ptr::copy_nonoverlapping(aligned_vec.ptr.as_ptr(), ptr, allocated);
+          self.ptr = ptr;
         }
 
         *aligned_vec = new;
