@@ -146,6 +146,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         }
 
         *aligned_vec = new;
+        self.cap = size as u32;
       }
     }
   }
