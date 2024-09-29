@@ -43,6 +43,16 @@ fn truncate(mut arena: Arena) {
   unsafe {
     assert_eq!(arena.get_bytes(offset, 100), [1u8; 100]);
   }
+
+  let err = arena.alloc_bytes(10).unwrap_err();
+  assert!(matches!(err, Error::InsufficientSpace { .. }));
+
+  let _ = arena.truncate(allocated + 100);
+  assert_eq!(arena.allocated(), allocated);
+  assert_eq!(arena.capacity(), allocated + 100);
+
+  let b = arena.alloc_bytes(10).unwrap();
+  assert_eq!(b.capacity(), 10);
 }
 
 #[test]

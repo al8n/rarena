@@ -137,16 +137,18 @@ impl Segment {
 /// Arena should be lock-free
 pub struct Arena {
   ptr: *mut u8,
+  cap: u32,
+  inner: NonNull<Memory>,
+
+  // Once constructed, the below fields are immutable
   reserved: usize,
   data_offset: u32,
   flag: MemoryFlags,
   max_retries: u8,
-  inner: NonNull<Memory>,
   unify: bool,
   magic_version: u16,
   version: u16,
   ro: bool,
-  cap: u32,
   freelist: Freelist,
   page_size: u32,
 }
@@ -549,6 +551,7 @@ impl Arena {
       let memory = self.inner.as_mut();
       memory.truncate(allocated, size)?;
       self.ptr = memory.as_mut_ptr();
+      self.cap = memory.cap();
     }
     Ok(())
   }
@@ -567,6 +570,7 @@ impl Arena {
       let memory = self.inner.as_mut();
       memory.truncate(allocated, size);
       self.ptr = memory.as_mut_ptr();
+      self.cap = memory.cap();
     }
   }
 
