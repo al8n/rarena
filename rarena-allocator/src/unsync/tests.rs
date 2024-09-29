@@ -47,55 +47,65 @@ fn truncate(mut arena: Arena) {
 
 #[test]
 fn test_truncate_vec() {
-  let arena = Options::new().with_capacity(1024).alloc::<Arena>().unwrap();
-  truncate(arena);
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(1024).alloc::<Arena>().unwrap();
+    truncate(arena);
+  });
 }
 
 #[test]
 fn test_truncate_vec_unify() {
-  let arena = Options::new()
-    .with_capacity(1024)
-    .with_unify(true)
-    .alloc::<Arena>()
-    .unwrap();
-  truncate(arena);
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_unify(true)
+      .alloc::<Arena>()
+      .unwrap();
+    truncate(arena);
+  })
 }
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn test_truncate_map_anon() {
-  let arena = Options::new()
-    .with_capacity(1024)
-    .map_anon::<Arena>()
-    .unwrap();
-  truncate(arena);
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .map_anon::<Arena>()
+      .unwrap();
+    truncate(arena);
+  })
 }
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 fn test_truncate_map_anon_unify() {
-  let arena = Options::new()
-    .with_capacity(1024)
-    .with_unify(true)
-    .map_anon::<Arena>()
-    .unwrap();
-  truncate(arena);
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_unify(true)
+      .map_anon::<Arena>()
+      .unwrap();
+    truncate(arena);
+  })
 }
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[cfg_attr(miri, ignore)]
 fn test_truncate_map() {
-  let dir = tempfile::tempdir().unwrap();
-  let p = dir.path().join("test_unsync_truncate_map");
-  let arena = unsafe {
-    Options::new()
-      .with_capacity(1024)
-      .with_create_new(true)
-      .with_read(true)
-      .with_write(true)
-      .map_mut::<Arena, _>(&p)
-      .unwrap()
-  };
-  truncate(arena);
+  crate::tests::run(|| {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("test_unsync_truncate_map");
+    let arena = unsafe {
+      Options::new()
+        .with_capacity(1024)
+        .with_create_new(true)
+        .with_read(true)
+        .with_write(true)
+        .map_mut::<Arena, _>(&p)
+        .unwrap()
+    };
+    truncate(arena);
+  })
 }
