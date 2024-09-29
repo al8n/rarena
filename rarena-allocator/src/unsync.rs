@@ -528,6 +528,45 @@ impl Allocator for Arena {
 }
 
 impl Arena {
+  /// Truncate the ARENA to a new capacity.
+  ///
+  /// **Note:** If the new capacity is less than the current allocated size, then the ARENA will be truncated to the allocated size.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn truncate(&mut self, mut size: usize) -> std::io::Result<()> {
+    if self.ro {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "ARENA is read-only",
+      ));
+    }
+
+    let allocated = self.allocated();
+    if allocated >= size {
+      size = allocated;
+    }
+
+    unsafe {
+      let memory = self.inner.as_mut();
+      memory.truncate(allocated, size)?;
+      self.ptr = memory.as_mut_ptr();
+    }
+    Ok(())
+  }
+
+  #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
+  pub fn truncate(&mut self, mut size: usize) {
+    let allocated = self.allocated();
+    if allocated >= size {
+      size = allocated;
+    }
+
+    unsafe {
+      let memory = self.inner.as_mut();
+      memory.truncate(allocated, size);
+      self.ptr = memory.as_mut_ptr();
+    }
+  }
+
   #[inline]
   fn header(&self) -> &sealed::Header {
     // Safety:
