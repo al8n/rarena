@@ -40,9 +40,7 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   refs: R,
   reserved: usize,
   cap: u32,
-  header_offset: usize,
   data_offset: usize,
-  lock_meta: bool,
   pub(crate) flag: MemoryFlags,
   header_ptr: Either<u32, H>,
   ptr: *mut u8,
@@ -54,6 +52,11 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   freelist: Freelist,
   read_only: bool,
   max_retries: u8,
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  header_offset: usize,
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  lock_meta: bool,
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -276,7 +279,9 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       Ok(Self {
         cap: vec_cap,
+        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         lock_meta: false,
+        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         header_offset: header_ptr_offset,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
@@ -411,8 +416,6 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: cap as u32,
           reserved,
-          header_offset: header_ptr_offset,
-          lock_meta,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
@@ -431,6 +434,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          lock_meta: false,
+          header_offset: header_ptr_offset,
         };
 
         if lock_meta {
@@ -550,7 +555,6 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: len as u32,
           reserved,
-          header_offset: header_ptr_offset,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
@@ -569,6 +573,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           read_only: true,
           max_retries: opts.maximum_retries(),
           lock_meta: opts.lock_meta(),
+          header_offset: header_ptr_offset,
         };
 
         if this.lock_meta {

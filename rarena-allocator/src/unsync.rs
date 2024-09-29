@@ -553,6 +553,9 @@ impl Arena {
     Ok(())
   }
 
+  /// Truncate the ARENA to a new capacity.
+  ///
+  /// **Note:** If the new capacity is less than the current allocated size, then the ARENA will be truncated to the allocated size.
   #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
   pub fn truncate(&mut self, mut size: usize) {
     let allocated = self.allocated();
