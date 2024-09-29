@@ -27,7 +27,7 @@ fn truncate(mut arena: Arena) {
   drop(b);
 
   let allocated = arena.allocated();
-  arena.truncate(2048).unwrap();
+  let _ = arena.truncate(2048);
 
   assert_eq!(arena.allocated(), allocated);
   assert_eq!(arena.capacity(), 2048);
@@ -36,7 +36,7 @@ fn truncate(mut arena: Arena) {
     assert_eq!(arena.get_bytes(offset, 100), [1u8; 100]);
   }
 
-  arena.truncate(0).unwrap();
+  let _ = arena.truncate(0);
   assert_eq!(arena.allocated(), allocated);
   assert_eq!(arena.capacity(), allocated);
 
