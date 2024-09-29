@@ -19,6 +19,7 @@ enum MemoryBackend<P: PathRefCounter> {
     path: P,
     buf: *mut memmap2::MmapMut,
     file: std::fs::File,
+    opts: Options,
     remove_on_drop: AtomicBool,
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -30,8 +31,8 @@ enum MemoryBackend<P: PathRefCounter> {
   },
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   AnonymousMmap {
-    #[allow(dead_code)]
     buf: memmap2::MmapMut,
+    opts: Options,
   },
 }
 
@@ -39,11 +40,9 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   refs: R,
   reserved: usize,
   cap: u32,
-  header_offset: usize,
   data_offset: usize,
-  lock_meta: bool,
   pub(crate) flag: MemoryFlags,
-  header_ptr: Either<*mut u8, H>,
+  header_ptr: Either<u32, H>,
   ptr: *mut u8,
   #[allow(dead_code)]
   backend: MemoryBackend<P>,
@@ -53,6 +52,11 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   freelist: Freelist,
   read_only: bool,
   max_retries: u8,
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  header_offset: usize,
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  lock_meta: bool,
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -128,6 +132,74 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     self.unify || self.flag.contains(MemoryFlags::ON_DISK)
   }
 
+  #[inline]
+  #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
+  pub(crate) fn truncate(&mut self, allocated: usize, size: usize) {
+    match &mut self.backend {
+      MemoryBackend::Vec(aligned_vec, _) => {
+        let new = AlignedVec::new::<H>(size, aligned_vec.align);
+
+        unsafe {
+          let ptr = new.ptr.as_ptr();
+          ptr::copy_nonoverlapping(aligned_vec.ptr.as_ptr(), ptr, allocated);
+          self.ptr = ptr;
+        }
+
+        *aligned_vec = new;
+        self.cap = size as u32;
+      }
+    }
+  }
+
+  #[inline]
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub(crate) fn truncate(&mut self, allocated: usize, size: usize) -> std::io::Result<()> {
+    match &mut self.backend {
+      MemoryBackend::Vec(aligned_vec, _) => {
+        let new = AlignedVec::new::<H>(size, aligned_vec.align);
+
+        unsafe {
+          let ptr = new.ptr.as_ptr();
+          ptr::copy_nonoverlapping(aligned_vec.ptr.as_ptr(), ptr, allocated);
+          self.ptr = ptr;
+        }
+
+        *aligned_vec = new;
+      }
+      MemoryBackend::MmapMut {
+        buf, file, opts, ..
+      } => unsafe {
+        let _ = Box::from_raw(*buf);
+
+        let current_file_size = file.metadata()?.len();
+        if current_file_size < opts.offset + size as u64 {
+          file.set_len(opts.offset + size as u64)?;
+        }
+
+        let mut mmap = mmap_mut(opts.with_capacity(size as u32).to_mmap_options(), file)?;
+        let ptr = mmap.as_mut_ptr();
+        *buf = Box::into_raw(Box::new(mmap));
+        self.ptr = ptr;
+      },
+      MemoryBackend::Mmap { .. } => return Ok(()),
+      MemoryBackend::AnonymousMmap { buf, opts } => {
+        opts
+          .with_capacity(size as u32)
+          .to_mmap_options()
+          .map_anon()
+          .map(|mut new| {
+            new[..allocated].copy_from_slice(&buf[..allocated]);
+            self.ptr = new.as_mut_ptr();
+            *buf = new;
+          })?;
+      }
+    }
+
+    self.cap = size as u32;
+
+    Ok(())
+  }
+
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[inline]
   pub(crate) const fn path(&self) -> Option<&PR> {
@@ -161,7 +233,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       let header_ptr = self.ptr.add(header_ptr_offset);
       let header = header_ptr.cast::<H>();
       header.write(H::new(data_offset as u32, min_segment_size));
-      (Either::Left(header_ptr), data_offset)
+      (Either::Left(header_ptr_offset as u32), data_offset)
     } else {
       (
         Either::Right(H::new(self.reserved as u32 + 1, min_segment_size)),
@@ -197,7 +269,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           slice::from_raw_parts_mut(ptr.add(reserved), 8),
         );
         header_ptr.write(H::new(data_offset as u32, min_segment_size));
-        (Either::Left(header_ptr as _), data_offset)
+        (Either::Left(header_ptr_offset as _), data_offset)
       } else {
         data_offset = reserved + 1;
         (
@@ -208,7 +280,9 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
       Ok(Self {
         cap: vec_cap,
+        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         lock_meta: false,
+        #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
         header_offset: header_ptr_offset,
         reserved: opts.reserved() as usize,
         refs: R::new(1),
@@ -343,16 +417,15 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let this = Self {
           cap: cap as u32,
           reserved,
-          header_offset: header_ptr_offset,
-          lock_meta,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::MmapMut {
             remove_on_drop: AtomicBool::new(false),
             path: PR::new(path),
             buf: Box::into_raw(Box::new(mmap)),
+            opts,
             file,
           },
-          header_ptr: Either::Left(header_ptr as _),
+          header_ptr: Either::Left(header_ptr_offset as _),
           ptr,
           refs: R::new(1),
           data_offset,
@@ -362,6 +435,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          lock_meta: false,
+          header_offset: header_ptr_offset,
         };
 
         if lock_meta {
@@ -426,8 +501,16 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         "file not found",
       ));
     }
-    let (_, file) = opts.open(&path)?;
 
+    // clear write permissions
+    let opts = opts
+      .with_create(false)
+      .with_create_new(false)
+      .with_write(false)
+      .with_append(false)
+      .with_truncate(false);
+
+    let (_, file) = opts.open(&path)?;
     let reserved = opts.reserved();
     let magic_version = opts.magic_version();
 
@@ -469,11 +552,10 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           &mmap[reserved..reserved + mem::align_of::<H>()],
         )?;
         let data_offset = header_ptr_offset + mem::size_of::<H>();
-        let header_ptr = ptr.add(header_ptr_offset) as _;
+
         let this = Self {
           cap: len as u32,
           reserved,
-          header_offset: header_ptr_offset,
           flag: MemoryFlags::ON_DISK | MemoryFlags::MMAP,
           backend: MemoryBackend::Mmap {
             remove_on_drop: AtomicBool::new(false),
@@ -481,7 +563,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
             buf: Box::into_raw(Box::new(mmap)),
             file,
           },
-          header_ptr: Either::Left(header_ptr),
+          header_ptr: Either::Left(header_ptr_offset as u32),
           ptr: ptr as _,
           refs: R::new(1),
           data_offset,
@@ -492,6 +574,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           read_only: true,
           max_retries: opts.maximum_retries(),
           lock_meta: opts.lock_meta(),
+          header_offset: header_ptr_offset,
         };
 
         if this.lock_meta {
@@ -539,7 +622,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           header_ptr
             .cast::<H>()
             .write(H::new(data_offset as u32, min_segment_size));
-          (Either::Left(header_ptr as _), data_offset)
+          (Either::Left(header_ptr_offset as _), data_offset)
         } else {
           data_offset = reserved as usize + 1;
           (
@@ -553,7 +636,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           header_offset: header_ptr_offset,
           flag: MemoryFlags::MMAP,
           cap: map_cap as u32,
-          backend: MemoryBackend::AnonymousMmap { buf: mmap },
+          backend: MemoryBackend::AnonymousMmap { buf: mmap, opts },
           refs: R::new(1),
           data_offset,
           header_ptr: header,
@@ -654,7 +737,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         rustix::mm::mlock(ptr as _, len)
           .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
       }
-      MemoryBackend::AnonymousMmap { buf } => {
+      MemoryBackend::AnonymousMmap { buf, .. } => {
         let buf_len = buf.len();
         if offset + len > buf_len {
           return Err(range_out_of_bounds(offset, len, buf_len));
@@ -887,7 +970,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn header(&self) -> &H {
     unsafe {
       match &self.header_ptr {
-        Either::Left(header_ptr) => &*(*header_ptr).cast::<H>(),
+        Either::Left(header_ptr_offset) => &*self.ptr.add(*header_ptr_offset as usize).cast::<H>(),
         Either::Right(header) => header,
       }
     }
@@ -897,7 +980,9 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn header_mut(&mut self) -> &mut H {
     unsafe {
       match &mut self.header_ptr {
-        Either::Left(header_ptr) => &mut *(*header_ptr).cast::<H>(),
+        Either::Left(header_ptr_offset) => {
+          &mut *self.ptr.add(*header_ptr_offset as usize).cast::<H>()
+        }
         Either::Right(header) => header,
       }
     }

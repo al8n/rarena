@@ -137,16 +137,18 @@ impl Segment {
 /// Arena should be lock-free
 pub struct Arena {
   ptr: *mut u8,
+  cap: u32,
+  inner: NonNull<Memory>,
+
+  // Once constructed, the below fields are immutable
   reserved: usize,
   data_offset: u32,
   flag: MemoryFlags,
   max_retries: u8,
-  inner: NonNull<Memory>,
   unify: bool,
   magic_version: u16,
   version: u16,
   ro: bool,
-  cap: u32,
   freelist: Freelist,
   page_size: u32,
 }
@@ -528,6 +530,50 @@ impl Allocator for Arena {
 }
 
 impl Arena {
+  /// Truncate the ARENA to a new capacity.
+  ///
+  /// **Note:** If the new capacity is less than the current allocated size, then the ARENA will be truncated to the allocated size.
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  pub fn truncate(&mut self, mut size: usize) -> std::io::Result<()> {
+    if self.ro {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "ARENA is read-only",
+      ));
+    }
+
+    let allocated = self.allocated();
+    if allocated >= size {
+      size = allocated;
+    }
+
+    unsafe {
+      let memory = self.inner.as_mut();
+      memory.truncate(allocated, size)?;
+      self.ptr = memory.as_mut_ptr();
+      self.cap = memory.cap();
+    }
+    Ok(())
+  }
+
+  /// Truncate the ARENA to a new capacity.
+  ///
+  /// **Note:** If the new capacity is less than the current allocated size, then the ARENA will be truncated to the allocated size.
+  #[cfg(not(all(feature = "memmap", not(target_family = "wasm"))))]
+  pub fn truncate(&mut self, mut size: usize) {
+    let allocated = self.allocated();
+    if allocated >= size {
+      size = allocated;
+    }
+
+    unsafe {
+      let memory = self.inner.as_mut();
+      memory.truncate(allocated, size);
+      self.ptr = memory.as_mut_ptr();
+      self.cap = memory.cap();
+    }
+  }
+
   #[inline]
   fn header(&self) -> &sealed::Header {
     // Safety:

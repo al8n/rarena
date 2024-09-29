@@ -13,6 +13,15 @@ pub struct BytesMut<A: Allocator> {
   allocated: Meta,
 }
 
+impl<A: Allocator> core::fmt::Debug for BytesMut<A> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    f.debug_struct("BytesRefMut")
+      .field("len", &self.len)
+      .field("meta", &self.allocated)
+      .finish()
+  }
+}
+
 unsafe impl<A: Allocator + Send> Send for BytesMut<A> {}
 unsafe impl<A: Allocator + Sync> Sync for BytesMut<A> {}
 
@@ -190,6 +199,15 @@ pub struct BytesRefMut<'a, A: Allocator> {
   len: usize,
   pub(super) allocated: Meta,
   pub(super) detach: bool,
+}
+
+impl<A: Allocator> core::fmt::Debug for BytesRefMut<'_, A> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    f.debug_struct("BytesRefMut")
+      .field("len", &self.len)
+      .field("meta", &self.allocated)
+      .finish()
+  }
 }
 
 impl<A: Allocator> ops::Deref for BytesRefMut<'_, A> {
