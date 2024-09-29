@@ -21,7 +21,7 @@ impl core::fmt::Display for MagicVersionMismatch {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     write!(
       f,
-      "magic version mismatch: expected version {}, but found version {}.",
+      "ARENA's magic version mismatch: expected version {}, but found version {}.",
       self.expected_version, self.found_version
     )
   }
@@ -53,7 +53,7 @@ impl core::fmt::Display for VersionMismatch {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     write!(
       f,
-      "version mismatch: expected version {}, but found version {}.",
+      "ARENA's version mismatch: expected version {}, but found version {}.",
       self.expected_version, self.found_version
     )
   }

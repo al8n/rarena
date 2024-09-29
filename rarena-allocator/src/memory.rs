@@ -404,8 +404,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
           (CURRENT_VERSION, magic_version)
         } else {
-          let allocated = (*header_ptr).load_allocated();
-          ptr::write_bytes(ptr.add(allocated as usize), 0, cap - allocated as usize);
+          let allocated = (*header_ptr).load_allocated() as usize;
+
+          if cap > allocated {
+            ptr::write_bytes(ptr.add(allocated), 0, cap - allocated as usize);
+          }
+
           super::sanity_check(
             Some(freelist),
             magic_version,
@@ -506,6 +510,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
     let opts = opts
       .with_create(false)
       .with_create_new(false)
+      .with_read(true)
       .with_write(false)
       .with_append(false)
       .with_truncate(false);
