@@ -324,14 +324,11 @@ macro_rules! put_byte_order {
     paste::paste! {
       #[doc = "Put a `" $ty "` value into the buffer in " $endian " byte order, return an error if the buffer does not have enough space."]
       #[inline]
-      pub fn $name(&mut self, value: $ty) -> Result<(), BufferTooSmall> {
+      pub fn $name(&mut self, value: $ty) -> Result<(), InsufficientBuffer> {
         const SIZE: usize = core::mem::size_of::<$ty>();
 
         if self.len + SIZE > self.capacity() {
-          return Err(BufferTooSmall {
-            remaining: self.capacity() - self.len,
-            want: SIZE,
-          });
+          return Err(InsufficientBuffer::with_information(SIZE, self.capacity() - self.len));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -382,7 +379,7 @@ macro_rules! put_varint {
       ///
       /// Returns the number of bytes written.
       #[inline]
-      pub fn $name(&mut self, value: $ty) -> Result<usize, dbutils::leb128::EncodeVarintError> {
+      pub fn $name(&mut self, value: $ty) -> Result<usize, dbutils::error::InsufficientBuffer> {
         let buf = unsafe {
           core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
         };
@@ -414,7 +411,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// Returns a well-aligned pointer for `T`
     #[inline]
-    pub fn align_to<T>(&mut self) -> Result<core::ptr::NonNull<T>, BufferTooSmall> {
+    pub fn align_to<T>(&mut self) -> Result<core::ptr::NonNull<T>, InsufficientBuffer> {
       if mem::size_of::<T>() == 0 {
         return Ok(core::ptr::NonNull::dangling());
       }
@@ -422,10 +419,7 @@ macro_rules! impl_bytes_mut_utils {
       let align_offset = crate::align_offset::<T>(self.allocated.memory_offset + self.len as u32);
 
       if align_offset > self.allocated.memory_offset + self.allocated.memory_size {
-        return Err(BufferTooSmall {
-          remaining: self.allocated.memory_size as usize - self.len,
-          want: align_offset as usize - self.len - self.allocated.memory_offset as usize,
-        });
+        return Err(InsufficientBuffer::with_information(align_offset as usize - self.len - self.allocated.memory_offset as usize, self.allocated.memory_size as usize - self.len));
       }
 
       self.len = (align_offset - self.allocated.memory_offset) as usize;
@@ -473,14 +467,11 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, BufferTooSmall> {
+    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> {
       let size = core::mem::size_of::<T>();
 
       if self.len + size > self.capacity() {
-        return Err(BufferTooSmall {
-          remaining: self.capacity() - self.len,
-          want: size,
-        });
+        return Err(InsufficientBuffer::with_information(size, self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -502,7 +493,7 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, BufferTooSmall> {
+    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> {
       let mut ptr = self.align_to::<T>()?;
 
       ptr.as_ptr().write(val);
@@ -513,14 +504,11 @@ macro_rules! impl_bytes_mut_utils {
   (slice) => {
     /// Put a bytes slice into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_slice(&mut self, slice: &[u8]) -> Result<(), BufferTooSmall> {
+    pub fn put_slice(&mut self, slice: &[u8]) -> Result<(), InsufficientBuffer> {
       let size = slice.len();
 
       if self.len + size > self.capacity() {
-        return Err(BufferTooSmall {
-          remaining: self.capacity() - self.len,
-          want: size,
-        });
+        return Err(InsufficientBuffer::with_information(size, self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -573,14 +561,11 @@ macro_rules! impl_bytes_mut_utils {
   (8) => {
     /// Put a `u8` value into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_u8(&mut self, value: u8) -> Result<(), BufferTooSmall> {
+    pub fn put_u8(&mut self, value: u8) -> Result<(), InsufficientBuffer> {
       const SIZE: usize = core::mem::size_of::<u8>();
 
       if self.len + SIZE > self.capacity() {
-        return Err(BufferTooSmall {
-          remaining: self.capacity() - self.len,
-          want: SIZE,
-        });
+        return Err(InsufficientBuffer::with_information(SIZE, self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -609,7 +594,7 @@ macro_rules! impl_bytes_mut_utils {
 
     /// Put a `i8` value into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_i8(&mut self, value: i8) -> Result<(), BufferTooSmall> {
+    pub fn put_i8(&mut self, value: i8) -> Result<(), InsufficientBuffer> {
       self.put_u8(value as u8)
     }
 
@@ -634,14 +619,11 @@ macro_rules! get_byte_order {
     paste::paste! {
       #[doc = "Get a `" $ty "` value from the buffer in " $endian " byte order, return an error if the buffer does not have enough bytes."]
       #[inline]
-      pub fn $name(&mut self) -> Result<$ty, NotEnoughBytes> {
+      pub fn $name(&mut self) -> Result<$ty, IncompleteBuffer> {
         const SIZE: usize = core::mem::size_of::<$ty>();
 
         if self.len < SIZE {
-          return Err(NotEnoughBytes {
-            remaining: self.len,
-            read: SIZE,
-          });
+          return Err(IncompleteBuffer::with_information(SIZE, self.len));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -708,12 +690,9 @@ macro_rules! impl_bytes_utils {
   (slice) => {
     /// Get a byte slice from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_slice(&self, size: usize) -> Result<&[u8], NotEnoughBytes> {
+    pub fn get_slice(&self, size: usize) -> Result<&[u8], IncompleteBuffer> {
       if self.len < size {
-        return Err(NotEnoughBytes {
-          remaining: self.len,
-          read: size,
-        });
+        return Err(IncompleteBuffer::with_information(size, self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -737,12 +716,9 @@ macro_rules! impl_bytes_utils {
 
     /// Get a mutable byte slice from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_slice_mut(&mut self, size: usize) -> Result<&mut [u8], NotEnoughBytes> {
+    pub fn get_slice_mut(&mut self, size: usize) -> Result<&mut [u8], IncompleteBuffer> {
       if self.len < size {
-        return Err(NotEnoughBytes {
-          remaining: self.len,
-          read: size,
-        });
+        return Err(IncompleteBuffer::with_information(size, self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -783,12 +759,9 @@ macro_rules! impl_bytes_utils {
   (8) => {
     /// Get a `u8` value from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_u8(&mut self) -> Result<u8, NotEnoughBytes> {
+    pub fn get_u8(&mut self) -> Result<u8, IncompleteBuffer> {
       if self.len < 1 {
-        return Err(NotEnoughBytes {
-          remaining: self.len,
-          read: 1,
-        });
+        return Err(IncompleteBuffer::with_information(1, self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -815,7 +788,7 @@ macro_rules! impl_bytes_utils {
 
     /// Get a `i8` value from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_i8(&mut self) -> Result<i8, NotEnoughBytes> {
+    pub fn get_i8(&mut self) -> Result<i8, IncompleteBuffer> {
       self.get_u8().map(|v| v as i8)
     }
 

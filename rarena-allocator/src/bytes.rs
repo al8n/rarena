@@ -1,6 +1,6 @@
 use core::{ops, ptr::NonNull};
 
-pub use dbutils::leb128::{DecodeVarintError, EncodeVarintError};
+pub use dbutils::{error::InsufficientBuffer, leb128::DecodeVarintError};
 use either::Either;
 
 use super::*;

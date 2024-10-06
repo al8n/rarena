@@ -1,3 +1,5 @@
+pub use dbutils::error::*;
+
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[derive(Debug)]
 pub(crate) struct MagicVersionMismatch {
@@ -28,7 +30,7 @@ impl core::fmt::Display for MagicVersionMismatch {
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl std::error::Error for MagicVersionMismatch {}
+impl core::error::Error for MagicVersionMismatch {}
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[derive(Debug)]
@@ -60,82 +62,10 @@ impl core::fmt::Display for VersionMismatch {
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-impl std::error::Error for VersionMismatch {}
-
-/// Error indicating that the buffer does not have enough space to write bytes into.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct BufferTooSmall {
-  /// The remaining space in the buffer.
-  pub(crate) remaining: usize,
-  /// The required space to write into the buffer.
-  pub(crate) want: usize,
-}
-
-impl BufferTooSmall {
-  /// Returns the remaining space in the buffer.
-  #[inline]
-  pub const fn remaining(&self) -> usize {
-    self.remaining
-  }
-
-  /// Returns the required space to write into the buffer.
-  #[inline]
-  pub const fn require(&self) -> usize {
-    self.want
-  }
-}
-
-impl core::fmt::Display for BufferTooSmall {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(
-      f,
-      "Buffer does not have enough space (remaining {}, want {})",
-      self.remaining, self.want
-    )
-  }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for BufferTooSmall {}
-
-/// Error indicating that the buffer does not have enough bytes to read from.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NotEnoughBytes {
-  /// The remaining bytes in the buffer.
-  pub(crate) remaining: usize,
-  /// The number of bytes required to be read.
-  pub(crate) read: usize,
-}
-
-impl NotEnoughBytes {
-  /// Returns the remaining bytes in the buffer.
-  #[inline]
-  pub const fn remaining(&self) -> usize {
-    self.remaining
-  }
-
-  /// Returns the number of bytes required to be read.
-  #[inline]
-  pub const fn require(&self) -> usize {
-    self.read
-  }
-}
-
-impl core::fmt::Display for NotEnoughBytes {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    write!(
-      f,
-      "Buffer does not have enough bytes to read (remaining {}, want {})",
-      self.remaining, self.read
-    )
-  }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for NotEnoughBytes {}
+impl core::error::Error for VersionMismatch {}
 
 /// An error indicating that the arena is full
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
   /// Insufficient space in the arena
   InsufficientSpace {
@@ -209,7 +139,7 @@ impl core::fmt::Display for Error {
         "Index out of bounds: offset {} is out of range, the current allocated size is {}",
         offset, allocated
       ),
-      Self::DecodeVarintError(e) => write!(f, "{}", e),
+      Self::DecodeVarintError(e) => e.fmt(f),
     }
   }
 }
