@@ -887,11 +887,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let header_range_start = header_offset;
         let header_range_end = header_offset + header_size;
         let header_start_page = header_range_start / page_size;
-        let header_end_page = (header_range_end + page_size - 1) / page_size;
+        let header_end_page = header_range_end.div_ceil(page_size);
 
         let flush_end = offset + len;
         let range_start_page = offset / page_size;
-        let range_end_page = (flush_end + page_size - 1) / page_size;
+        let range_end_page = flush_end.div_ceil(page_size);
 
         if header_start_page == range_start_page && header_end_page == range_end_page {
           let start = header_offset.min(offset);
@@ -937,11 +937,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         let header_range_start = header_offset;
         let header_range_end = header_offset + header_size;
         let header_start_page = header_range_start / page_size;
-        let header_end_page = (header_range_end + page_size - 1) / page_size;
+        let header_end_page = header_range_end.div_ceil(page_size);
 
         let flush_end = offset + len;
         let range_start_page = offset / page_size;
-        let range_end_page = (flush_end + page_size - 1) / page_size;
+        let range_end_page = flush_end.div_ceil(page_size);
 
         if header_start_page == range_start_page && header_end_page == range_end_page {
           let start = header_offset.min(offset);
