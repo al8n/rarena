@@ -328,7 +328,7 @@ macro_rules! put_byte_order {
         const SIZE: usize = core::mem::size_of::<$ty>();
 
         if self.len + SIZE > self.capacity() {
-          return Err(InsufficientBuffer::with_information(SIZE, self.capacity() - self.len));
+          return Err(InsufficientBuffer::with_information(SIZE as u64, (self.capacity() - self.len) as u64));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -419,7 +419,7 @@ macro_rules! impl_bytes_mut_utils {
       let align_offset = crate::align_offset::<T>(self.allocated.memory_offset + self.len as u32);
 
       if align_offset > self.allocated.memory_offset + self.allocated.memory_size {
-        return Err(InsufficientBuffer::with_information(align_offset as usize - self.len - self.allocated.memory_offset as usize, self.allocated.memory_size as usize - self.len));
+        return Err(InsufficientBuffer::with_information((align_offset as u64 - self.len as u64 - self.allocated.memory_offset as u64), (self.allocated.memory_size as u64 - self.len as u64)));
       }
 
       self.len = (align_offset - self.allocated.memory_offset) as usize;
@@ -471,7 +471,7 @@ macro_rules! impl_bytes_mut_utils {
       let size = core::mem::size_of::<T>();
 
       if self.len + size > self.capacity() {
-        return Err(InsufficientBuffer::with_information(size, self.capacity() - self.len));
+        return Err(InsufficientBuffer::with_information(size as u64, (self.capacity() - self.len) as u64));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -508,7 +508,7 @@ macro_rules! impl_bytes_mut_utils {
       let size = slice.len();
 
       if self.len + size > self.capacity() {
-        return Err(InsufficientBuffer::with_information(size, self.capacity() - self.len));
+        return Err(InsufficientBuffer::with_information(size as u64, (self.capacity() - self.len) as u64));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -565,7 +565,7 @@ macro_rules! impl_bytes_mut_utils {
       const SIZE: usize = core::mem::size_of::<u8>();
 
       if self.len + SIZE > self.capacity() {
-        return Err(InsufficientBuffer::with_information(SIZE, self.capacity() - self.len));
+        return Err(InsufficientBuffer::with_information(SIZE as u64, (self.capacity() - self.len) as u64));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -623,7 +623,7 @@ macro_rules! get_byte_order {
         const SIZE: usize = core::mem::size_of::<$ty>();
 
         if self.len < SIZE {
-          return Err(IncompleteBuffer::with_information(SIZE, self.len));
+          return Err(IncompleteBuffer::with_information(SIZE as u64, self.len as u64));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -692,7 +692,7 @@ macro_rules! impl_bytes_utils {
     #[inline]
     pub fn get_slice(&self, size: usize) -> Result<&[u8], IncompleteBuffer> {
       if self.len < size {
-        return Err(IncompleteBuffer::with_information(size, self.len));
+        return Err(IncompleteBuffer::with_information(size as u64, self.len as u64));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -718,7 +718,7 @@ macro_rules! impl_bytes_utils {
     #[inline]
     pub fn get_slice_mut(&mut self, size: usize) -> Result<&mut [u8], IncompleteBuffer> {
       if self.len < size {
-        return Err(IncompleteBuffer::with_information(size, self.len));
+        return Err(IncompleteBuffer::with_information(size as u64, self.len as u64));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -761,7 +761,7 @@ macro_rules! impl_bytes_utils {
     #[inline]
     pub fn get_u8(&mut self) -> Result<u8, IncompleteBuffer> {
       if self.len < 1 {
-        return Err(IncompleteBuffer::with_information(1, self.len));
+        return Err(IncompleteBuffer::with_information(1, self.len as u64));
       }
 
       // SAFETY: We have checked the buffer size.
