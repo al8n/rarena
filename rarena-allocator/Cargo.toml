@@ -1,6 +1,6 @@
 [package]
 name = "rarena-allocator"
-version = "0.4.10"
+version = "0.4.11"
 edition.workspace = true
 repository.workspace = true
 homepage = "https://github.com/al8n/rarena/tree/main/rarena-allocator"
@@ -23,7 +23,7 @@ loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 bitflags = { version = "2", default-features = false }
 byteorder = { version = "1", optional = true }
 crossbeam-utils.workspace = true 
-dbutils = { version = "0.7", default-features = false, features = ["crc32fast"] }
+dbutils = { version = "0.8", default-features = false, features = ["crc32fast"] }
 either = { version = "1", default-features = false }
 paste = "1"
 
