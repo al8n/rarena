@@ -1,3 +1,7 @@
+use core::mem;
+
+use crate::align_offset;
+
 use super::{Allocator, Error};
 
 /// Unknown freelist error.
@@ -122,6 +126,85 @@ impl Options {
       huge: None,
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       populate: false,
+    }
+  }
+
+  /// Returns the data offset of the ARENA if the ARENA is in unified memory layout.
+  ///
+  /// See also [`Options::data_offset`].
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync, unsync, Options, Allocator};
+  ///
+  /// // Create a sync ARENA.
+  /// let opts = Options::new().with_capacity(100);
+  /// let data_offset_from_opts = opts.data_offset::<sync::Arena>();
+  /// let arena = opts.alloc::<sync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// let data_offset_from_opts = opts.data_offset_unify::<sync::Arena>();
+  /// let arena = opts.with_unify(true).alloc::<sync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// // Create a unsync ARENA.
+  /// let opts = Options::new().with_capacity(100);
+  /// let data_offset_from_opts = opts.data_offset::<unsync::Arena>();
+  /// let arena = opts.alloc::<unsync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// let data_offset_from_opts = opts.data_offset_unify::<unsync::Arena>();
+  /// let arena = opts.with_unify(true).alloc::<unsync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  /// ```
+  pub fn data_offset_unify<A: Allocator>(&self) -> usize {
+    let reserved = self.reserved() as usize;
+    Self::data_offset_in::<A::Header>(reserved, true)
+  }
+
+  /// Returns the data offset of the ARENA if the ARENA is not in unified memory layout.
+  ///
+  /// As the file backed ARENA will only use the unified memory layout and ignore the unify configuration of `Options`,
+  /// so see also [`Options::data_offset_unify`], if you want to get the data offset of the ARENA in unified memory layout.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync, unsync, Options, Allocator};
+  ///
+  /// // Create a sync ARENA.
+  /// let opts = Options::new().with_capacity(100);
+  /// let data_offset_from_opts = opts.data_offset::<sync::Arena>();
+  /// let arena = opts.alloc::<sync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// let data_offset_from_opts = opts.data_offset_unify::<sync::Arena>();
+  /// let arena = opts.with_unify(true).alloc::<sync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// // Create a unsync ARENA.
+  /// let opts = Options::new().with_capacity(100);
+  /// let data_offset_from_opts = opts.data_offset::<unsync::Arena>();
+  /// let arena = opts.alloc::<unsync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  ///
+  /// let data_offset_from_opts = opts.data_offset_unify::<unsync::Arena>();
+  /// let arena = opts.with_unify(true).alloc::<unsync::Arena>().unwrap();
+  /// assert_eq!(data_offset_from_opts, arena.data_offset());
+  /// ```
+  pub fn data_offset<A: Allocator>(&self) -> usize {
+    let reserved = self.reserved() as usize;
+    Self::data_offset_in::<A::Header>(reserved, false)
+  }
+
+  #[inline]
+  fn data_offset_in<H>(reserved: usize, unify: bool) -> usize {
+    if unify {
+      let offset = align_offset::<H>(reserved as u32) as usize + mem::align_of::<H>();
+      offset + mem::size_of::<H>()
+    } else {
+      reserved + 1
     }
   }
 

@@ -505,13 +505,9 @@ macro_rules! common_unit_tests {
     #[cfg(not(feature = "loom"))]
     fn check_data_offset_vec() {
       $crate::tests::run(|| {
-        $crate::tests::check_data_offset(
-          $crate::tests::DEFAULT_ARENA_OPTIONS
-            .with_reserved($crate::tests::RESERVED)
-            .alloc::<$ty>()
-            .unwrap(),
-          $crate::tests::RESERVED as usize + 1,
-        );
+        let opts = $crate::tests::DEFAULT_ARENA_OPTIONS.with_reserved($crate::tests::RESERVED);
+        let data_offset = opts.data_offset::<$ty>();
+        $crate::tests::check_data_offset(opts.alloc::<$ty>().unwrap(), data_offset);
       });
     }
 
@@ -519,15 +515,11 @@ macro_rules! common_unit_tests {
     #[cfg(not(feature = "loom"))]
     fn check_data_offset_vec_unify() {
       $crate::tests::run(|| {
-        $crate::tests::check_data_offset(
-          $crate::tests::DEFAULT_ARENA_OPTIONS
-            .with_unify(true)
-            .with_reserved($crate::tests::RESERVED)
-            .alloc::<$ty>()
-            .unwrap(),
-          8 + core::mem::size_of::<$header>()
-            + $crate::align_offset::<$header>($crate::tests::RESERVED as u32) as usize,
-        );
+        let opts = $crate::tests::DEFAULT_ARENA_OPTIONS
+          .with_unify(true)
+          .with_reserved($crate::tests::RESERVED);
+        let data_offset = opts.data_offset_unify::<$ty>();
+        $crate::tests::check_data_offset(opts.alloc::<$ty>().unwrap(), data_offset);
       });
     }
 
@@ -540,18 +532,14 @@ macro_rules! common_unit_tests {
         let p = dir
           .path()
           .join(::std::format!("test_{}_check_data_offset_mmap", $prefix));
-        let arena = $crate::tests::DEFAULT_ARENA_OPTIONS
+        let opts = $crate::tests::DEFAULT_ARENA_OPTIONS
           .with_create_new(true)
           .with_read(true)
           .with_write(true)
-          .with_reserved($crate::tests::RESERVED)
-          .map_mut::<$ty, _>(p)
-          .unwrap();
-        $crate::tests::check_data_offset(
-          arena,
-          8 + core::mem::size_of::<$header>()
-            + $crate::align_offset::<$header>($crate::tests::RESERVED as u32) as usize,
-        );
+          .with_reserved($crate::tests::RESERVED);
+        let data_offset = opts.data_offset_unify::<$ty>();
+        let arena = opts.map_mut::<$ty, _>(p).unwrap();
+        $crate::tests::check_data_offset(arena, data_offset);
       });
     }
 
@@ -559,13 +547,10 @@ macro_rules! common_unit_tests {
     #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn check_data_offset_mmap_anon() {
       $crate::tests::run(|| {
-        $crate::tests::check_data_offset(
-          $crate::tests::DEFAULT_ARENA_OPTIONS
-            .with_reserved($crate::tests::RESERVED)
-            .alloc::<$ty>()
-            .unwrap(),
-          $crate::tests::RESERVED as usize + 1,
-        );
+        let opts = $crate::tests::DEFAULT_ARENA_OPTIONS.with_reserved($crate::tests::RESERVED);
+        let data_offset = opts.data_offset::<$ty>();
+
+        $crate::tests::check_data_offset(opts.alloc::<$ty>().unwrap(), data_offset);
       });
     }
 
@@ -573,15 +558,11 @@ macro_rules! common_unit_tests {
     #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn check_data_offset_mmap_anon_unify() {
       $crate::tests::run(|| {
-        $crate::tests::check_data_offset(
-          $crate::tests::DEFAULT_ARENA_OPTIONS
-            .with_reserved($crate::tests::RESERVED)
-            .with_unify(true)
-            .alloc::<$ty>()
-            .unwrap(),
-          8 + core::mem::size_of::<$header>()
-            + $crate::align_offset::<$header>($crate::tests::RESERVED as u32) as usize,
-        );
+        let opts = $crate::tests::DEFAULT_ARENA_OPTIONS
+          .with_reserved($crate::tests::RESERVED)
+          .with_unify(true);
+        let data_offset = opts.data_offset_unify::<$ty>();
+        $crate::tests::check_data_offset(opts.alloc::<$ty>().unwrap(), data_offset);
       });
     }
 
