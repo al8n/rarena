@@ -158,14 +158,18 @@ impl fmt::Debug for Arena {
     let header = self.header();
     let allocated = header.allocated;
 
-    // Safety:
-    // The ptr is always non-null, we only deallocate it when the ARENA is dropped.
-    let data = unsafe { slice::from_raw_parts(self.ptr, (allocated - self.data_offset) as usize) };
-
     f.debug_struct("Arena")
       .field("cap", &self.cap)
-      .field("header", header)
-      .field("data", &data)
+      .field("data_offset", &self.data_offset)
+      .field("allocated", &allocated)
+      .field("discarded", &header.discarded)
+      .field("freelist", &self.freelist)
+      .field("page_size", &self.page_size)
+      .field("reserved", &self.reserved)
+      .field("magic_version", &self.magic_version)
+      .field("version", &self.version)
+      .field("read_only", &self.ro)
+      .field("unify", &self.unify)
       .finish()
   }
 }

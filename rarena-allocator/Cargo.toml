@@ -1,6 +1,6 @@
 [package]
 name = "rarena-allocator"
-version = "0.4.13"
+version = "0.4.14"
 edition.workspace = true
 repository.workspace = true
 homepage = "https://github.com/al8n/rarena/tree/main/rarena-allocator"
