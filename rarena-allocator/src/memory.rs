@@ -241,6 +241,12 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
       )
     };
 
+    core::ptr::write_bytes(
+      self.ptr.add(data_offset),
+      0,
+      self.cap as usize - data_offset,
+    );
+
     self.header_ptr = header;
     self.data_offset = data_offset;
   }
