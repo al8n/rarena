@@ -284,27 +284,6 @@ pub const fn align_offset<T>(current_offset: u32) -> u32 {
   (current_offset + alignment - 1) & !(alignment - 1)
 }
 
-#[inline(never)]
-#[cold]
-fn abort() -> ! {
-  #[cfg(feature = "std")]
-  {
-    std::process::abort()
-  }
-
-  #[cfg(not(feature = "std"))]
-  {
-    struct Abort;
-    impl Drop for Abort {
-      fn drop(&mut self) {
-        panic!();
-      }
-    }
-    let _a = Abort;
-    panic!("abort");
-  }
-}
-
 #[cfg(feature = "std")]
 macro_rules! write_byte_order {
   ($write_name:ident::$put_name:ident::$converter:ident($ty:ident, $endian:literal)) => {

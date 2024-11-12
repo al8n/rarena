@@ -183,7 +183,7 @@ impl Clone for Arena {
 
       let old_size = memory.refs().fetch_add(1, Ordering::Release);
       if old_size > usize::MAX >> 1 {
-        abort();
+        dbutils::abort();
       }
 
       // Safety:
