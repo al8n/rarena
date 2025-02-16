@@ -23,7 +23,7 @@
 
 ```toml
 [dependencies]
-rarena = "0.0.0"
+rarena = "0.4"
 ```
 
 #### License
