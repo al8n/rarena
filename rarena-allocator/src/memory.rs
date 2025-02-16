@@ -681,6 +681,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[allow(warnings)]
   pub(crate) fn lock_shared(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
@@ -691,6 +692,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[allow(warnings)]
   pub(crate) fn try_lock_exclusive(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
@@ -701,6 +703,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[allow(warnings)]
   pub(crate) fn try_lock_shared(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
@@ -711,6 +714,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[allow(warnings)]
   pub(crate) fn unlock(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {

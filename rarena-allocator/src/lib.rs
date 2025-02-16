@@ -362,8 +362,9 @@ macro_rules! put_varint {
         let buf = unsafe {
           core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
         };
-        dbutils::leb128::[< encode_ $ty _varint >](value, buf)
+        dbutils::leb128::[< encode_ $ty _varint_to >](value, buf)
           .inspect(|len| self.len += *len)
+          .map_err(Into::into)
       }
 
       #[doc = "Put a `" $ty "` value into the buffer in LEB128 format, without doing error checking."]
@@ -378,7 +379,7 @@ macro_rules! put_varint {
         let buf = unsafe {
           core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
         };
-        dbutils::leb128::[< encode_ $ty _varint >] (value, buf).inspect(|len| self.len += *len).unwrap()
+        dbutils::leb128::[< encode_ $ty _varint_to >] (value, buf).inspect(|len| self.len += *len).unwrap()
       }
     }
   }
