@@ -114,10 +114,12 @@ impl<T, A: Allocator> Owned<T, A> {
   /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_ref(&self) -> &T {
-    match &self.kind {
-      Kind::Slot(slot) => slot.as_ptr().as_ref().unwrap(),
-      Kind::Inline(ptr) => ptr.as_ref(),
-      Kind::Dangling(val) => val.as_ref(),
+    unsafe {
+      match &self.kind {
+        Kind::Slot(slot) => slot.as_ptr().as_ref().unwrap(),
+        Kind::Inline(ptr) => ptr.as_ref(),
+        Kind::Dangling(val) => val.as_ref(),
+      }
     }
   }
 
@@ -126,10 +128,12 @@ impl<T, A: Allocator> Owned<T, A> {
   /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_mut(&mut self) -> &mut T {
-    match &mut self.kind {
-      Kind::Slot(slot) => slot.as_mut_ptr().as_mut().unwrap(),
-      Kind::Inline(ptr) => ptr.as_mut(),
-      Kind::Dangling(val) => val.as_mut(),
+    unsafe {
+      match &mut self.kind {
+        Kind::Slot(slot) => slot.as_mut_ptr().as_mut().unwrap(),
+        Kind::Inline(ptr) => ptr.as_mut(),
+        Kind::Dangling(val) => val.as_mut(),
+      }
     }
   }
 
@@ -265,10 +269,12 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_ref(&self) -> &T {
-    match &self.kind {
-      Kind::Slot(slot) => slot.as_ptr().as_ref().unwrap(),
-      Kind::Inline(ptr) => ptr.as_ref(),
-      Kind::Dangling(val) => val.as_ref(),
+    unsafe {
+      match &self.kind {
+        Kind::Slot(slot) => slot.as_ptr().as_ref().unwrap(),
+        Kind::Inline(ptr) => ptr.as_ref(),
+        Kind::Dangling(val) => val.as_ref(),
+      }
     }
   }
 
@@ -277,10 +283,12 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   /// ## Safety
   /// - The value must be initialized.
   pub unsafe fn as_mut(&mut self) -> &mut T {
-    match &mut self.kind {
-      Kind::Slot(slot) => slot.as_mut_ptr().as_mut().unwrap(),
-      Kind::Inline(ptr) => ptr.as_mut(),
-      Kind::Dangling(val) => val.as_mut(),
+    unsafe {
+      match &mut self.kind {
+        Kind::Slot(slot) => slot.as_mut_ptr().as_mut().unwrap(),
+        Kind::Inline(ptr) => ptr.as_mut(),
+        Kind::Dangling(val) => val.as_mut(),
+      }
     }
   }
 

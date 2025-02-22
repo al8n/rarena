@@ -163,8 +163,8 @@ fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segm
 
 #[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
-fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_mmap_anon_unify(
-) {
+fn allocate_slow_path_optimistic_concurrent_create_segment_and_acquire_from_segment_mmap_anon_unify()
+ {
   run(|| {
     allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(
       OPTIONS.with_unify(true).map_anon().unwrap(),

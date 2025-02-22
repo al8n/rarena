@@ -225,30 +225,33 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   pub(crate) unsafe fn clear(&mut self) {
-    let header_ptr_offset = align_offset::<H>(self.reserved as u32) as usize + mem::align_of::<H>();
-    let data_offset = header_ptr_offset + mem::size_of::<H>();
+    unsafe {
+      let header_ptr_offset =
+        align_offset::<H>(self.reserved as u32) as usize + mem::align_of::<H>();
+      let data_offset = header_ptr_offset + mem::size_of::<H>();
 
-    let min_segment_size = self.header().load_min_segment_size();
-    let (header, data_offset) = if self.unify {
-      let header_ptr = self.ptr.add(header_ptr_offset);
-      let header = header_ptr.cast::<H>();
-      header.write(H::new(data_offset as u32, min_segment_size));
-      (Either::Left(header_ptr_offset as u32), data_offset)
-    } else {
-      (
-        Either::Right(H::new(self.reserved as u32 + 1, min_segment_size)),
-        self.reserved + 1,
-      )
-    };
+      let min_segment_size = self.header().load_min_segment_size();
+      let (header, data_offset) = if self.unify {
+        let header_ptr = self.ptr.add(header_ptr_offset);
+        let header = header_ptr.cast::<H>();
+        header.write(H::new(data_offset as u32, min_segment_size));
+        (Either::Left(header_ptr_offset as u32), data_offset)
+      } else {
+        (
+          Either::Right(H::new(self.reserved as u32 + 1, min_segment_size)),
+          self.reserved + 1,
+        )
+      };
 
-    core::ptr::write_bytes(
-      self.ptr.add(data_offset),
-      0,
-      self.cap as usize - data_offset,
-    );
+      core::ptr::write_bytes(
+        self.ptr.add(data_offset),
+        0,
+        self.cap as usize - data_offset,
+      );
 
-    self.header_ptr = header;
-    self.data_offset = data_offset;
+      self.header_ptr = header;
+      self.data_offset = data_offset;
+    }
   }
 
   pub(crate) fn alloc(opts: Options) -> Result<Self, Error> {
@@ -696,8 +699,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn try_lock_exclusive(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.try_lock_exclusive(),
-      MemoryBackend::Mmap { file, .. } => file.try_lock_exclusive(),
+      MemoryBackend::MmapMut { file, .. } => FileExt::try_lock_exclusive(file),
+      MemoryBackend::Mmap { file, .. } => FileExt::try_lock_exclusive(file),
       _ => Ok(()),
     }
   }
@@ -707,8 +710,8 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   pub(crate) fn try_lock_shared(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.try_lock_shared(),
-      MemoryBackend::Mmap { file, .. } => file.try_lock_shared(),
+      MemoryBackend::MmapMut { file, .. } => FileExt::try_lock_shared(file),
+      MemoryBackend::Mmap { file, .. } => FileExt::try_lock_shared(file),
       _ => Ok(()),
     }
   }
@@ -728,48 +731,50 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// - offset and len must be valid and in bounds.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn mlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    #[cfg(not(windows))]
-    match &self.backend {
-      MemoryBackend::MmapMut { buf, .. } => {
-        let buf = &**buf;
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+    unsafe {
+      #[cfg(not(windows))]
+      match &self.backend {
+        MemoryBackend::MmapMut { buf, .. } => {
+          let buf = &**buf;
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
+
+          let ptr = buf.as_ptr().add(offset);
+          rustix::mm::mlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
+        MemoryBackend::Mmap { buf, .. } => {
+          let buf = &**buf;
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
 
-        let ptr = buf.as_ptr().add(offset);
-        rustix::mm::mlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::Mmap { buf, .. } => {
-        let buf = &**buf;
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+          let ptr = buf.as_ref().as_ptr().add(offset);
+          rustix::mm::mlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
+        MemoryBackend::AnonymousMmap { buf, .. } => {
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
 
-        let ptr = buf.as_ref().as_ptr().add(offset);
-        rustix::mm::mlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::AnonymousMmap { buf, .. } => {
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+          let ptr = buf.as_ref().as_ptr().add(offset);
+          rustix::mm::mlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
-
-        let ptr = buf.as_ref().as_ptr().add(offset);
-        rustix::mm::mlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+        _ => Ok(()),
       }
-      _ => Ok(()),
-    }
 
-    #[cfg(windows)]
-    {
-      let _ = offset;
-      let _ = len;
-      Ok(())
+      #[cfg(windows)]
+      {
+        let _ = offset;
+        let _ = len;
+        Ok(())
+      }
     }
   }
 
@@ -777,48 +782,50 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// - offset and len must be valid and in bounds.
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   pub(crate) unsafe fn munlock(&self, offset: usize, len: usize) -> std::io::Result<()> {
-    #[cfg(not(windows))]
-    match &self.backend {
-      MemoryBackend::MmapMut { buf, .. } => {
-        let buf = &**buf;
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+    unsafe {
+      #[cfg(not(windows))]
+      match &self.backend {
+        MemoryBackend::MmapMut { buf, .. } => {
+          let buf = &**buf;
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
+
+          let ptr = buf.as_ref().as_ptr().add(offset);
+          rustix::mm::munlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
+        MemoryBackend::Mmap { buf, .. } => {
+          let buf = &**buf;
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
 
-        let ptr = buf.as_ref().as_ptr().add(offset);
-        rustix::mm::munlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::Mmap { buf, .. } => {
-        let buf = &**buf;
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+          let ptr = buf.as_ref().as_ptr().add(offset);
+          rustix::mm::munlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
+        MemoryBackend::AnonymousMmap { buf, .. } => {
+          let buf_len = buf.len();
+          if offset + len > buf_len {
+            return Err(range_out_of_bounds(offset, len, buf_len));
+          }
 
-        let ptr = buf.as_ref().as_ptr().add(offset);
-        rustix::mm::munlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
-      }
-      MemoryBackend::AnonymousMmap { buf, .. } => {
-        let buf_len = buf.len();
-        if offset + len > buf_len {
-          return Err(range_out_of_bounds(offset, len, buf_len));
+          let ptr = buf.as_ref().as_ptr().add(offset);
+          rustix::mm::munlock(ptr as _, len)
+            .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
         }
-
-        let ptr = buf.as_ref().as_ptr().add(offset);
-        rustix::mm::munlock(ptr as _, len)
-          .map_err(|e| std::io::Error::from_raw_os_error(e.raw_os_error()))
+        _ => Ok(()),
       }
-      _ => Ok(()),
-    }
 
-    #[cfg(windows)]
-    {
-      let _ = offset;
-      let _ = len;
-      Ok(())
+      #[cfg(windows)]
+      {
+        let _ = offset;
+        let _ = len;
+        Ok(())
+      }
     }
   }
 
@@ -1018,51 +1025,53 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
   pub(crate) unsafe fn unmount(&mut self) {
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    if self.lock_meta {
-      let _ = self.munlock(self.header_offset, mem::size_of::<H>());
-    }
-
-    // Any errors during unmapping/closing are ignored as the only way
-    // to report them would be through panicking which is highly discouraged
-    // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
-
-    #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-    match &mut self.backend {
-      MemoryBackend::MmapMut {
-        buf,
-        file,
-        path,
-        remove_on_drop,
-        ..
-      } => {
-        if remove_on_drop.load(Ordering::Acquire) {
-          let _ = Box::from_raw(*buf);
-          core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path.as_path());
-          return;
-        }
-
-        let _ = Box::from_raw(*buf);
-        let _ = file.sync_all();
+    unsafe {
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      if self.lock_meta {
+        let _ = self.munlock(self.header_offset, mem::size_of::<H>());
       }
-      MemoryBackend::Mmap {
-        path,
-        file,
-        buf,
-        remove_on_drop,
-        ..
-      } => {
-        if remove_on_drop.load(Ordering::Acquire) {
-          let _ = Box::from_raw(*buf);
-          core::ptr::drop_in_place(file);
-          let _ = std::fs::remove_file(path.as_path());
-          return;
-        }
 
-        let _ = Box::from_raw(*buf);
+      // Any errors during unmapping/closing are ignored as the only way
+      // to report them would be through panicking which is highly discouraged
+      // in Drop impls, c.f. https://github.com/rust-lang/lang-team/issues/97
+
+      #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+      match &mut self.backend {
+        MemoryBackend::MmapMut {
+          buf,
+          file,
+          path,
+          remove_on_drop,
+          ..
+        } => {
+          if remove_on_drop.load(Ordering::Acquire) {
+            let _ = Box::from_raw(*buf);
+            core::ptr::drop_in_place(file);
+            let _ = std::fs::remove_file(path.as_path());
+            return;
+          }
+
+          let _ = Box::from_raw(*buf);
+          let _ = file.sync_all();
+        }
+        MemoryBackend::Mmap {
+          path,
+          file,
+          buf,
+          remove_on_drop,
+          ..
+        } => {
+          if remove_on_drop.load(Ordering::Acquire) {
+            let _ = Box::from_raw(*buf);
+            core::ptr::drop_in_place(file);
+            let _ = std::fs::remove_file(path.as_path());
+            return;
+          }
+
+          let _ = Box::from_raw(*buf);
+        }
+        _ => {}
       }
-      _ => {}
     }
   }
 }

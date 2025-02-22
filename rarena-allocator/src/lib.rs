@@ -447,7 +447,7 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> {
+    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> { unsafe {
       let size = core::mem::size_of::<T>();
 
       if self.len + size > self.capacity() {
@@ -459,7 +459,7 @@ macro_rules! impl_bytes_mut_utils {
       ptr.write(val);
       self.len += size;
       Ok(&mut *ptr)
-    }
+    }}
 
     /// Put `T` into the buffer, return an error if the buffer does not have enough space.
     ///
@@ -473,13 +473,13 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> {
+    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> { unsafe {
       let mut ptr = self.align_to::<T>()?;
 
       ptr.as_ptr().write(val);
       self.len += ::core::mem::size_of::<T>();
       Ok(ptr.as_mut())
-    }
+    }}
   };
   (slice) => {
     /// Put a bytes slice into the buffer, return an error if the buffer does not have enough space.
@@ -588,9 +588,9 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline]
-    pub unsafe fn put_i8_unchecked(&mut self, value: i8) {
+    pub unsafe fn put_i8_unchecked(&mut self, value: i8) { unsafe {
       self.put_u8_unchecked(value as u8)
-    }
+    }}
   };
 }
 
@@ -782,9 +782,9 @@ macro_rules! impl_bytes_utils {
     ///
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline]
-    pub unsafe fn get_i8_unchecked(&mut self) -> i8 {
+    pub unsafe fn get_i8_unchecked(&mut self) -> i8 { unsafe {
       self.get_u8_unchecked() as i8
-    }
+    }}
   };
 }
 
@@ -879,8 +879,10 @@ impl Meta {
 
   #[inline]
   unsafe fn clear<A: Allocator>(&self, arena: &A) {
-    let ptr = arena.raw_mut_ptr().add(self.ptr_offset as usize);
-    core::ptr::write_bytes(ptr, 0, self.ptr_size as usize);
+    unsafe {
+      let ptr = arena.raw_mut_ptr().add(self.ptr_offset as usize);
+      core::ptr::write_bytes(ptr, 0, self.ptr_size as usize);
+    }
   }
 
   #[inline]

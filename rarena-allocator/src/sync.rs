@@ -267,15 +267,17 @@ impl Allocator for Arena {
 
   #[inline]
   unsafe fn reserved_slice_mut(&self) -> &mut [u8] {
-    if self.reserved == 0 {
-      return &mut [];
-    }
+    unsafe {
+      if self.reserved == 0 {
+        return &mut [];
+      }
 
-    if self.ro {
-      panic!("ARENA is read-only");
-    }
+      if self.ro {
+        panic!("ARENA is read-only");
+      }
 
-    slice::from_raw_parts_mut(self.ptr, self.reserved)
+      slice::from_raw_parts_mut(self.ptr, self.reserved)
+    }
   }
 
   #[inline]
@@ -378,14 +380,16 @@ impl Allocator for Arena {
   }
 
   unsafe fn clear(&self) -> Result<(), Error> {
-    if self.ro {
-      return Err(Error::ReadOnly);
+    unsafe {
+      if self.ro {
+        return Err(Error::ReadOnly);
+      }
+
+      let memory = &mut *self.inner.as_ptr();
+      memory.clear();
+
+      Ok(())
     }
-
-    let memory = &mut *self.inner.as_ptr();
-    memory.clear();
-
-    Ok(())
   }
 
   #[inline]
@@ -464,8 +468,10 @@ impl Allocator for Arena {
 
   #[inline]
   unsafe fn offset(&self, ptr: *const u8) -> usize {
-    let offset = ptr.offset_from(self.ptr);
-    offset as usize
+    unsafe {
+      let offset = ptr.offset_from(self.ptr);
+      offset as usize
+    }
   }
 
   #[inline]
@@ -823,7 +829,7 @@ impl Arena {
           return Err(Error::InsufficientSpace {
             requested: size,
             available: self.remaining() as u32,
-          })
+          });
         }
         Freelist::Optimistic => match self.alloc_slow_path_optimistic(size) {
           Ok(bytes) => return Ok(Some(bytes)),
@@ -974,7 +980,7 @@ impl Arena {
           return Err(Error::InsufficientSpace {
             requested: want,
             available: self.remaining() as u32,
-          })
+          });
         }
         Freelist::Optimistic => {
           match self.alloc_slow_path_optimistic(Self::pad::<T>() as u32 + extra) {
@@ -1129,7 +1135,7 @@ impl Arena {
           return Err(Error::InsufficientSpace {
             requested: want,
             available: self.remaining() as u32,
-          })
+          });
         }
         Freelist::Optimistic => match self.alloc_slow_path_optimistic(Self::pad::<T>() as u32) {
           Ok(mut allocated) => {

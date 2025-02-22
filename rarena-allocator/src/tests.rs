@@ -892,11 +892,13 @@ pub(crate) fn small_capacity_vec<A: Allocator + Debug>(unify: bool) {
       .unwrap_err();
     assert!(matches!(e, Error::InsufficientSpace { available: 0, .. }));
 
-    assert!(Options::new()
-      .with_capacity(1)
-      .with_unify(unify)
-      .alloc::<A>()
-      .is_ok());
+    assert!(
+      Options::new()
+        .with_capacity(1)
+        .with_unify(unify)
+        .alloc::<A>()
+        .is_ok()
+    );
 
     let e = Options::new()
       .with_capacity(40)
@@ -932,11 +934,13 @@ pub(crate) fn small_capacity_map_anon<A: Allocator + Debug>(unify: bool) {
       .map_anon::<A>()
       .unwrap_err();
     assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
-    assert!(Options::new()
-      .with_capacity(1)
-      .with_unify(unify)
-      .map_anon::<A>()
-      .is_ok());
+    assert!(
+      Options::new()
+        .with_capacity(1)
+        .with_unify(unify)
+        .map_anon::<A>()
+        .is_ok()
+    );
   } else {
     let e = Options::new()
       .with_unify(true)
@@ -944,11 +948,13 @@ pub(crate) fn small_capacity_map_anon<A: Allocator + Debug>(unify: bool) {
       .map_anon::<A>()
       .unwrap_err();
     assert!(matches!(e.kind(), std::io::ErrorKind::InvalidInput));
-    assert!(Options::new()
-      .with_unify(true)
-      .with_capacity(41)
-      .map_anon::<A>()
-      .is_ok());
+    assert!(
+      Options::new()
+        .with_unify(true)
+        .with_capacity(41)
+        .map_anon::<A>()
+        .is_ok()
+    );
   }
 }
 

@@ -3,11 +3,11 @@ use core::{mem, ptr};
 #[cfg(not(feature = "loom"))]
 pub(crate) use core::cell::UnsafeCell;
 #[cfg(not(feature = "loom"))]
-pub(crate) use std::alloc::{alloc_zeroed, dealloc, Layout};
+pub(crate) use std::alloc::{Layout, alloc_zeroed, dealloc};
 
 #[cfg(feature = "loom")]
 pub(crate) use loom::{
-  alloc::{alloc_zeroed, dealloc, Layout},
+  alloc::{Layout, alloc_zeroed, dealloc},
   cell::UnsafeCell,
 };
 
