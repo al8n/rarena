@@ -674,55 +674,56 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  #[allow(unstable_name_collisions)]
   pub(crate) fn lock_exclusive(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.lock_exclusive(),
-      MemoryBackend::Mmap { file, .. } => file.lock_exclusive(),
+      MemoryBackend::MmapMut { file, .. } => FileExt::lock_exclusive(file),
+      MemoryBackend::Mmap { file, .. } => FileExt::lock_exclusive(file),
       _ => Ok(()),
     }
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[allow(warnings)]
+  #[allow(unstable_name_collisions)]
   pub(crate) fn lock_shared(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.lock_shared(),
-      MemoryBackend::Mmap { file, .. } => file.lock_shared(),
+      MemoryBackend::MmapMut { file, .. } => FileExt::lock_shared(file),
+      MemoryBackend::Mmap { file, .. } => FileExt::lock_shared(file),
       _ => Ok(()),
     }
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[allow(warnings)]
-  pub(crate) fn try_lock_exclusive(&self) -> std::io::Result<()> {
+  #[allow(unstable_name_collisions)]
+  pub(crate) fn try_lock_exclusive(&self) -> std::io::Result<bool> {
     use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => FileExt::try_lock_exclusive(file),
       MemoryBackend::Mmap { file, .. } => FileExt::try_lock_exclusive(file),
-      _ => Ok(()),
+      _ => Ok(false),
     }
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[allow(warnings)]
-  pub(crate) fn try_lock_shared(&self) -> std::io::Result<()> {
+  #[allow(unstable_name_collisions)]
+  pub(crate) fn try_lock_shared(&self) -> std::io::Result<bool> {
     use fs4::fs_std::FileExt;
     match &self.backend {
       MemoryBackend::MmapMut { file, .. } => FileExt::try_lock_shared(file),
       MemoryBackend::Mmap { file, .. } => FileExt::try_lock_shared(file),
-      _ => Ok(()),
+      _ => Ok(false),
     }
   }
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
-  #[allow(warnings)]
+  #[allow(unstable_name_collisions)]
   pub(crate) fn unlock(&self) -> std::io::Result<()> {
     use fs4::fs_std::FileExt;
     match &self.backend {
-      MemoryBackend::MmapMut { file, .. } => file.unlock(),
-      MemoryBackend::Mmap { file, .. } => file.unlock(),
+      MemoryBackend::MmapMut { file, .. } => FileExt::unlock(file),
+      MemoryBackend::Mmap { file, .. } => FileExt::unlock(file),
       _ => Ok(()),
     }
   }
