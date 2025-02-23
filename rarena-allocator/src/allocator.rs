@@ -1374,7 +1374,7 @@ pub trait Allocator: sealed::Sealed {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn try_lock_exclusive(&self) -> std::io::Result<()> {
+  fn try_lock_exclusive(&self) -> std::io::Result<bool> {
     self.as_ref().try_lock_exclusive()
   }
 
@@ -1397,7 +1397,7 @@ pub trait Allocator: sealed::Sealed {
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   #[cfg_attr(docsrs, doc(cfg(all(feature = "memmap", not(target_family = "wasm")))))]
   #[inline]
-  fn try_lock_shared(&self) -> std::io::Result<()> {
+  fn try_lock_shared(&self) -> std::io::Result<bool> {
     self.as_ref().try_lock_shared()
   }
 
