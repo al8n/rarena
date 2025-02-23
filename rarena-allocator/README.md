@@ -89,21 +89,21 @@ This crate contains many unsafe code, although the main functionalities of this 
 
 ```toml
 [dependencies]
-rarena-allocator = "0.5"
+rarena-allocator = "0.6"
 ```
 
 - `no_std`
 
   ```toml
   [dependencies]
-  rarena-allocator = { version = "0.5", default-features = false, features = ["alloc"] }
+  rarena-allocator = { version = "0.6", default-features = false, features = ["alloc"] }
   ```
 
 - Enable memory map backed main memory
   
   ```toml
   [dependencies]
-  rarena-allocator = { version = "0.5", features = ["memmap"] }
+  rarena-allocator = { version = "0.6", features = ["memmap"] }
   ```
 
 #### License
