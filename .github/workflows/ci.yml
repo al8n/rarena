@@ -17,7 +17,7 @@ on:
       - 'LICENSE-*'
       - '**.md'
       - '**.txt'
-  schedule: [cron: "0 1 */30 * *"]
+  schedule: [cron: "0 1 1 * *"]
   workflow_dispatch:
 
 env:
@@ -65,7 +65,7 @@ jobs:
     - name: Install cargo-hack
       run: cargo install cargo-hack
     - name: Apply clippy lints
-      run: cargo hack clippy --each-feature --exclude-no-default-features
+      run: cargo hack clippy --each-feature --exclude-no-default-features --exclude-features loom
 
   # Run tests on some extra platforms
   cross:
@@ -134,13 +134,8 @@ jobs:
       run: rustup update stable --no-self-update && rustup default stable
     - name: Install cargo-hack
       run: cargo install cargo-hack
-    - name: Cache ~/.cargo
-      uses: actions/cache@v5
-      with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-coverage-dotcargo
     - name: Run build
-      run: cargo hack build --feature-powerset --exclude-no-default-features
+      run: cargo hack build --feature-powerset --exclude-no-default-features --exclude-features loom
   
   test:
     name: test
@@ -168,11 +163,6 @@ jobs:
       run: rustup update stable --no-self-update && rustup default stable
     - name: Install cargo-hack
       run: cargo install cargo-hack
-    - name: Cache ~/.cargo
-      uses: actions/cache@v5
-      with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-coverage-dotcargo
     - name: Run test
       run: cargo hack test --feature-powerset --exclude-no-default-features --exclude-features loom
   
@@ -292,46 +282,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-loom-
       - name: Install Rust
-        run: rustup update $nightly && rustup default $nightly
+        # Use ${{ env.nightly }} for cross-platform compatibility (PowerShell on Windows doesn't expand $nightly)
+        run: rustup update ${{ env.nightly }} && rustup default ${{ env.nightly }}
       - name: Loom tests
         run: cargo test --tests --features loom,memmap
   
-  # # valgrind
-  # valgrind:
-  #   name: valgrind
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - name: Cache cargo build and registry
-  #       uses: actions/cache@v5
-  #       with:
-  #         path: |
-  #           ~/.cargo/registry
-  #           ~/.cargo/git
-  #           target
-  #         key: ubuntu-latest-valgrind-${{ hashFiles('**/Cargo.lock') }}
-  #         restore-keys: |
-  #           ubuntu-latest-valgrind-
-
-  #     - name: Install Rust ${{ env.stable }}
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #           toolchain: ${{ env.stable }}
-  #           override: true
-  #     - name: Install Valgrind
-  #       run: |
-  #         sudo apt-get update -y
-  #         sudo apt-get install -y valgrind
-      # Compile tests
-      # - name: cargo build foo
-      #   run: cargo build --bin foo
-      #   working-directory: integration
-
-      # Run with valgrind
-      # - name: Run valgrind foo
-      #   run: valgrind --error-exitcode=1 --leak-check=full --show-leak-kinds=all ./target/debug/foo
-      #   working-directory: integration
-
   docs:
     name: docs
     runs-on: ubuntu-latest
@@ -347,10 +302,8 @@ jobs:
           key: ubuntu-latest-docs-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ubuntu-latest-docs-
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.nightly }}
-          override: true
+      - name: Install Rust
+        run: rustup update nightly && rustup default nightly
       - name: "doc --lib --all-features"
         run: cargo doc --lib --no-deps --all-features
         env:
@@ -360,13 +313,12 @@ jobs:
   coverage:
     name: cargo tarpaulin
     runs-on: ubuntu-latest
-    needs: 
+    needs:
       - rustfmt
       - clippy
       - build
       - test
       - sanitizer
-      # - valgrind
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust
@@ -386,7 +338,7 @@ jobs:
       - name: Run tarpaulin
         env:
           RUSTFLAGS: "--cfg tarpaulin"
-        run: cargo tarpaulin --all-features --run-types tests --run-types doctests --run-types lib --run-types examples --workspace --out xml
+        run: cargo tarpaulin --features std,memmap --run-types tests --run-types doctests --run-types lib --run-types examples --workspace --out xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
