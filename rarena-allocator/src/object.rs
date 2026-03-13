@@ -141,14 +141,8 @@ impl<T, A: Allocator> Owned<T, A> {
   /// If the pointer is not initialized, then [`NonNull::dangling()`] is returned.
   pub fn as_mut_ptr(&mut self) -> NonNull<T> {
     match &mut self.kind {
-      Kind::Slot(slot) => {
-        if slot.as_ptr().is_null() {
-          NonNull::dangling()
-        } else {
-          // SAFETY: we have checked that the pointer is not null.
-          unsafe { NonNull::new_unchecked(slot.as_mut_ptr()) }
-        }
-      }
+      // SAFETY: MaybeUninit always has a valid, non-null pointer to its storage.
+      Kind::Slot(slot) => unsafe { NonNull::new_unchecked(slot.as_mut_ptr()) },
       Kind::Inline(ptr) => *ptr,
       Kind::Dangling(val) => *val,
     }
@@ -296,14 +290,8 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   /// If the pointer is not initialized, then [`NonNull::dangling()`] is returned.
   pub fn as_mut_ptr(&mut self) -> NonNull<T> {
     match &mut self.kind {
-      Kind::Slot(slot) => {
-        if slot.as_ptr().is_null() {
-          NonNull::dangling()
-        } else {
-          // SAFETY: we have checked that the pointer is not null.
-          unsafe { NonNull::new_unchecked(slot.as_mut_ptr()) }
-        }
-      }
+      // SAFETY: MaybeUninit always has a valid, non-null pointer to its storage.
+      Kind::Slot(slot) => unsafe { NonNull::new_unchecked(slot.as_mut_ptr()) },
       Kind::Inline(ptr) => *ptr,
       Kind::Dangling(val) => *val,
     }

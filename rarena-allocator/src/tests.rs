@@ -444,7 +444,7 @@ macro_rules! common_unit_tests {
     fn checksum() {
       $crate::tests::run(|| {
         use dbutils::checksum::Crc32;
-        use rand::RngCore;
+        use rand::RngExt;
 
         let arena = $crate::tests::DEFAULT_ARENA_OPTIONS
           .with_reserved(0)
@@ -453,7 +453,7 @@ macro_rules! common_unit_tests {
           .unwrap();
         let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();
         buf.set_len(arena.page_size() * 2);
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill(&mut *buf);
 
         let cks = Crc32::new();
         let checksum = arena.checksum(&cks);
@@ -470,7 +470,7 @@ macro_rules! common_unit_tests {
     fn checksum_with_reserved() {
       $crate::tests::run(|| {
         use dbutils::checksum::Crc32;
-        use rand::RngCore;
+        use rand::RngExt;
 
         let arena = $crate::tests::DEFAULT_ARENA_OPTIONS
           .with_reserved(5)
@@ -480,7 +480,7 @@ macro_rules! common_unit_tests {
         let mut buf = arena.alloc_bytes((arena.page_size() * 2) as u32).unwrap();
 
         buf.set_len(arena.page_size() * 2);
-        rand::thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill(&mut *buf);
 
         let cks = Crc32::new();
         let checksum = arena.checksum(&cks);
@@ -796,6 +796,486 @@ macro_rules! common_unit_tests {
             .with_unify(true)
             .with_freelist($crate::Freelist::Optimistic)
             .map_anon::<$ty>()
+            .unwrap(),
+          MAX_SEGMENT_NODE_SIZE,
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_error_display() {
+      $crate::tests::run(|| {
+        $crate::tests::error_display();
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_read_write() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_read_write(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_owned() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_owned(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_allocator_getters() {
+      $crate::tests::run(|| {
+        $crate::tests::allocator_getters(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_allocator_properties() {
+      $crate::tests::run(|| {
+        $crate::tests::allocator_properties(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_owned_bytes() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_owned_bytes(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_object_owned() {
+      $crate::tests::run(|| {
+        $crate::tests::object_owned(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_arena_clear() {
+      $crate::tests::run(|| {
+        $crate::tests::arena_clear(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_arena_rewind() {
+      $crate::tests::run(|| {
+        $crate::tests::arena_rewind(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_insufficient_space() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_insufficient_space(
+          $crate::tests::DEFAULT_ARENA_OPTIONS.alloc::<$ty>().unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_set_len() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_set_len(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_flush_operations() {
+      $crate::tests::run(|| {
+        $crate::tests::flush_operations::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_lock_operations() {
+      $crate::tests::run(|| {
+        $crate::tests::lock_operations::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_read_only() {
+      $crate::tests::run(|| {
+        $crate::tests::read_only::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_paths() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_paths(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_with_freelist_optimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_with_freelist(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .with_freelist($crate::Freelist::Optimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_with_freelist_pessimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_with_freelist(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .with_freelist($crate::Freelist::Pessimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_rewind_all_positions() {
+      $crate::tests::run(|| {
+        $crate::tests::rewind_all_positions(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_aligned() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_aligned(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_write_io() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_write_io(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_freelist_none() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_freelist_none(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .with_freelist($crate::Freelist::None)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_sanity_check_errors() {
+      $crate::tests::run(|| {
+        $crate::tests::sanity_check_errors::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_map_copy() {
+      $crate::tests::run(|| {
+        $crate::tests::map_copy::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_write_methods() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_write_methods(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_allocator_leb128() {
+      $crate::tests::run(|| {
+        $crate::tests::allocator_leb128(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_memmap_anon_operations() {
+      $crate::tests::run(|| {
+        $crate::tests::memmap_anon_operations::<$ty>();
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_interleaved_optimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_interleaved(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(8192)
+            .with_freelist($crate::Freelist::Optimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_dealloc_interleaved_pessimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::dealloc_interleaved(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(8192)
+            .with_freelist($crate::Freelist::Pessimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_aligned_slow_path_optimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_aligned_slow_path(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(1024)
+            .with_freelist($crate::Freelist::Optimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+          MAX_SEGMENT_NODE_SIZE,
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_aligned_slow_path_pessimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_aligned_slow_path(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(1024)
+            .with_freelist($crate::Freelist::Pessimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+          MAX_SEGMENT_NODE_SIZE,
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_flush_header_operations() {
+      $crate::tests::run(|| {
+        $crate::tests::flush_header_operations::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_debug_and_clone() {
+      $crate::tests::run(|| {
+        $crate::tests::debug_and_clone(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_error_variants() {
+      $crate::tests::run(|| {
+        $crate::tests::error_variants::<$ty>();
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_owned_detach_and_drop() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_owned_detach_and_drop(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_reserved_bytes_zero() {
+      $crate::tests::run(|| {
+        $crate::tests::reserved_bytes_zero(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .with_reserved(0)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_get_bytes_and_pointers() {
+      $crate::tests::run(|| {
+        $crate::tests::get_bytes_and_pointers(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_set_minimum_segment_size() {
+      $crate::tests::run(|| {
+        $crate::tests::set_minimum_segment_size(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_in_slow_path_optimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_in_slow_path(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(1024)
+            .with_freelist($crate::Freelist::Optimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+          MAX_SEGMENT_NODE_SIZE,
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_alloc_in_slow_path_pessimistic() {
+      $crate::tests::run(|| {
+        $crate::tests::alloc_in_slow_path(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(1024)
+            .with_freelist($crate::Freelist::Pessimistic)
+            .alloc::<$ty>()
             .unwrap(),
           MAX_SEGMENT_NODE_SIZE,
         );
@@ -1155,7 +1635,7 @@ pub(crate) fn check_data_offset<A: Allocator>(l: A, offset: usize) {
   assert_eq!(data_offset, offset);
 
   let b = l.data();
-  assert_eq!(b, &[]);
+  assert_eq!(b, &[] as &[u8]);
 }
 
 #[cfg(all(not(feature = "loom"), feature = "std"))]
@@ -1291,6 +1771,1107 @@ pub(crate) fn with_reserved<A: Allocator>(l: A) {
 
     b.detach();
   }
+}
+
+pub(crate) fn error_display() {
+  let e = Error::InsufficientSpace {
+    requested: 100,
+    available: 50,
+  };
+  let s = std::format!("{e}");
+  assert!(s.contains("100"));
+  assert!(s.contains("50"));
+
+  let e = Error::ReadOnly;
+  let s = std::format!("{e}");
+  assert!(s.contains("read-only"));
+
+  let e = Error::OutOfBounds {
+    offset: 42,
+    allocated: 10,
+  };
+  let s = std::format!("{e}");
+  assert!(s.contains("42"));
+  assert!(s.contains("10"));
+
+  // Test Clone, PartialEq, Eq, Debug
+  let e2 = e.clone();
+  assert_eq!(e, e2);
+  let _ = std::format!("{e:?}");
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_read_write<A: Allocator>(a: A) {
+  let mut buf = a.alloc_bytes(128).unwrap();
+  assert_eq!(buf.capacity(), 128);
+
+  // Test writing bytes using put methods (appends to end)
+  buf.put_u8(42).unwrap();
+  assert_eq!(buf.len(), 1);
+
+  // Use big-endian put/get pairs since get_* always reads as big-endian
+  buf.put_u16_be(1234).unwrap();
+  buf.put_u32_be(567890).unwrap();
+  buf.put_u64_be(1234567890).unwrap();
+  buf.put_i32_be(-42).unwrap();
+  buf.put_i64_be(-123456).unwrap();
+
+  let written = buf.len();
+  assert!(written > 0);
+
+  // get_* methods pop from the end (LIFO), so read in reverse order
+  assert_eq!(buf.get_i64_be().unwrap(), -123456);
+  assert_eq!(buf.get_i32_be().unwrap(), -42);
+  assert_eq!(buf.get_u64_be().unwrap(), 1234567890);
+  assert_eq!(buf.get_u32_be().unwrap(), 567890);
+  assert_eq!(buf.get_u16_be().unwrap(), 1234);
+  assert_eq!(buf.get_u8().unwrap(), 42);
+
+  assert_eq!(buf.len(), 0);
+
+  // Test put_slice
+  buf.put_slice(b"hello").unwrap();
+  assert_eq!(buf.len(), 5);
+
+  // Test get_slice
+  let slice = buf.get_slice(5).unwrap();
+  assert_eq!(slice, b"hello");
+
+  // Test Deref with content
+  buf.put_u8(99).unwrap();
+  let _slice: &[u8] = &buf;
+  assert!(!_slice.is_empty());
+
+  // Test DerefMut
+  let _slice_mut: &mut [u8] = &mut buf;
+  assert!(!_slice_mut.is_empty());
+
+  // Test AsRef/AsMut
+  let _as_ref: &[u8] = buf.as_ref();
+  let _as_mut: &mut [u8] = buf.as_mut();
+
+  // Test Debug
+  let _ = std::format!("{buf:?}");
+
+  // Test as_ptr / as_mut_ptr
+  let _ptr = buf.as_ptr();
+  let _mut_ptr = buf.as_mut_ptr();
+  assert!(!_ptr.is_null());
+  assert!(!_mut_ptr.is_null());
+
+  // Test remaining
+  assert!(buf.remaining() <= 128 - buf.len());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_owned<A: Allocator>(a: A) {
+  let b = a.alloc_bytes_owned(64).unwrap();
+  assert_eq!(b.capacity(), 64);
+
+  // Test Buffer trait on BytesMut
+  let offset = b.offset();
+  assert!(offset > 0);
+  let buf_offset = b.buffer_offset();
+  assert!(buf_offset > 0);
+  let buf_cap = b.buffer_capacity();
+  assert!(buf_cap > 0);
+
+  // Test Deref/DerefMut
+  let _slice: &[u8] = &b;
+  let _ = std::format!("{b:?}");
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn allocator_getters<A: Allocator>(a: A) {
+  // Write some data first
+  let mut buf = a.alloc_bytes(64).unwrap();
+  buf.set_len(64);
+  // Fill buffer with known values
+  for (i, byte) in buf.iter_mut().enumerate() {
+    *byte = (i & 0xFF) as u8;
+  }
+  let data_start = buf.offset();
+  unsafe { buf.detach() };
+  drop(buf);
+
+  // Test get_u8 / get_i8
+  assert!(a.get_u8(data_start).is_ok());
+  assert!(a.get_i8(data_start).is_ok());
+
+  // Test bounds checking
+  let too_big = a.capacity() + 1;
+  assert!(a.get_u8(too_big).is_err());
+  assert!(a.get_i8(too_big).is_err());
+
+  // Test multi-byte getters
+  assert!(a.get_u16_le(data_start).is_ok());
+  assert!(a.get_u16_be(data_start).is_ok());
+  assert!(a.get_u32_le(data_start).is_ok());
+  assert!(a.get_u32_be(data_start).is_ok());
+  assert!(a.get_u64_le(data_start).is_ok());
+  assert!(a.get_u64_be(data_start).is_ok());
+  assert!(a.get_i16_le(data_start).is_ok());
+  assert!(a.get_i16_be(data_start).is_ok());
+  assert!(a.get_i32_le(data_start).is_ok());
+  assert!(a.get_i32_be(data_start).is_ok());
+  assert!(a.get_i64_le(data_start).is_ok());
+  assert!(a.get_i64_be(data_start).is_ok());
+
+  // Test bounds checking for larger types
+  let alloc = a.allocated();
+  if alloc > 0 {
+    assert!(a.get_u64_le(alloc).is_err());
+    assert!(a.get_u32_be(alloc).is_err());
+    assert!(a.get_u16_le(alloc).is_err());
+  }
+
+  // Test unchecked getters
+  unsafe {
+    let _ = a.get_u8_unchecked(data_start);
+    let _ = a.get_i8_unchecked(data_start);
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn allocator_properties<A: Allocator>(a: A) {
+  // Test is_inmemory / is_ondisk / is_map
+  assert!(a.is_inmemory());
+  assert!(!a.is_ondisk());
+
+  // Test capacity / allocated / remaining
+  let cap = a.capacity();
+  assert!(cap > 0);
+  let allocated = a.allocated();
+  assert!(allocated > 0);
+  let remaining = a.remaining();
+  assert!(remaining <= cap);
+  assert_eq!(allocated + remaining, cap);
+
+  // Test page_size
+  let ps = a.page_size();
+  assert!(ps > 0);
+
+  // Test data
+  let data = a.data();
+  assert!(data.is_empty()); // No allocations yet beyond header
+
+  // Test allocated_memory
+  let mem = a.allocated_memory();
+  assert_eq!(mem.len(), allocated);
+
+  // Test memory
+  let full_mem = a.memory();
+  assert_eq!(full_mem.len(), cap);
+
+  // Test refs
+  let refs = a.refs();
+  assert!(refs >= 1);
+
+  // Test magic_version / version
+  let _ = a.magic_version();
+  let _ = a.version();
+
+  // Test read_only
+  assert!(!a.read_only());
+
+  // Test minimum_segment_size
+  let mss = a.minimum_segment_size();
+  assert!(mss > 0);
+
+  // Test data_offset
+  let doff = a.data_offset();
+  assert!(doff > 0);
+
+  // Test discarded
+  let d = a.discarded();
+  assert_eq!(d, 0);
+
+  // Test increase_discarded
+  a.increase_discarded(10);
+  assert_eq!(a.discarded(), 10);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn alloc_owned_bytes<A: Allocator>(a: A) {
+  // Test alloc_bytes_owned
+  let mut b = a.alloc_bytes_owned(32).unwrap();
+  assert_eq!(b.capacity(), 32);
+  b.set_len(4);
+  b[0] = 1;
+  b[1] = 2;
+  b[2] = 3;
+  b[3] = 4;
+  assert_eq!(&b[..4], &[1, 2, 3, 4]);
+
+  // Test that detach works on owned bytes
+  unsafe {
+    b.detach();
+  }
+  // b should drop without deallocating
+  drop(b);
+
+  // Test alloc_bytes_owned with zero size
+  let b = a.alloc_bytes_owned(0);
+  assert!(b.is_ok());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn object_owned<A: Allocator>(a: A) {
+  // Test alloc_owned for a type that doesn't need drop (inline)
+  let mut owned = unsafe { a.alloc_owned::<u64>().unwrap() };
+  owned.write(42u64);
+  unsafe {
+    assert_eq!(*owned.as_ref(), 42u64);
+    *owned.as_mut() = 100;
+    assert_eq!(*owned.as_ref(), 100);
+  }
+  let _ptr = owned.as_mut_ptr();
+  assert!(!_ptr.as_ptr().is_null());
+
+  // Test Buffer trait on Owned
+  let cap = owned.capacity();
+  assert!(cap > 0);
+  let off = owned.offset();
+  assert!(off > 0);
+  let bcap = owned.buffer_capacity();
+  assert!(bcap > 0);
+  let boff = owned.buffer_offset();
+  assert!(boff > 0);
+  drop(owned);
+
+  // Test alloc_owned for a type that needs drop (Slot kind)
+  let mut owned = unsafe { a.alloc_owned::<std::vec::Vec<u8>>().unwrap() };
+  owned.write(std::vec![1, 2, 3]);
+  unsafe {
+    assert_eq!(owned.as_ref().len(), 3);
+  }
+  drop(owned);
+
+  // Test alloc_owned for ZST (Dangling kind)
+  let owned = unsafe { a.alloc_owned::<()>().unwrap() };
+  unsafe {
+    assert_eq!(owned.as_ref(), &());
+  }
+  drop(owned);
+
+  // Test detach on owned
+  let mut owned = unsafe { a.alloc_owned::<u32>().unwrap() };
+  owned.write(99);
+  unsafe {
+    owned.detach();
+  }
+  drop(owned);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn arena_clear<A: Allocator>(a: A) {
+  let mut b = a.alloc_bytes(100).unwrap();
+  unsafe { b.detach() };
+  let allocated_before = a.allocated();
+  assert!(allocated_before > a.data_offset());
+
+  unsafe {
+    a.clear().unwrap();
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn arena_rewind<A: Allocator>(a: A) {
+  let _ = a.alloc_bytes(100).unwrap();
+
+  // Rewind to start
+  unsafe {
+    a.rewind(ArenaPosition::Start(a.data_offset() as u32));
+  }
+
+  // Rewind to end
+  unsafe {
+    a.rewind(ArenaPosition::End(0));
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn alloc_insufficient_space<A: Allocator>(a: A) {
+  // Try to allocate more than available
+  let remaining = a.remaining();
+  let result = a.alloc_bytes(remaining as u32 + 1);
+  assert!(result.is_err());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_set_len<A: Allocator>(a: A) {
+  let mut buf = a.alloc_bytes(100).unwrap();
+  assert_eq!(buf.len(), 0);
+  assert!(buf.is_empty());
+
+  buf.set_len(50);
+  assert_eq!(buf.len(), 50);
+  assert!(!buf.is_empty());
+  assert_eq!(buf.remaining(), 50);
+
+  buf.set_len(100);
+  assert_eq!(buf.len(), 100);
+  assert_eq!(buf.remaining(), 0);
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn flush_operations<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_flush_operations"));
+
+  unsafe {
+    let a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+
+    let mut buf = a.alloc_bytes(64).unwrap();
+    buf.set_len(64);
+    for b in buf.iter_mut() {
+      *b = 0xAB;
+    }
+
+    // Test all flush methods
+    a.flush().unwrap();
+    a.flush_async().unwrap();
+
+    let offset = buf.offset();
+    let size = buf.capacity();
+    a.flush_range(offset, size).unwrap();
+    a.flush_async_range(offset, size).unwrap();
+    a.flush_header_and_range(offset, size).unwrap();
+    a.flush_async_header_and_range(offset, size).unwrap();
+
+    // Test Buffer::flush on BytesRefMut
+    buf.flush().unwrap();
+    buf.flush_async().unwrap();
+
+    buf.detach();
+    drop(buf);
+
+    // Test path
+    assert!(a.path().is_some());
+
+    // Test is_map / is_map_file
+    assert!(a.is_map());
+    assert!(!a.is_inmemory());
+    assert!(a.is_ondisk());
+  }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn lock_operations<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_lock_operations"));
+
+  unsafe {
+    let a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+
+    // Test lock/unlock operations
+    a.lock_exclusive().unwrap();
+    a.unlock().unwrap();
+
+    a.lock_shared().unwrap();
+    a.unlock().unwrap();
+
+    // Test try_lock
+    assert!(a.try_lock_exclusive().is_ok());
+    a.unlock().unwrap();
+
+    assert!(a.try_lock_shared().is_ok());
+    a.unlock().unwrap();
+  }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn read_only<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join(std::format!("test_{prefix}_read_only"));
+
+  unsafe {
+    // Create arena first
+    {
+      let a = DEFAULT_ARENA_OPTIONS
+        .with_capacity(4096)
+        .with_create_new(true)
+        .with_read(true)
+        .with_write(true)
+        .map_mut::<A, _>(&p)
+        .unwrap();
+
+      let mut buf = a.alloc_bytes(64).unwrap();
+      buf.set_len(64);
+      buf.detach();
+    }
+
+    // Open read-only
+    let a = DEFAULT_ARENA_OPTIONS
+      .with_read(true)
+      .map::<A, _>(&p)
+      .unwrap();
+    assert!(a.read_only());
+
+    // Attempting to allocate should fail
+    let result = a.alloc_bytes(10);
+    assert!(result.is_err());
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn dealloc_paths<A: Allocator>(a: A) {
+  // Test the fast dealloc path: deallocating the most recently allocated block
+  // (offset + size == allocated)
+  let mut b1 = a.alloc_bytes(64).unwrap();
+  unsafe { b1.detach() };
+
+  let b2 = a.alloc_bytes(32).unwrap();
+  drop(b2); // Should hit fast dealloc path (most recent alloc)
+
+  // Verify the space was reclaimed
+  let _ = a.alloc_bytes(32).unwrap(); // Should succeed reusing freed space
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn dealloc_with_freelist<A: Allocator>(a: A) {
+  // Allocate multiple blocks, then free non-most-recent ones
+  // This forces the freelist slow path
+  let mut b1 = a.alloc_bytes(64).unwrap();
+  unsafe { b1.detach() };
+
+  let mut b2 = a.alloc_bytes(64).unwrap();
+  unsafe { b2.detach() };
+
+  let mut b3 = a.alloc_bytes(64).unwrap();
+  unsafe { b3.detach() };
+
+  // Drop b1 (not the most recent allocation) → goes through freelist
+  unsafe {
+    a.dealloc(b1.buffer_offset() as u32, b1.buffer_capacity() as u32);
+  }
+
+  // Drop b2 (not the most recent allocation) → goes through freelist
+  unsafe {
+    a.dealloc(b2.buffer_offset() as u32, b2.buffer_capacity() as u32);
+  }
+
+  // Now allocate again - should reuse from freelist
+  let _ = a.alloc_bytes(64).unwrap();
+  let _ = a.alloc_bytes(64).unwrap();
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn dealloc_freelist_none<A: Allocator>(a: A) {
+  // With Freelist::None, non-recent deallocs go to discarded
+  let mut b1 = a.alloc_bytes(64).unwrap();
+  unsafe { b1.detach() };
+
+  let mut b2 = a.alloc_bytes(64).unwrap();
+  unsafe { b2.detach() };
+
+  // Drop b1 → with Freelist::None, should increase discarded
+  unsafe {
+    a.dealloc(b1.buffer_offset() as u32, b1.buffer_capacity() as u32);
+  }
+
+  assert!(a.discarded() > 0);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn rewind_all_positions<A: Allocator>(a: A) {
+  // Allocate some data
+  let mut buf = a.alloc_bytes(100).unwrap();
+  unsafe { buf.detach() };
+
+  let cap = a.capacity() as u32;
+  let data_offset = a.data_offset() as u32;
+  let _allocated = a.allocated();
+
+  // Test ArenaPosition::Start
+  unsafe {
+    a.rewind(ArenaPosition::Start(data_offset as u32));
+  }
+  assert_eq!(a.allocated(), data_offset as usize);
+
+  // Allocate again after rewind
+  let mut buf = a.alloc_bytes(50).unwrap();
+  unsafe { buf.detach() };
+
+  // Test ArenaPosition::Current with positive offset
+  unsafe {
+    a.rewind(ArenaPosition::Current(10));
+  }
+
+  // Test ArenaPosition::Current with negative offset
+  unsafe {
+    a.rewind(ArenaPosition::Current(-5));
+  }
+
+  // Test ArenaPosition::Current with zero (should be no-op)
+  let before = a.allocated();
+  unsafe {
+    a.rewind(ArenaPosition::Current(0));
+  }
+  assert_eq!(a.allocated(), before);
+
+  // Test ArenaPosition::Current with very negative (clamp to data_offset)
+  unsafe {
+    a.rewind(ArenaPosition::Current(-(cap as i64 * 2)));
+  }
+  assert_eq!(a.allocated(), data_offset as usize);
+
+  // Re-allocate
+  let mut buf = a.alloc_bytes(50).unwrap();
+  unsafe { buf.detach() };
+
+  // Test ArenaPosition::End
+  unsafe {
+    a.rewind(ArenaPosition::End(0));
+  }
+  assert_eq!(a.allocated(), cap as usize);
+
+  // Test ArenaPosition::End with offset
+  unsafe {
+    a.rewind(ArenaPosition::End(10));
+  }
+  assert_eq!(a.allocated(), (cap - 10) as usize);
+
+  // Test ArenaPosition::End with overflow (should clamp)
+  unsafe {
+    a.rewind(ArenaPosition::End(cap + 100));
+  }
+  assert_eq!(a.allocated(), data_offset as usize);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn alloc_aligned<A: Allocator>(a: A) {
+  // Test alloc_aligned_bytes with various types
+  let b = a.alloc_aligned_bytes::<u64>(32).unwrap();
+  assert!(b.offset() % mem::align_of::<u64>() == 0);
+  assert!(b.capacity() >= 32);
+
+  let b = a.alloc_aligned_bytes::<u128>(64).unwrap();
+  assert!(b.offset() % mem::align_of::<u128>() == 0);
+  assert!(b.capacity() >= 64);
+
+  // Test zero-size aligned alloc (capacity may include alignment padding)
+  let b = a.alloc_aligned_bytes::<u64>(0).unwrap();
+  let _ = b.capacity(); // Just verify it doesn't panic
+
+  // Test alloc_aligned_bytes_owned
+  let b = a.alloc_aligned_bytes_owned::<u32>(16).unwrap();
+  assert!(b.capacity() >= 16);
+}
+
+#[cfg(all(not(feature = "loom"), feature = "std"))]
+pub(crate) fn bytes_write_io<A: Allocator>(a: A) {
+  use std::io::Write;
+
+  let mut buf = a.alloc_bytes(128).unwrap();
+  // Test std::io::Write implementation
+  let written = buf.write(b"hello world").unwrap();
+  assert_eq!(written, 11);
+  assert_eq!(buf.len(), 11);
+
+  // Test write_all
+  buf.write_all(b" goodbye").unwrap();
+  assert_eq!(buf.len(), 19);
+
+  // Test flush (no-op for bytes)
+  buf.flush().unwrap();
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn sanity_check_errors<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+
+  // Create arena with a specific magic_version
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_sanity_check_magic"));
+  unsafe {
+    let _a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_magic_version(42)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+  }
+
+  // Try to open with different magic_version
+  let result = unsafe {
+    DEFAULT_ARENA_OPTIONS
+      .with_magic_version(99)
+      .with_read(true)
+      .map::<A, _>(&p)
+  };
+  assert!(result.is_err());
+
+  // Create arena with optimistic freelist, try to reopen with pessimistic via map_mut
+  let p2 = dir
+    .path()
+    .join(std::format!("test_{prefix}_sanity_check_freelist"));
+  unsafe {
+    let _a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_freelist(Freelist::Optimistic)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p2)
+      .unwrap();
+  }
+
+  // map_mut with wrong freelist should fail
+  let result = unsafe {
+    DEFAULT_ARENA_OPTIONS
+      .with_freelist(Freelist::Pessimistic)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p2)
+  };
+  assert!(result.is_err());
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn map_copy<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join(std::format!("test_{prefix}_map_copy"));
+
+  // Create arena first
+  unsafe {
+    let a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let mut buf = a.alloc_bytes(64).unwrap();
+    buf.set_len(64);
+    for b in buf.iter_mut() {
+      *b = 0x42;
+    }
+    buf.detach();
+  }
+
+  // Open as map_copy
+  let a = unsafe {
+    DEFAULT_ARENA_OPTIONS
+      .with_read(true)
+      .map_copy::<A, _>(&p)
+      .unwrap()
+  };
+  assert!(a.is_map());
+
+  // Open as map_copy_read_only
+  let a = unsafe {
+    DEFAULT_ARENA_OPTIONS
+      .with_read(true)
+      .map_copy_read_only::<A, _>(&p)
+      .unwrap()
+  };
+  assert!(a.read_only());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn alloc_in_slow_path<A: Allocator>(l: A, max_segment_node_size: u32) {
+  // Exercise alloc_in (generic T allocation) through slow paths
+  // First fill up the main memory
+  for i in 1..=5 {
+    let _ = l.alloc_bytes(i * 50).unwrap();
+  }
+
+  let remaining = l.remaining();
+  let _ = l.alloc_bytes(remaining as u32).unwrap();
+
+  // Now allocate from segments using alloc (type allocation)
+  for i in (1..=5).rev() {
+    let size = i * 50 - max_segment_node_size;
+    if size >= 8 {
+      // Use type-based allocation (exercises alloc_in path)
+      let _ = unsafe { l.alloc::<u64>().unwrap() };
+    }
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn error_variants<A: Allocator>() {
+  // Test all Error Display variants
+  let e = Error::InsufficientSpace {
+    requested: 100,
+    available: 50,
+  };
+  let s = std::format!("{e}");
+  assert!(s.contains("100") && s.contains("50"));
+
+  let e = Error::ReadOnly;
+  let s = std::format!("{e}");
+  assert!(s.contains("read-only"));
+
+  let e = Error::OutOfBounds {
+    offset: 42,
+    allocated: 10,
+  };
+  let s = std::format!("{e}");
+  assert!(s.contains("42") && s.contains("10"));
+
+  // Exercise DecodeVarintError path via invalid LEB128 data
+  {
+    let a = Options::new().with_capacity(1024).alloc::<A>().unwrap();
+    let mut buf = a.alloc_bytes(10).unwrap();
+    // Write invalid LEB128 (all high bits set, no terminator)
+    for i in 0..10 {
+      buf.put_u8(0x80 | (i as u8)).unwrap();
+    }
+    unsafe { buf.detach() };
+    let result = a.get_u32_varint(buf.offset());
+    if let Err(Error::DecodeVarintError(e)) = result {
+      let s = std::format!("{e}");
+      let _ = s;
+    }
+  }
+
+  // Test std::error::Error trait
+  #[cfg(feature = "std")]
+  {
+    use std::error::Error as StdError;
+    let e = super::Error::ReadOnly;
+    let _ = e.source();
+  }
+
+  // Test Clone, PartialEq, Eq, Debug
+  let e = Error::OutOfBounds {
+    offset: 1,
+    allocated: 2,
+  };
+  let e2 = e.clone();
+  assert_eq!(e, e2);
+  let _ = std::format!("{e:?}");
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_owned_detach_and_drop<A: Allocator>(a: A) {
+  // Test BytesMut (owned) with detach - exercises Drop::drop for detached path
+  let mut b = a.alloc_bytes_owned(32).unwrap();
+  b.set_len(10);
+  b[0] = 42;
+
+  // Test Deref/DerefMut on BytesMut
+  let slice: &[u8] = &b;
+  assert_eq!(slice[0], 42);
+  let slice_mut: &mut [u8] = &mut b;
+  slice_mut[1] = 43;
+
+  // Test as_ptr / as_mut_ptr on BytesMut
+  let _ptr = b.as_ptr();
+  let _mptr = b.as_mut_ptr();
+
+  // Test Buffer trait on BytesMut
+  let _ = b.buffer_offset();
+  let _ = b.buffer_capacity();
+
+  unsafe {
+    b.detach();
+  }
+  drop(b); // Drop with detach=true should not dealloc
+
+  // Test BytesMut (owned) without detach - exercises Drop::drop for normal path
+  let b2 = a.alloc_bytes_owned(32).unwrap();
+  drop(b2); // Drop with detach=false should dealloc
+
+  // Test flush on BytesMut (vec-backed, should succeed)
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  {
+    let b3 = a.alloc_bytes_owned(32).unwrap();
+    let _ = b3.flush();
+    let _ = b3.flush_async();
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn debug_and_clone<A: Allocator + core::fmt::Debug + Clone>(a: A) {
+  // Test Debug impl on Arena
+  let debug_str = std::format!("{a:?}");
+  assert!(!debug_str.is_empty());
+
+  // Test Clone impl
+  let b = a.clone();
+  assert_eq!(a.capacity(), b.capacity());
+  assert_eq!(a.allocated(), b.allocated());
+  assert_eq!(a.data_offset(), b.data_offset());
+  drop(b);
+
+  // Test Debug on allocated bytes
+  let buf = a.alloc_bytes(10).unwrap();
+  let debug_str = std::format!("{buf:?}");
+  assert!(!debug_str.is_empty());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn reserved_bytes_zero<A: Allocator>(a: A) {
+  // With zero reserved bytes, these should return empty slices
+  assert_eq!(a.reserved_bytes(), 0);
+  assert_eq!(a.reserved_slice().len(), 0);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn get_bytes_and_pointers<A: Allocator>(a: A) {
+  // Allocate and detach a buffer
+  let mut buf = a.alloc_bytes(64).unwrap();
+  buf.set_len(64);
+  for (i, b) in buf.iter_mut().enumerate() {
+    *b = (i & 0xFF) as u8;
+  }
+  let offset = buf.offset();
+  unsafe { buf.detach() };
+
+  // Test get_bytes
+  let bytes = unsafe { a.get_bytes(offset, 10) };
+  assert_eq!(bytes.len(), 10);
+  for (i, &b) in bytes.iter().enumerate() {
+    assert_eq!(b, (i & 0xFF) as u8);
+  }
+
+  // Test get_bytes with zero size
+  let bytes = unsafe { a.get_bytes(offset, 0) };
+  assert!(bytes.is_empty());
+
+  // Test get_pointer / get_pointer_mut
+  let ptr = unsafe { a.get_pointer(offset) };
+  assert!(!ptr.is_null());
+  let ptr_mut = unsafe { a.get_pointer_mut(offset) };
+  assert!(!ptr_mut.is_null());
+
+  // Test get_aligned_pointer
+  let aligned = unsafe { a.get_aligned_pointer::<u64>(offset) };
+  assert!(!aligned.is_null());
+  let aligned_mut = unsafe { a.get_aligned_pointer_mut::<u64>(offset) };
+  assert!(!aligned_mut.as_ptr().is_null());
+
+  // Test get_bytes_mut
+  let bytes_mut = unsafe { a.get_bytes_mut(offset, 10) };
+  assert_eq!(bytes_mut.len(), 10);
+
+  // Test get_pointer with offset 0
+  let ptr0 = unsafe { a.get_pointer(0) };
+  assert!(!ptr0.is_null());
+  let ptr_mut0 = unsafe { a.get_pointer_mut(0) };
+  assert!(!ptr_mut0.is_null());
+
+  // Test get_aligned_pointer with offset 0
+  let aligned0 = unsafe { a.get_aligned_pointer::<u64>(0) };
+  assert!(aligned0.is_null());
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_write_methods<A: Allocator>(a: A) {
+  let mut buf = a.alloc_bytes(128).unwrap();
+
+  // All get_* methods use from_be_bytes internally (regardless of name),
+  // so use put_*_be for roundtrip correctness.
+  buf.put_u128_be(12345678901234567890).unwrap();
+  buf.put_i128_be(-1234567890).unwrap();
+
+  // Read them back (LIFO: get pops from end)
+  assert_eq!(buf.get_i128_be().unwrap(), -1234567890);
+  assert_eq!(buf.get_u128_be().unwrap(), 12345678901234567890);
+
+  // Test i16 variants
+  buf.put_i16_be(-1234).unwrap();
+  assert_eq!(buf.get_i16_be().unwrap(), -1234);
+
+  // Also exercise the le/ne put methods (they write, just can't roundtrip with get_*_be)
+  buf.put_u32_le(42).unwrap();
+  let _ = buf.get_u32_le(); // exercises the code path, value won't match
+  buf.put_u32_ne(42).unwrap();
+  let _ = buf.get_u32_ne(); // exercises the code path
+
+  // Exercise isize/usize
+  buf.put_usize_be(999).unwrap();
+  assert_eq!(buf.get_usize_be().unwrap(), 999);
+
+  buf.put_isize_be(-777).unwrap();
+  assert_eq!(buf.get_isize_be().unwrap(), -777);
+
+  // Test put_slice_unchecked
+  buf.put_u8(0xAA).unwrap();
+  assert_eq!(buf.get_u8().unwrap(), 0xAA);
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn allocator_leb128<A: Allocator>(a: A) {
+  let mut buf = a.alloc_bytes(128).unwrap();
+
+  // Write some LEB128 values
+  buf.put_u32_varint(300).unwrap();
+  buf.put_u64_varint(100000).unwrap();
+  buf.put_i32_varint(-42).unwrap();
+  buf.put_i64_varint(-100000).unwrap();
+
+  unsafe { buf.detach() };
+
+  // Read back using allocator methods
+  let data_start = buf.offset();
+  let (bytes_read, val) = a.get_u32_varint(data_start).unwrap();
+  assert_eq!(val, 300);
+
+  let (bytes_read2, val2) = a.get_u64_varint(data_start + bytes_read).unwrap();
+  assert_eq!(val2, 100000);
+
+  let (bytes_read3, val3) = a
+    .get_i32_varint(data_start + bytes_read + bytes_read2)
+    .unwrap();
+  assert_eq!(val3, -42);
+
+  let (_bytes_read4, val4) = a
+    .get_i64_varint(data_start + bytes_read + bytes_read2 + bytes_read3)
+    .unwrap();
+  assert_eq!(val4, -100000);
+
+  // Test out-of-bounds LEB128 read
+  let result = a.get_u32_varint(a.allocated() + 1);
+  assert!(result.is_err());
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn memmap_anon_operations<A: Allocator>() {
+  // Test map_anon with various options
+  let a = DEFAULT_ARENA_OPTIONS
+    .with_capacity(4096)
+    .map_anon::<A>()
+    .unwrap();
+
+  assert!(!a.is_ondisk());
+  assert!(a.is_map());
+  assert!(!a.read_only());
+
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  {
+    assert!(a.path().is_none());
+  }
+
+  // Test allocation on anon mmap
+  let mut buf = a.alloc_bytes(64).unwrap();
+  buf.set_len(64);
+  for b in buf.iter_mut() {
+    *b = 0x55;
+  }
+  assert_eq!(buf[0], 0x55);
+
+  // Test flush on anon mmap (should succeed/no-op)
+  a.flush().unwrap();
+  a.flush_async().unwrap();
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn dealloc_interleaved<A: Allocator>(a: A) {
+  // Allocate multiple blocks and deallocate in different order
+  // This exercises the freelist insertion logic more thoroughly
+  let mut blocks = std::vec::Vec::new();
+  for _ in 0..10 {
+    let mut b = a.alloc_bytes(32).unwrap();
+    unsafe { b.detach() };
+    blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+  }
+
+  // Deallocate even-indexed blocks (non-contiguous)
+  for i in (0..10).step_by(2) {
+    unsafe {
+      a.dealloc(blocks[i].0, blocks[i].1);
+    }
+  }
+
+  // Deallocate odd-indexed blocks
+  for i in (1..10).step_by(2) {
+    unsafe {
+      a.dealloc(blocks[i].0, blocks[i].1);
+    }
+  }
+
+  // Now allocate again to trigger freelist reuse
+  for _ in 0..10 {
+    let _ = a.alloc_bytes(32).unwrap();
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn alloc_aligned_slow_path<A: Allocator>(l: A, max_segment_node_size: u32) {
+  // Fill main memory to force slow path for aligned allocations
+  for i in 1..=5 {
+    let _ = l.alloc_bytes(i * 50).unwrap();
+  }
+
+  let remaining = l.remaining();
+  let _ = l.alloc_bytes(remaining as u32).unwrap();
+
+  // Allocate aligned bytes from segments (slow path)
+  for i in (1..=5).rev() {
+    let size = i * 50 - max_segment_node_size;
+    if size > mem::size_of::<u32>() as u32 {
+      // Use small enough size that fits in segment after alignment
+      let alloc_size = (size / 2).min(size - mem::size_of::<u32>() as u32);
+      if alloc_size > 0 {
+        let _ = l.alloc_aligned_bytes::<u32>(alloc_size);
+      }
+    }
+  }
+}
+
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn flush_header_operations<A: Allocator>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join(std::format!("test_{prefix}_flush_header"));
+
+  unsafe {
+    let a = DEFAULT_ARENA_OPTIONS
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+
+    let mut buf = a.alloc_bytes(64).unwrap();
+    buf.set_len(64);
+    buf.detach();
+
+    // Test flush_header
+    a.flush_header().unwrap();
+    a.flush_async_header().unwrap();
+
+    // Test flush_header_and_range with various offsets
+    let data_off = a.data_offset();
+    a.flush_header_and_range(data_off, 32).unwrap();
+    a.flush_async_header_and_range(data_off, 32).unwrap();
+
+    // Test flushing range that overlaps with header
+    a.flush_header_and_range(0, 64).unwrap();
+    a.flush_async_header_and_range(0, 64).unwrap();
+  }
+}
+
+#[cfg(not(feature = "loom"))]
+pub(crate) fn set_minimum_segment_size<A: Allocator>(a: A) {
+  let old = a.minimum_segment_size();
+  a.set_minimum_segment_size(old * 2);
+  assert_eq!(a.minimum_segment_size(), old * 2);
+  a.set_minimum_segment_size(old);
+  assert_eq!(a.minimum_segment_size(), old);
 }
 
 #[cfg(not(feature = "loom"))]

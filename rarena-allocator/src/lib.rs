@@ -129,11 +129,11 @@ pub trait Buffer {
 #[inline]
 fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
   data[FREELIST_OFFSET] = freelist;
-  data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE].copy_from_slice(MAGIC_TEXT.as_ref());
+  data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE].copy_from_slice(&MAGIC_TEXT);
   data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
-    .copy_from_slice(magic_version.to_le_bytes().as_ref());
+    .copy_from_slice(&magic_version.to_le_bytes());
   data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
-    .copy_from_slice(CURRENT_VERSION.to_le_bytes().as_ref());
+    .copy_from_slice(&CURRENT_VERSION.to_le_bytes());
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -564,12 +564,10 @@ macro_rules! impl_bytes_mut_utils {
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline]
     pub unsafe fn put_u8_unchecked(&mut self, value: u8) {
-      const SIZE: usize = core::mem::size_of::<u8>();
-
       let cur = self.len;
       let buf = self.buffer_mut();
-      buf[cur..cur + SIZE].copy_from_slice(&[value]);
-      self.len += SIZE;
+      buf[cur] = value;
+      self.len += 1;
     }
 
     /// Put a `i8` value into the buffer, return an error if the buffer does not have enough space.

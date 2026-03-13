@@ -399,7 +399,7 @@ impl Allocator for Arena {
     // if the offset + size is the current allocated size, then we can deallocate the memory back to the main memory.
     if header
       .allocated
-      .compare_exchange(offset + size, offset, Ordering::SeqCst, Ordering::Relaxed)
+      .compare_exchange_weak(offset + size, offset, Ordering::Release, Ordering::Relaxed)
       .is_ok()
     {
       return true;
@@ -548,6 +548,7 @@ impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
+  #[inline]
   fn find_position(&self, val: u32, check: impl Fn(u32, u32) -> bool) -> (u64, &AtomicU64) {
     let header = self.header();
     let mut current: &AtomicU64 = &header.sentinel;
@@ -603,6 +604,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   #[allow(clippy::type_complexity)]
   fn find_prev_and_next(
     &self,
@@ -663,6 +665,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn optimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(segment_node) = self.try_new_segment(offset, size) else {
@@ -693,7 +696,7 @@ impl Arena {
 
       segment_node.update_next_node(next_node_offset);
 
-      match current.compare_exchange(
+      match current.compare_exchange_weak(
         current_node_size_and_next_node_offset,
         encode_segment_node(node_size, segment_node.ptr_offset),
         Ordering::AcqRel,
@@ -724,6 +727,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn pessimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(segment_node) = self.try_new_segment(offset, size) else {
@@ -754,7 +758,7 @@ impl Arena {
 
       segment_node.update_next_node(next_node_offset);
 
-      match current.compare_exchange(
+      match current.compare_exchange_weak(
         current_node_size_and_next_node_offset,
         encode_segment_node(node_size, segment_node.ptr_offset),
         Ordering::AcqRel,
@@ -785,6 +789,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn alloc_bytes_in(&self, size: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -805,7 +810,7 @@ impl Arena {
       match header.allocated.compare_exchange_weak(
         allocated,
         want,
-        Ordering::SeqCst,
+        Ordering::Release,
         Ordering::Acquire,
       ) {
         Ok(offset) => {
@@ -931,6 +936,7 @@ impl Arena {
   //   }
   // }
 
+  #[inline]
   fn alloc_aligned_bytes_in<T>(&self, extra: u32) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -954,7 +960,7 @@ impl Arena {
       match header.allocated.compare_exchange_weak(
         allocated,
         want,
-        Ordering::SeqCst,
+        Ordering::Release,
         Ordering::Acquire,
       ) {
         Ok(offset) => {
@@ -1082,6 +1088,7 @@ impl Arena {
   //   })
   // }
 
+  #[inline]
   fn alloc_in<T>(&self) -> Result<Option<Meta>, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -1105,7 +1112,7 @@ impl Arena {
       match header.allocated.compare_exchange_weak(
         allocated,
         want,
-        Ordering::SeqCst,
+        Ordering::Release,
         Ordering::Acquire,
       ) {
         Ok(offset) => {
@@ -1274,7 +1281,7 @@ impl Arena {
       // mark next node as removed
       let removed_next = encode_segment_node(REMOVED_SEGMENT_NODE, next_next_node_offset);
       if next_node
-        .compare_exchange(
+        .compare_exchange_weak(
           next_node_val,
           removed_next,
           Ordering::AcqRel,
@@ -1293,7 +1300,7 @@ impl Arena {
 
       // update the prev node to point to the next next node.
       let updated_prev = encode_segment_node(prev_node_size, next_next_node_offset);
-      match prev_node.compare_exchange(
+      match prev_node.compare_exchange_weak(
         prev_node_val,
         updated_prev,
         Ordering::AcqRel,
@@ -1403,7 +1410,7 @@ impl Arena {
       // CAS to remove the current head
       let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
       if head
-        .compare_exchange(
+        .compare_exchange_weak(
           head_node_size_and_next_node_offset,
           removed_head,
           Ordering::AcqRel,
@@ -1417,7 +1424,7 @@ impl Arena {
       }
 
       // We have successfully mark the head is removed, then we need to let sentinel node points to the next node.
-      match header.sentinel.compare_exchange(
+      match header.sentinel.compare_exchange_weak(
         sentinel,
         encode_segment_node(sentinel_node_size, next_node_offset),
         Ordering::AcqRel,
@@ -1509,7 +1516,7 @@ impl Arena {
       // CAS to remove the current head
       let removed_head = encode_segment_node(REMOVED_SEGMENT_NODE, next_node_offset);
       if head
-        .compare_exchange(
+        .compare_exchange_weak(
           head_node_size_and_next_node_offset,
           removed_head,
           Ordering::AcqRel,
@@ -1523,7 +1530,7 @@ impl Arena {
       }
 
       // We have successfully mark the head is removed, then we need to let sentinel node points to the next node.
-      match header.sentinel.compare_exchange(
+      match header.sentinel.compare_exchange_weak(
         sentinel,
         encode_segment_node(sentinel_node_size, next_node_offset),
         Ordering::AcqRel,

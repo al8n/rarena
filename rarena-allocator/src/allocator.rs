@@ -825,12 +825,7 @@ pub trait Allocator: sealed::Sealed {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    Ok(buf[0])
+    Ok(unsafe { *self.raw_ptr().add(offset) })
   }
 
   /// Returns a `i8` from the allocator.
@@ -840,12 +835,7 @@ pub trait Allocator: sealed::Sealed {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    Ok(buf[0] as i8)
+    Ok(unsafe { *self.raw_ptr().add(offset) as i8 })
   }
 
   /// Returns a `u8` from the allocator without bounds checking.
@@ -853,12 +843,7 @@ pub trait Allocator: sealed::Sealed {
   /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_u8_unchecked(&self, offset: usize) -> u8 {
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    buf[0]
+    unsafe { *self.raw_ptr().add(offset) }
   }
 
   /// Returns a `i8` from the allocator without bounds checking.
@@ -866,12 +851,7 @@ pub trait Allocator: sealed::Sealed {
   /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_i8_unchecked(&self, offset: usize) -> i8 {
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    buf[0] as i8
+    unsafe { *self.raw_ptr().add(offset) as i8 }
   }
 
   define_bytes_utils!(

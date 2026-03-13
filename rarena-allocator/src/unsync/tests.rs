@@ -101,6 +101,96 @@ fn test_truncate_map_anon_unify() {
 }
 
 #[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_type_in_slow_path() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Create segments (non-detached allocs become segments when main is full)
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    // Now allocate typed objects from segments (slow path)
+    for _ in 0..3 {
+      let _ = unsafe { arena.alloc::<u32>() };
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_type_in_slow_path_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = unsafe { arena.alloc::<u32>() };
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_aligned_in_slow_path() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = arena.alloc_aligned_bytes::<u64>(8);
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_aligned_in_slow_path_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = arena.alloc_aligned_bytes::<u64>(8);
+    }
+  });
+}
+
+#[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[cfg_attr(miri, ignore)]
 fn test_truncate_map() {

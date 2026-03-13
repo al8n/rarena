@@ -602,6 +602,7 @@ impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
+  #[inline]
   fn find_position(&self, val: u32, check: impl Fn(u32, u32) -> bool) -> (u64, &UnsafeCell<u64>) {
     let header = self.header_mut();
     let mut current: &UnsafeCell<u64> = &header.sentinel;
@@ -613,11 +614,6 @@ impl Arena {
       if current_node_size == SENTINEL_SEGMENT_NODE_SIZE
         && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
       {
-        return (*current_node, current);
-      }
-
-      // the current is marked as remove and the next is the tail.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return (*current_node, current);
       }
 
@@ -641,6 +637,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   #[allow(clippy::type_complexity)]
   fn find_prev_and_next(
     &self,
@@ -660,12 +657,7 @@ impl Arena {
         return None;
       }
 
-      // the current is marked as remove and the next is the tail.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        return None;
-      }
-
-      // the next is the tail
+      // the next is the tail, then there's no node to allocate from.
       if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return None;
       }
@@ -685,6 +677,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn optimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(mut segment_node) = self.try_new_segment(offset, size) else {
@@ -719,6 +712,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn pessimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(mut segment_node) = self.try_new_segment(offset, size) else {
@@ -1088,6 +1082,7 @@ impl Arena {
   //   })
   // }
 
+  #[inline]
   fn alloc_slow_path_pessimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -1144,6 +1139,7 @@ impl Arena {
   }
 
   /// It is like a pop operation, we will always allocate from the largest segment.
+  #[inline]
   fn alloc_slow_path_optimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -1213,6 +1209,7 @@ impl Arena {
     Ok(allocated)
   }
 
+  #[inline]
   fn discard_freelist_in(&self) -> u32 {
     let header = self.header();
     let mut discarded = 0;
