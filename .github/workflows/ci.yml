@@ -17,7 +17,7 @@ on:
       - 'LICENSE-*'
       - '**.md'
       - '**.txt'
-  schedule: [cron: "0 1 */7 * *"]
+  schedule: [cron: "0 1 */30 * *"]
 
 env:
   CARGO_TERM_COLOR: always
