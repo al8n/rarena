@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use dbutils::checksum::{BuildChecksumer, Checksumer};
+
 use super::*;
 
 macro_rules! impl_bytes_utils_for_allocator {
@@ -65,7 +67,7 @@ macro_rules! impl_leb128_utils_for_allocator {
     };
 
     paste::paste! {
-      dbutils::leb128::[< decode_ $ty _varint >](buf).map_err(Into::into)
+      varing::[< decode_ $ty _varint >](buf).map_err(Into::into)
     }
   }};
 }
@@ -78,7 +80,7 @@ macro_rules! define_leb128_utils {
         ///
         /// ## Safety
         /// - `offset` must be within the allocated memory of the allocator.
-        fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(usize, $ty), Error> {
+        fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(NonZeroUsize, $ty), Error> {
           impl_leb128_utils_for_allocator!(self($ty, offset, $size))
         }
       }

@@ -1,4 +1,6 @@
-pub use dbutils::error::*;
+pub use varing::{
+  ConstDecodeError, ConstEncodeError, DecodeError, EncodeError, InsufficientData, InsufficientSpace,
+};
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[derive(Debug)]
@@ -93,13 +95,20 @@ pub enum Error {
   },
 
   /// Returned when decoding a LEB128 value fails
-  DecodeVarintError(dbutils::leb128::DecodeVarintError),
+  DecodeVarintError(varing::DecodeError),
 }
 
-impl From<dbutils::leb128::DecodeVarintError> for Error {
+impl From<varing::DecodeError> for Error {
   #[inline]
-  fn from(e: dbutils::leb128::DecodeVarintError) -> Self {
+  fn from(e: varing::DecodeError) -> Self {
     Self::DecodeVarintError(e)
+  }
+}
+
+impl From<varing::ConstDecodeError> for Error {
+  #[inline]
+  fn from(e: varing::ConstDecodeError) -> Self {
+    Self::DecodeVarintError(e.into())
   }
 }
 
