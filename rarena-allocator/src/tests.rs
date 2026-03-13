@@ -443,7 +443,7 @@ macro_rules! common_unit_tests {
     #[cfg(not(feature = "loom"))]
     fn checksum() {
       $crate::tests::run(|| {
-        use dbutils::checksum::Crc32;
+        use dbutils::checksum::{BuildChecksumer, Crc32};
         use rand::RngExt;
 
         let arena = $crate::tests::DEFAULT_ARENA_OPTIONS
@@ -469,7 +469,7 @@ macro_rules! common_unit_tests {
     #[cfg(not(feature = "loom"))]
     fn checksum_with_reserved() {
       $crate::tests::run(|| {
-        use dbutils::checksum::Crc32;
+        use dbutils::checksum::{BuildChecksumer, Crc32};
         use rand::RngExt;
 
         let arena = $crate::tests::DEFAULT_ARENA_OPTIONS
@@ -3723,16 +3723,16 @@ pub(crate) fn allocator_leb128<A: Allocator>(a: A) {
   let (bytes_read, val) = a.get_u32_varint(data_start).unwrap();
   assert_eq!(val, 300);
 
-  let (bytes_read2, val2) = a.get_u64_varint(data_start + bytes_read).unwrap();
+  let (bytes_read2, val2) = a.get_u64_varint(data_start + bytes_read.get()).unwrap();
   assert_eq!(val2, 100000);
 
   let (bytes_read3, val3) = a
-    .get_i32_varint(data_start + bytes_read + bytes_read2)
+    .get_i32_varint(data_start + bytes_read.get() + bytes_read2.get())
     .unwrap();
   assert_eq!(val3, -42);
 
   let (_bytes_read4, val4) = a
-    .get_i64_varint(data_start + bytes_read + bytes_read2 + bytes_read3)
+    .get_i64_varint(data_start + bytes_read.get() + bytes_read2.get() + bytes_read3.get())
     .unwrap();
   assert_eq!(val4, -100000);
 
@@ -4147,37 +4147,37 @@ pub(crate) fn bytes_leb128<A: Allocator>(a: A) {
 
   // Test put/get LEB128 on BytesRefMut
   let n = buf.put_u32_varint(300).unwrap();
-  assert!(n > 0);
+  assert!(n.get() > 0);
 
   let n2 = buf.put_u64_varint(100000).unwrap();
-  assert!(n2 > 0);
+  assert!(n2.get() > 0);
 
   let n3 = buf.put_i32_varint(-42).unwrap();
-  assert!(n3 > 0);
+  assert!(n3.get() > 0);
 
   let n4 = buf.put_i64_varint(-100000).unwrap();
-  assert!(n4 > 0);
+  assert!(n4.get() > 0);
 
   // Test unchecked variant
   let n5 = buf.put_u16_varint_unchecked(500);
-  assert!(n5 > 0);
+  assert!(n5.get() > 0);
 
   // Test write_varint (io::Write wrapper)
   #[cfg(feature = "std")]
   {
     let n6 = buf.write_u32_varint(42).unwrap();
-    assert!(n6 > 0);
+    assert!(n6.get() > 0);
 
     let n7 = buf.write_u64_varint(999).unwrap();
-    assert!(n7 > 0);
+    assert!(n7.get() > 0);
   }
 
   // Test LEB128 on BytesMut (owned)
   let mut owned = a.alloc_bytes_owned(128).unwrap();
   let n = owned.put_u32_varint(300).unwrap();
-  assert!(n > 0);
+  assert!(n.get() > 0);
   let n = owned.put_i64_varint(-999).unwrap();
-  assert!(n > 0);
+  assert!(n.get() > 0);
 }
 
 #[cfg(not(feature = "loom"))]
@@ -5268,7 +5268,7 @@ pub(crate) fn error_mmap_display() {
 /// Exercises DecodeVarintError Display path.
 #[cfg(all(not(feature = "loom"), feature = "std"))]
 pub(crate) fn error_varint_display() {
-  let err = Error::DecodeVarintError(dbutils::leb128::DecodeVarintError::Overflow);
+  let err = Error::DecodeVarintError(varing::DecodeError::overflow());
   let display = std::format!("{err}");
   assert!(!display.is_empty());
 }
