@@ -965,6 +965,15 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_read_only_operations() {
+      $crate::tests::run(|| {
+        $crate::tests::read_only_operations::<$ty>($prefix);
+      });
+    }
+
+    #[test]
     #[cfg(not(feature = "loom"))]
     fn test_dealloc_paths() {
       $crate::tests::run(|| {
@@ -2191,6 +2200,156 @@ macro_rules! common_unit_tests {
             .alloc::<$ty>()
             .unwrap(),
         );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_bytes_owned_zst_vec() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_owned_zst(
+          $crate::tests::DEFAULT_ARENA_OPTIONS.alloc::<$ty>().unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_corrupt_magic_version() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_corrupt_magic_version::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_corrupt_version() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_corrupt_version::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_corrupt_magic_text() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_corrupt_magic_text::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_corrupt_freelist() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_corrupt_freelist::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_flush_out_of_bounds() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_flush_out_of_bounds::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_slow_path_pessimistic_multi_segment() {
+      $crate::tests::run(|| {
+        $crate::tests::slow_path_pessimistic_multi_segment(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(8192)
+            .with_freelist(crate::Freelist::Pessimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(not(feature = "loom"))]
+    fn test_slow_path_optimistic_split_segment() {
+      $crate::tests::run(|| {
+        $crate::tests::slow_path_optimistic_split_segment(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(8192)
+            .with_freelist(crate::Freelist::Optimistic)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_file_locking_readonly() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_file_locking_readonly::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_flush_separate_pages() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_flush_separate_pages::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "std", not(feature = "loom")))]
+    fn test_bytes_owned_write_flush() {
+      $crate::tests::run(|| {
+        $crate::tests::bytes_owned_write_flush(
+          $crate::tests::DEFAULT_ARENA_OPTIONS
+            .with_capacity(4096)
+            .alloc::<$ty>()
+            .unwrap(),
+        );
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_lock_meta() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_lock_meta::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_mlock_munlock_anon() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_mlock_munlock_anon::<$ty>();
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_file_locking_exclusive() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_file_locking_exclusive::<$ty>($prefix);
+      });
+    }
+
+    #[test]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+    #[cfg_attr(miri, ignore)]
+    fn test_mmap_flush_async_header_and_range() {
+      $crate::tests::run(|| {
+        $crate::tests::mmap_flush_async_header_and_range::<$ty>($prefix);
       });
     }
   };
@@ -5476,4 +5635,563 @@ pub(crate) fn bytes_write_trait_flush<A: Allocator>(a: A) {
 pub(crate) fn allocator_unify_check<A: Allocator>(a: A) {
   // Just exercise the unify() method
   let _ = a.unify();
+}
+
+/// Exercises BytesMut with a zero-size allocation (Either::Right / dangling pointer paths).
+#[cfg(not(feature = "loom"))]
+pub(crate) fn bytes_owned_zst<A: Allocator>(a: A) {
+  // alloc_bytes(0) creates a BytesRefMut with memory_size == 0
+  // to_owned() on it creates BytesMut::null() with Either::Right(NonNull::dangling())
+  let mut buf = a.alloc_bytes_owned(0).unwrap();
+
+  // Deref should return empty slice (Either::Right path)
+  let slice: &[u8] = &buf;
+  assert!(slice.is_empty());
+
+  // DerefMut should return empty mut slice (Either::Right path)
+  let slice_mut: &mut [u8] = &mut buf;
+  assert!(slice_mut.is_empty());
+
+  // as_ptr / as_mut_ptr go through Either::Right path
+  let _ptr = buf.as_ptr();
+  let _ptr_mut = buf.as_mut_ptr();
+
+  // buffer() and buffer_mut() go through Either::Right path
+  assert_eq!(buf.capacity(), 0);
+
+  // flush and flush_async go through Either::Right path
+  #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
+  {
+    use crate::Buffer;
+    buf.flush().unwrap();
+    buf.flush_async().unwrap();
+  }
+
+  // Drop goes through Either::Right path (no-op)
+  drop(buf);
+}
+
+/// Opens a previously-written arena file with a corrupted magic version, expecting an error.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_corrupt_magic_version<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_corrupt_magic_version"));
+
+  // Create a valid arena
+  unsafe {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    // Write something to make it valid
+    let _ = arena.alloc_bytes(10);
+    drop(arena);
+  }
+
+  // Corrupt the magic version bytes (offset 4..6 = MAGIC_VERISON_OFFSET)
+  {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+    // MAGIC_VERISON_OFFSET = FREELIST_OFFSET(1) + FREELIST_SIZE(1) + MAGIC_TEXT_SIZE(2) = 4
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(4)).unwrap();
+    file.write_all(&[0xFF, 0xFF]).unwrap();
+  }
+
+  // Try to reopen - should get MagicVersionMismatch error
+  let result = unsafe {
+    Options::new()
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+  };
+  assert!(result.is_err());
+}
+
+/// Opens a previously-written arena file with a corrupted version, expecting an error.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_corrupt_version<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_corrupt_version"));
+
+  // Create a valid arena
+  unsafe {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let _ = arena.alloc_bytes(10);
+    drop(arena);
+  }
+
+  // Corrupt the version bytes (offset 6..8 = VERSION_OFFSET)
+  {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+    // VERSION_OFFSET = MAGIC_VERISON_OFFSET(4) + MAGIC_VERISON_SIZE(2) = 6
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(6)).unwrap();
+    file.write_all(&[0xFF, 0xFF]).unwrap();
+  }
+
+  // Try to reopen - should get VersionMismatch error
+  let result = unsafe {
+    Options::new()
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+  };
+  assert!(result.is_err());
+}
+
+/// Opens a previously-written arena file with corrupted magic text, expecting an error.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_corrupt_magic_text<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_corrupt_magic_text"));
+
+  // Create a valid arena
+  unsafe {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let _ = arena.alloc_bytes(10);
+    drop(arena);
+  }
+
+  // Corrupt the magic text bytes (offset 2..4 = MAGIC_TEXT_OFFSET)
+  {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+    // MAGIC_TEXT_OFFSET = FREELIST_OFFSET(1) + FREELIST_SIZE(1) = 2
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(2)).unwrap();
+    file.write_all(&[0xFF, 0xFF]).unwrap();
+  }
+
+  // Try to reopen - should get bad_magic error
+  let result = unsafe {
+    Options::new()
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+  };
+  assert!(result.is_err());
+}
+
+/// Opens a previously-written arena file with a mismatched freelist setting.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_corrupt_freelist<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_corrupt_freelist"));
+
+  // Create a valid arena with Optimistic freelist
+  unsafe {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_freelist(crate::Freelist::Optimistic)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let _ = arena.alloc_bytes(10);
+    drop(arena);
+  }
+
+  // Try to reopen with Pessimistic freelist - should get bad_freelist error
+  let result = unsafe {
+    Options::new()
+      .with_freelist(crate::Freelist::Pessimistic)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+  };
+  assert!(result.is_err());
+}
+
+/// Exercises the range_out_of_bounds error path in memory.rs flush_range.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_flush_out_of_bounds<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_flush_out_of_bounds"));
+
+  let arena = unsafe {
+    Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap()
+  };
+
+  // Try to flush a range that goes out of bounds
+  let result = arena.flush_range(0, 1024 * 1024);
+  assert!(result.is_err());
+}
+
+/// Exercises pessimistic slow path with multiple segments of varying sizes.
+/// This creates a scenario where find_prev_and_next traverses the list.
+#[cfg(not(feature = "loom"))]
+pub(crate) fn slow_path_pessimistic_multi_segment<A: Allocator>(a: A) {
+  // Allocate blocks of different sizes and detach them
+  let mut blocks = std::vec::Vec::new();
+  for i in 1..=6 {
+    let mut b = a.alloc_bytes(i * 64).unwrap();
+    unsafe { b.detach() };
+    blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+  }
+
+  // Fill the remaining main arena
+  let remaining = a.remaining();
+  if remaining > 0 {
+    let mut b = a.alloc_bytes(remaining as u32).unwrap();
+    unsafe { b.detach() };
+  }
+
+  // Dealloc blocks to create freelist entries of varying sizes
+  for (offset, size) in blocks {
+    unsafe {
+      a.dealloc(offset, size);
+    }
+  }
+
+  // Allocate various sizes from freelist - exercises find_prev_and_next traversal
+  // For pessimistic, it searches for the smallest fitting segment
+  for _ in 0..3 {
+    let _ = a.alloc_bytes(32);
+  }
+  for _ in 0..3 {
+    let _ = a.alloc_bytes(128);
+  }
+  // Also exercise typed alloc through pessimistic slow path
+  for _ in 0..3 {
+    let _ = unsafe { a.alloc::<u64>() };
+  }
+  // And aligned alloc
+  for _ in 0..3 {
+    let _ = a.alloc_aligned_bytes::<u64>(32);
+  }
+}
+
+/// Exercises optimistic slow path with large segments and small allocations
+/// to trigger the "give back remaining" path where segments are split.
+#[cfg(not(feature = "loom"))]
+pub(crate) fn slow_path_optimistic_split_segment<A: Allocator>(a: A) {
+  // Create a few large segments
+  let mut blocks = std::vec::Vec::new();
+  for _ in 0..4 {
+    let mut b = a.alloc_bytes(512).unwrap();
+    unsafe { b.detach() };
+    blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+  }
+
+  // Fill the remaining main arena
+  let remaining = a.remaining();
+  if remaining > 0 {
+    let mut b = a.alloc_bytes(remaining as u32).unwrap();
+    unsafe { b.detach() };
+  }
+
+  // Dealloc blocks to create large freelist entries
+  for (offset, size) in blocks {
+    unsafe {
+      a.dealloc(offset, size);
+    }
+  }
+
+  // Allocate much smaller sizes - the large segments will be split,
+  // with remainders given back to the freelist
+  for _ in 0..10 {
+    let _ = a.alloc_bytes(32);
+  }
+
+  // Exercise typed allocation from segments that were split
+  for _ in 0..5 {
+    let _ = unsafe { a.alloc::<u32>() };
+  }
+
+  // And aligned
+  for _ in 0..5 {
+    let _ = a.alloc_aligned_bytes::<u64>(16);
+  }
+}
+
+/// Exercises file locking methods on read-only mmap backend (Mmap variant in memory.rs).
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_file_locking_readonly<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_file_locking_readonly"));
+
+  // Create a valid arena file
+  unsafe {
+    let arena = Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let _ = arena.alloc_bytes(10);
+    drop(arena);
+  }
+
+  // Open read-only and exercise locking on Mmap backend
+  let a = unsafe { Options::new().with_read(true).map::<A, _>(&p).unwrap() };
+
+  // Exercise lock_exclusive / unlock on Mmap variant
+  a.lock_exclusive().unwrap();
+  a.unlock().unwrap();
+
+  // Exercise lock_shared on Mmap variant
+  a.lock_shared().unwrap();
+  a.unlock().unwrap();
+
+  // Exercise try_lock_exclusive on Mmap variant
+  let _ = a.try_lock_exclusive();
+
+  // Exercise try_lock_shared on Mmap variant
+  let _ = a.try_lock_shared();
+}
+
+/// Exercises flush_header_and_range with data at different pages to trigger
+/// the separate flush path in memory.rs.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_flush_separate_pages<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_flush_separate_pages"));
+
+  let arena = unsafe {
+    Options::new()
+      .with_capacity(64 * 1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap()
+  };
+
+  // Allocate a large block to push data far from the header
+  let mut b = arena.alloc_bytes(8192).unwrap();
+  b.put_u8(42).unwrap();
+  let far_offset = b.offset();
+  drop(b);
+
+  // flush_header_and_range with a far offset: header is near 0, data is far
+  // This should exercise the "separate pages" branch (lines 918-920 in memory.rs)
+  arena.flush_header_and_range(far_offset, 100).unwrap();
+
+  // Also exercise flush_async_header_and_range at a far offset
+  arena.flush_async_header_and_range(far_offset, 100).unwrap();
+
+  // Flush at offset that fully contains the header — "contained" branch (lines 914-915)
+  arena.flush_header_and_range(0, far_offset + 100).unwrap();
+  arena
+    .flush_async_header_and_range(0, far_offset + 100)
+    .unwrap();
+
+  // Flush at the very start (near header) — exercises "same page" branch
+  arena
+    .flush_header_and_range(arena.data_offset(), 16)
+    .unwrap();
+  arena
+    .flush_async_header_and_range(arena.data_offset(), 16)
+    .unwrap();
+}
+
+/// Exercises the Write trait on BytesMut (owned) to cover flush for BytesMut specifically.
+#[cfg(all(feature = "std", not(feature = "loom")))]
+pub(crate) fn bytes_owned_write_flush<A: Allocator>(a: A) {
+  let mut buf = a.alloc_bytes_owned(64).unwrap();
+
+  use std::io::Write;
+  buf.write_all(&[1, 2, 3]).unwrap();
+  buf.flush().unwrap();
+  assert_eq!(buf.len(), 3);
+}
+
+/// Exercises lock_meta functionality — arena created with lock_meta
+/// will mlock the header on creation and munlock on drop.
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_lock_meta<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_lock_meta"));
+
+  let arena = unsafe {
+    Options::new()
+      .with_capacity(1024)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .with_lock_meta(true)
+      .map_mut::<A, _>(&p)
+      .unwrap()
+  };
+
+  let _ = arena.alloc_bytes(10);
+  // Drop triggers unmount which calls munlock on header
+  drop(arena);
+}
+
+/// Test mlock/munlock on anonymous mmap backed arena
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_mlock_munlock_anon<A: Allocator + Debug>() {
+  let arena = Options::new().with_capacity(4096).map_anon::<A>().unwrap();
+
+  let b = arena.alloc_bytes(100).unwrap();
+  let offset = b.offset();
+  let len = b.capacity();
+
+  unsafe {
+    arena.mlock(offset, len).unwrap();
+    arena.munlock(offset, len).unwrap();
+  }
+}
+
+/// Test lock_exclusive/try_lock_exclusive/try_lock_shared/unlock on mmap_mut
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_file_locking_exclusive<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_file_locking_exclusive"));
+
+  let arena = unsafe {
+    Options::new()
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap()
+  };
+
+  // Test lock/unlock cycle
+  arena.lock_exclusive().unwrap();
+  arena.unlock().unwrap();
+
+  // Test try_lock
+  let locked = arena.try_lock_exclusive().unwrap();
+  assert!(locked);
+  arena.unlock().unwrap();
+
+  let locked = arena.try_lock_shared().unwrap();
+  assert!(locked);
+  arena.unlock().unwrap();
+}
+
+/// Test flush_async_header_and_range with different page alignment scenarios
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn mmap_flush_async_header_and_range<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir
+    .path()
+    .join(std::format!("test_{prefix}_mmap_flush_async"));
+
+  let arena = unsafe {
+    Options::new()
+      .with_capacity(65536)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .map_mut::<A, _>(&p)
+      .unwrap()
+  };
+
+  // Flush with len=0 (header only)
+  arena.flush_async_header_and_range(0, 0).unwrap();
+
+  // Flush range that overlaps with header (same page)
+  arena.flush_async_header_and_range(0, 100).unwrap();
+
+  // Flush range far from header (separate pages)
+  let b = arena.alloc_bytes(4096).unwrap();
+  let offset = b.offset();
+  arena.flush_async_header_and_range(offset, 4096).unwrap();
+
+  // Flush range that encompasses the header
+  arena
+    .flush_async_header_and_range(0, arena.data_offset() + 100)
+    .unwrap();
+}
+
+/// Test all operations that should fail on a read-only arena
+#[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
+pub(crate) fn read_only_operations<A: Allocator + Debug>(prefix: &str) {
+  let dir = tempfile::tempdir().unwrap();
+  let p = dir.path().join(std::format!("test_{prefix}_read_only_ops"));
+
+  // Create arena with data first
+  unsafe {
+    let a = Options::new()
+      .with_capacity(4096)
+      .with_create_new(true)
+      .with_read(true)
+      .with_write(true)
+      .with_freelist(crate::Freelist::Optimistic)
+      .map_mut::<A, _>(&p)
+      .unwrap();
+    let _ = a.alloc_bytes(100).unwrap();
+  }
+
+  // Open as read-only
+  let a = unsafe { Options::new().with_read(true).map::<A, _>(&p).unwrap() };
+  assert!(a.read_only());
+
+  // alloc_bytes should fail
+  assert!(matches!(a.alloc_bytes(10), Err(Error::ReadOnly)));
+
+  // alloc_aligned_bytes should fail
+  assert!(matches!(
+    a.alloc_aligned_bytes::<u64>(10),
+    Err(Error::ReadOnly)
+  ));
+
+  // alloc (typed) should fail
+  assert!(matches!(unsafe { a.alloc::<u32>() }, Err(Error::ReadOnly)));
+
+  // discard_freelist should fail
+  assert!(matches!(a.discard_freelist(), Err(Error::ReadOnly)));
+
+  // lock_shared on readonly mmap
+  a.lock_shared().unwrap();
+  a.unlock().unwrap();
+
+  // try_lock_shared on readonly mmap
+  let locked = a.try_lock_shared().unwrap();
+  assert!(locked);
+  a.unlock().unwrap();
+
+  // try_lock_exclusive on readonly mmap
+  let locked = a.try_lock_exclusive().unwrap();
+  assert!(locked);
+  a.unlock().unwrap();
+
+  // lock_exclusive on readonly mmap
+  a.lock_exclusive().unwrap();
+  a.unlock().unwrap();
 }

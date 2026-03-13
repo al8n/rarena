@@ -18,6 +18,7 @@ on:
       - '**.md'
       - '**.txt'
   schedule: [cron: "0 1 */30 * *"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -231,7 +232,7 @@ jobs:
             ${{ runner.os }}-miri-
       - name: Miri
         run: |
-          bash ci/miri_tb.sh ${{ matrix.target }}
+          bash ci/miri_tb.sh "${{ matrix.target }}"
 
   miri-sb:
     name: miri-sb
@@ -267,7 +268,7 @@ jobs:
             ${{ runner.os }}-miri-
       - name: Miri
         run: |
-          bash ci/miri_sb.sh ${{ matrix.target }}
+          bash ci/miri_sb.sh "${{ matrix.target }}"
 
   loom:
     name: loom

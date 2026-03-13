@@ -3,7 +3,7 @@
 </div>
 <div align="center">
 
-This crate provides a lock-free ARENA allocator and a set of lock-free data structures based on the ARENA allocator.
+Lock-free ARENA allocator and data structures for Rust.
 
 [<img alt="github" src="https://img.shields.io/badge/github-al8n/rarena-8da0cb?style=for-the-badge&logo=Github" height="22">][Github-url]
 <img alt="LoC" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fal8n%2F327b2a8aef9003246e45c6e47fe63937%2Fraw%2Frarena" height="22">
@@ -19,19 +19,48 @@ English | [简体中文][zh-cn-url]
 
 </div>
 
+## Overview
+
+`rarena` is an umbrella crate that re-exports [`rarena-allocator`](../rarena-allocator/) as `rarena::allocator`. It provides a convenient single dependency for using the lock-free ARENA allocator.
+
+## Quick Start
+
+```rust
+use rarena::allocator::{Allocator, Options};
+
+// Thread-safe arena with 1MB capacity
+let arena = Options::new()
+    .with_capacity(1024 * 1024)
+    .alloc::<rarena::allocator::sync::Arena>()
+    .unwrap();
+
+// Allocate bytes
+let bytes = arena.alloc_bytes(256).unwrap();
+```
+
 ## Installation
 
 ```toml
 [dependencies]
-rarena = "0.1"
+rarena = "0.7"
 ```
+
+### Feature Flags
+
+| Feature  | Default | Description                                    |
+|----------|---------|------------------------------------------------|
+| `std`    | Yes     | Standard library support                       |
+| `alloc`  | No      | `no_std` with heap allocation                  |
+| `memmap` | No      | File-backed and anonymous memory-mapped arenas |
+
+See the [`rarena-allocator` README](../rarena-allocator/README.md) for detailed documentation.
 
 #### License
 
 `rarena` is under the terms of both the MIT license and the
 Apache License (Version 2.0).
 
-See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.
+See [LICENSE-APACHE](../LICENSE-APACHE), [LICENSE-MIT](../LICENSE-MIT) for details.
 
 Copyright (c) 2024 Al Liu.
 

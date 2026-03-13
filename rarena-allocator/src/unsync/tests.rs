@@ -209,3 +209,94 @@ fn test_truncate_map() {
     truncate(arena);
   })
 }
+
+#[test]
+#[cfg(feature = "std")]
+fn test_print_segment_list_optimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Create segments by allocating, detaching, then deallocating
+    let mut blocks = Vec::new();
+    for i in 1..=3 {
+      let mut b = arena.alloc_bytes(i * 100).unwrap();
+      unsafe { b.detach() };
+      blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+    }
+
+    // Fill remaining
+    let remaining = arena.remaining();
+    if remaining > 0 {
+      let mut b = arena.alloc_bytes(remaining as u32).unwrap();
+      unsafe { b.detach() };
+    }
+
+    // Dealloc to create freelist entries
+    for (offset, size) in blocks {
+      unsafe { arena.dealloc(offset, size) };
+    }
+
+    // print_segment_list traverses the freelist and prints nodes
+    arena.print_segment_list();
+  });
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn test_print_segment_list_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    let mut blocks = Vec::new();
+    for i in 1..=3 {
+      let mut b = arena.alloc_bytes(i * 100).unwrap();
+      unsafe { b.detach() };
+      blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+    }
+
+    let remaining = arena.remaining();
+    if remaining > 0 {
+      let mut b = arena.alloc_bytes(remaining as u32).unwrap();
+      unsafe { b.detach() };
+    }
+
+    for (offset, size) in blocks {
+      unsafe { arena.dealloc(offset, size) };
+    }
+
+    arena.print_segment_list();
+  });
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn test_print_segment_list_empty() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Print empty freelist - exercises the sentinel-only path
+    arena.print_segment_list();
+  });
+}
+
+/// Test SegmentNode Debug impl for unsync Arena
+#[test]
+fn test_unsync_segment_node_debug() {
+  let node = SegmentNode(UnsafeCell::new(encode_segment_node(100, 200)));
+  let debug_str = format!("{:?}", node);
+  assert!(debug_str.contains("SegmentNode"));
+  assert!(debug_str.contains("offset"));
+  assert!(debug_str.contains("next"));
+}
