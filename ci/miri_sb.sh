@@ -39,5 +39,6 @@ cargo miri setup
 export MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-symbolic-alignment-check"
 
 cargo miri test --tests --target "$TARGET" --lib
+cargo miri test --tests --target "$TARGET" --lib --features allocator_api,allocator_api2
 
 cargo miri test --doc --target "$TARGET"

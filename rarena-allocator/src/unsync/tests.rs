@@ -301,3 +301,107 @@ fn test_unsync_segment_node_debug() {
   assert!(debug_str.contains("offset"));
   assert!(debug_str.contains("next"));
 }
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_core_allocator_basic() {
+  use core::alloc::Allocator as CoreAllocator;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let b = Box::new_in(42u64, &arena);
+    assert_eq!(*b, 42);
+    drop(b);
+
+    let mut v = Vec::new_in(&arena);
+    v.push(1u32);
+    v.push(2);
+    v.push(3);
+    assert_eq!(&v[..], &[1, 2, 3]);
+    drop(v);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_core_allocator_zero_sized() {
+  use core::alloc::{Allocator as CoreAllocator, Layout};
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let ptr = arena.allocate(Layout::new::<()>()).unwrap();
+    assert_eq!(ptr.len(), 0);
+    unsafe { arena.deallocate(ptr.cast(), Layout::new::<()>()) };
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_core_allocator_aligned() {
+  use core::alloc::{Allocator as CoreAllocator, Layout};
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(8192).alloc::<Arena>().unwrap();
+
+    for align in [1, 2, 4, 8, 16, 32, 64] {
+      let layout = Layout::from_size_align(64, align).unwrap();
+      let ptr = arena.allocate(layout).unwrap();
+      assert!(ptr.as_ptr().cast::<u8>() as usize % align == 0);
+      unsafe { arena.deallocate(ptr.cast(), layout) };
+    }
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_non_zero_offset() {
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+    let buf = arena.alloc_bytes(16).unwrap();
+    let ptr = buf.as_ptr();
+    let offset = unsafe { arena.non_zero_offset(ptr) };
+    assert!(offset.is_some());
+    assert!(offset.unwrap().get() > 0);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api2")]
+fn test_allocator_api2_basic() {
+  use allocator_api2::alloc::Allocator as Api2Allocator;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let b = allocator_api2::boxed::Box::new_in(42u64, &arena);
+    assert_eq!(*b, 42);
+    drop(b);
+
+    let mut v = allocator_api2::vec::Vec::new_in(&arena);
+    v.push(1u32);
+    v.push(2);
+    v.push(3);
+    assert_eq!(&v[..], &[1, 2, 3]);
+    drop(v);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api2")]
+fn test_allocator_api2_aligned() {
+  use allocator_api2::alloc::Allocator as Api2Allocator;
+  use core::alloc::Layout;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(8192).alloc::<Arena>().unwrap();
+
+    for align in [1, 2, 4, 8, 16, 32, 64] {
+      let layout = Layout::from_size_align(64, align).unwrap();
+      let ptr = arena.allocate(layout).unwrap();
+      assert!(ptr.as_ptr().cast::<u8>() as usize % align == 0);
+      unsafe { arena.deallocate(ptr.cast(), layout) };
+    }
+  });
+}

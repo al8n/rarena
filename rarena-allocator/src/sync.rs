@@ -535,6 +535,18 @@ impl Allocator for Arena {
 unsafe impl Send for Arena {}
 unsafe impl Sync for Arena {}
 
+#[cfg(feature = "allocator_api")]
+#[cfg_attr(docsrs, doc(cfg(feature = "allocator_api")))]
+unsafe impl core::alloc::Allocator for Arena {
+  impl_core_allocator!(Arena, core::alloc);
+}
+
+#[cfg(feature = "allocator_api2")]
+#[cfg_attr(docsrs, doc(cfg(feature = "allocator_api2")))]
+unsafe impl allocator_api2::alloc::Allocator for Arena {
+  impl_core_allocator!(Arena, allocator_api2::alloc);
+}
+
 impl Arena {
   #[inline]
   fn header(&self) -> &sealed::Header {

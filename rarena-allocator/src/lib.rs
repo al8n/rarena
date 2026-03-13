@@ -2,6 +2,7 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![deny(missing_docs)]
 
 #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -903,6 +904,79 @@ pub use bytes::*;
 
 mod object;
 pub use object::*;
+
+macro_rules! impl_core_allocator {
+  ($arena:ty, $($mod:ident)::+) => {
+    fn allocate(
+      &self,
+      layout: core::alloc::Layout,
+    ) -> Result<core::ptr::NonNull<[u8]>, $($mod)::+::AllocError> {
+      if layout.size() == 0 {
+        return Ok(core::ptr::NonNull::slice_from_raw_parts(
+          core::ptr::NonNull::dangling(),
+          0,
+        ));
+      }
+
+      // We store an 8-byte header (memory_offset: u32, memory_size: u32) before the
+      // user-visible pointer. Over-allocate to guarantee alignment after this header.
+      let header_size = core::mem::size_of::<u32>() * 2; // 8 bytes
+      let align = layout.align();
+      // Total extra: header + worst-case alignment padding
+      let extra = header_size + align - 1;
+      let total = layout
+        .size()
+        .checked_add(extra)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or($($mod)::+::AllocError)?;
+
+      let mut buf = Allocator::alloc_bytes(self, total).map_err(|_| $($mod)::+::AllocError)?;
+
+      let memory_offset = Buffer::buffer_offset(&buf) as u32;
+      let memory_size = Buffer::buffer_capacity(&buf) as u32;
+      let buf_ptr = buf.as_mut_ptr();
+
+      // Find the aligned pointer after the header
+      let header_end = unsafe { buf_ptr.add(header_size) };
+      let aligned_ptr = {
+        let addr = header_end as usize;
+        let aligned_addr = (addr + align - 1) & !(align - 1);
+        aligned_addr as *mut u8
+      };
+
+      // Write the memory_offset and memory_size just before the aligned pointer
+      unsafe {
+        let meta_ptr = aligned_ptr.sub(header_size);
+        core::ptr::write_unaligned(meta_ptr as *mut u32, memory_offset);
+        core::ptr::write_unaligned(
+          meta_ptr.add(core::mem::size_of::<u32>()) as *mut u32,
+          memory_size,
+        );
+      }
+
+      // Detach so the arena doesn't dealloc when BytesRefMut drops
+      unsafe { Buffer::detach(&mut buf) };
+
+      let ptr = unsafe { core::ptr::NonNull::new_unchecked(aligned_ptr) };
+      Ok(core::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
+    }
+
+    unsafe fn deallocate(&self, ptr: core::ptr::NonNull<u8>, layout: core::alloc::Layout) {
+      if layout.size() == 0 {
+        return;
+      }
+
+      unsafe {
+        let header_size = core::mem::size_of::<u32>() * 2;
+        let meta_ptr = ptr.as_ptr().sub(header_size);
+        let memory_offset = core::ptr::read_unaligned(meta_ptr as *const u32);
+        let memory_size =
+          core::ptr::read_unaligned(meta_ptr.add(core::mem::size_of::<u32>()) as *const u32);
+        Allocator::dealloc(self, memory_offset, memory_size);
+      }
+    }
+  };
+}
 
 /// Lock-free allocator allocator can be used in concurrent environments.
 pub mod sync;

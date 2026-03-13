@@ -1250,6 +1250,17 @@ pub trait Allocator: sealed::Sealed {
   /// - `ptr` must be allocated by this allocator.
   unsafe fn offset(&self, ptr: *const u8) -> usize;
 
+  /// Returns the offset to the start of the allocator as a [`NonZeroUsize`](core::num::NonZeroUsize).
+  ///
+  /// Returns `None` if the offset is zero.
+  ///
+  /// ## Safety
+  /// - `ptr` must be allocated by this allocator.
+  #[inline]
+  unsafe fn non_zero_offset(&self, ptr: *const u8) -> Option<core::num::NonZeroUsize> {
+    unsafe { core::num::NonZeroUsize::new(self.offset(ptr)) }
+  }
+
   /// Returns the page size.
   ///
   /// If in no-std environment, then this method will return `4096`.
