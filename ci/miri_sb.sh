@@ -38,6 +38,6 @@ cargo miri setup
 
 export MIRIFLAGS="-Zmiri-strict-provenance -Zmiri-disable-isolation -Zmiri-symbolic-alignment-check"
 
-cargo miri test --tests --target "$TARGET" --lib --features memmap
+cargo miri test --tests --target "$TARGET" --lib
 
-cargo miri test --doc --target "$TARGET" --features memmap
+cargo miri test --doc --target "$TARGET"

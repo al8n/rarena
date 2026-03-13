@@ -242,7 +242,7 @@ fn allocate_slow_path_concurrent_create_segment_and_acquire_from_segment(l: Aren
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_optimistic() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -273,7 +273,7 @@ fn test_print_segment_list_optimistic() {
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_pessimistic() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -304,7 +304,7 @@ fn test_print_segment_list_pessimistic() {
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_empty() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -563,8 +563,9 @@ fn test_concurrent_slow_path_alloc_pessimistic() {
 
 /// Test SegmentNode Debug impl for sync Arena
 #[test]
+#[cfg(not(feature = "loom"))]
 fn test_sync_segment_node_debug() {
-  use core::sync::atomic::AtomicU64;
+  use crate::sync::AtomicU64;
   let node = SegmentNode {
     size_and_next: AtomicU64::new(encode_segment_node(100, 200)),
   };

@@ -211,7 +211,7 @@ fn test_truncate_map() {
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_optimistic() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -246,7 +246,7 @@ fn test_print_segment_list_optimistic() {
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_pessimistic() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -277,7 +277,7 @@ fn test_print_segment_list_pessimistic() {
 }
 
 #[test]
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", not(feature = "loom")))]
 fn test_print_segment_list_empty() {
   crate::tests::run(|| {
     let arena = Options::new()
@@ -293,6 +293,7 @@ fn test_print_segment_list_empty() {
 
 /// Test SegmentNode Debug impl for unsync Arena
 #[test]
+#[cfg(not(feature = "loom"))]
 fn test_unsync_segment_node_debug() {
   let node = SegmentNode(UnsafeCell::new(encode_segment_node(100, 200)));
   let debug_str = format!("{:?}", node);

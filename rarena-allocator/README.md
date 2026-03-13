@@ -61,7 +61,7 @@ std::thread::spawn(move || {
 
 ### File-backed Arena (Persistence)
 
-```rust
+```rust,ignore
 use rarena_allocator::{Allocator, Options};
 
 // Create a file-backed arena

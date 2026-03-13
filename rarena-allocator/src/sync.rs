@@ -399,7 +399,7 @@ impl Allocator for Arena {
     // if the offset + size is the current allocated size, then we can deallocate the memory back to the main memory.
     if header
       .allocated
-      .compare_exchange_weak(offset + size, offset, Ordering::Release, Ordering::Relaxed)
+      .compare_exchange(offset + size, offset, Ordering::Release, Ordering::Relaxed)
       .is_ok()
     {
       return true;

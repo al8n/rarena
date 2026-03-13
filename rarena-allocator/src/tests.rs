@@ -1041,7 +1041,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(not(feature = "loom"), feature = "std"))]
     fn test_bytes_write_io() {
       $crate::tests::run(|| {
         $crate::tests::bytes_write_io(
@@ -1292,7 +1292,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn test_path_builder_operations() {
       $crate::tests::run(|| {
         $crate::tests::path_builder_operations::<$ty>($prefix);
@@ -1409,7 +1409,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn test_mlock_operations() {
       $crate::tests::run(|| {
         $crate::tests::mlock_operations::<$ty>($prefix);
@@ -1430,7 +1430,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn test_truncate_anon_mmap() {
       $crate::tests::run(|| {
         $crate::tests::truncate_anon_mmap::<$ty>();
@@ -1494,7 +1494,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(feature = "memmap", not(target_family = "wasm"), not(feature = "loom")))]
     fn test_flush_range_out_of_bounds() {
       $crate::tests::run(|| {
         $crate::tests::flush_range_out_of_bounds::<$ty>($prefix);
@@ -1839,7 +1839,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(not(feature = "loom"), feature = "std"))]
     fn test_error_display_formats() {
       $crate::tests::run(|| {
         $crate::tests::error_display_formats::<$ty>(
@@ -2000,7 +2000,7 @@ macro_rules! common_unit_tests {
     }
 
     #[test]
-    #[cfg(not(feature = "loom"))]
+    #[cfg(all(not(feature = "loom"), feature = "std"))]
     fn test_error_varint_display() {
       $crate::tests::run(|| {
         $crate::tests::error_varint_display();
@@ -2765,6 +2765,7 @@ pub(crate) fn with_reserved<A: Allocator>(l: A) {
   }
 }
 
+#[allow(unused)]
 pub(crate) fn error_display() {
   let e = Error::InsufficientSpace {
     requested: 100,
@@ -4930,7 +4931,7 @@ pub(crate) fn alloc_type_slow_path_with_freelist<A: Allocator>(a: A) {
 }
 
 /// Exercises error Display implementations.
-#[cfg(not(feature = "loom"))]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
 pub(crate) fn error_display_formats<A: Allocator + core::fmt::Debug>(a: A) {
   // Test InsufficientSpace error Display
   let err = Options::new().with_capacity(0).alloc::<A>().unwrap_err();
@@ -5265,7 +5266,7 @@ pub(crate) fn error_mmap_display() {
 }
 
 /// Exercises DecodeVarintError Display path.
-#[cfg(not(feature = "loom"))]
+#[cfg(all(not(feature = "loom"), feature = "std"))]
 pub(crate) fn error_varint_display() {
   let err = Error::DecodeVarintError(dbutils::leb128::DecodeVarintError::Overflow);
   let display = std::format!("{err}");
