@@ -16,7 +16,7 @@ alloc = ["rarena-allocator/alloc"]
 std = ["rarena-allocator/std"]
 memmap = ["rarena-allocator/memmap", "std"]
 allocator_api = ["rarena-allocator/allocator_api"]
-allocator_api2 = ["rarena-allocator/allocator_api2"]
+allocator_api2 = ["rarena-allocator/allocator_api2", "alloc"]
 
 [dependencies]
 rarena-allocator.workspace = true
