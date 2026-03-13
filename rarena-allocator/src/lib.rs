@@ -905,6 +905,7 @@ pub use bytes::*;
 mod object;
 pub use object::*;
 
+#[cfg(any(feature = "allocator_api", feature = "allocator_api2"))]
 macro_rules! impl_core_allocator {
   ($arena:ty, $($mod:ident)::+) => {
     fn allocate(

@@ -18,7 +18,7 @@ std = ["byteorder", "either/default", "dbutils/std", "rustix/std"]
 memmap = ["memmap2", "fs4", "std", "bitflags/std"]
 
 allocator_api = []
-allocator_api2 = ["dep:allocator-api2"]
+allocator_api2 = ["dep:allocator-api2", "alloc"]
 
 loom = ["dep:loom", "std", "crossbeam-utils/loom"]
 

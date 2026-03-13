@@ -1020,7 +1020,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   ///
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
+  #[allow(unused_unsafe)]
   pub(crate) unsafe fn unmount(&mut self) {
+    // SAFETY: All unsafe operations below are valid because this method's
+    // safety contract requires it to be called only from the Arena drop impl,
+    // ensuring exclusive access to the memory backend.
     unsafe {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       if self.lock_meta {
