@@ -298,7 +298,7 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
   /// The returned pointer may refer to uninitialized memory when this value
   /// was constructed from a `Kind::Slot(MaybeUninit<T>)`; in that case it
   /// still points to the slot's storage rather than [`NonNull::dangling()`].
-  /// For zero-sized types created via [`Self::new_zst`], [`NonNull::dangling()`]
+  /// For zero-sized types created via `Self::new_zst`, [`NonNull::dangling()`]
   /// is returned.
   pub fn as_mut_ptr(&mut self) -> NonNull<T> {
     match &mut self.kind {
