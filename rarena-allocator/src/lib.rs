@@ -923,7 +923,10 @@ macro_rules! impl_core_allocator {
       let header_size = core::mem::size_of::<u32>() * 2; // 8 bytes
       let align = layout.align();
       // Total extra: header + worst-case alignment padding
-      let extra = header_size + align - 1;
+      let extra = header_size
+        .checked_add(align)
+        .and_then(|v| v.checked_sub(1))
+        .ok_or($($mod)::+::AllocError)?;
       let total = layout
         .size()
         .checked_add(extra)
