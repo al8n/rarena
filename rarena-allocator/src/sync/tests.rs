@@ -82,7 +82,7 @@ fn test_alloc_aligned_in_slow_path_optimistic() {
     let _ = arena.alloc_bytes(remaining as u32).unwrap();
 
     for _ in 0..3 {
-      let _ = arena.alloc_aligned_bytes::<u64>(8);
+      arena.alloc_aligned_bytes::<u64>(8).unwrap();
     }
   });
 }
@@ -104,7 +104,7 @@ fn test_alloc_aligned_in_slow_path_pessimistic() {
     let _ = arena.alloc_bytes(remaining as u32).unwrap();
 
     for _ in 0..3 {
-      let _ = arena.alloc_aligned_bytes::<u64>(8);
+      arena.alloc_aligned_bytes::<u64>(8).unwrap();
     }
   });
 }
