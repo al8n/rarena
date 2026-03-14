@@ -835,7 +835,7 @@ impl Arena {
       match header.allocated.compare_exchange_weak(
         allocated,
         want,
-        Ordering::Release,
+        Ordering::AcqRel,
         Ordering::Acquire,
       ) {
         Ok(offset) => {
