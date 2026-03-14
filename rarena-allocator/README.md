@@ -186,7 +186,80 @@ rarena-allocator = "0.7"
   [dependencies]
   rarena-allocator = { version = "0.7", features = ["allocator_api"] }
   ```
-  # Requires a nightly toolchain and the unstable `allocator_api` feature.
+  > Requires a nightly toolchain and the unstable `allocator_api` feature.
+
+## Benchmarks
+
+Each benchmark allocates 1000 chunks per iteration. Mutex-based allocators use a simple bump allocator behind a lock for a fair comparison. Results collected on Apple M-series, `cargo bench`.
+
+### Why the Comparison Matters
+
+With a `Mutex<Vec<u8>>`, the lock must be held during both allocation **and** use of the buffer -- other threads are blocked the entire time. With the arena, allocation is a brief lock-free CAS; the returned buffer is then owned by the caller and can be read/written without blocking anyone.
+
+```text
+Mutex<Vec<u8>>:   [--- lock: bump offset + fill buffer ---]  ← other threads blocked
+sync::Arena:      [CAS] [--- fill buffer (no lock) ---]      ← other threads proceed
+```
+
+### Alloc + Fill Buffer (1000 iterations)
+
+Each iteration allocates a buffer, then fills it with data.
+- **Arena**: fills the buffer after the CAS completes -- no lock held, other threads allocate concurrently.
+- **Mutex**: fills the buffer while holding the lock -- other threads are blocked.
+
+#### Single-Thread (1t)
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | **6.38 µs** | 10.41 µs | 7.75 µs |
+| 512 B | **7.25 µs** | 16.47 µs | 11.95 µs |
+| 4096 B | **7.85 µs** | 78.04 µs | 76.30 µs |
+
+The arena wins across the board single-threaded. Its allocation time is constant regardless of buffer size (the CAS only touches a pointer), while mutexes pay for the fill under lock. With `Freelist::None`, dropped buffers are a no-op (pure bump allocator), eliminating deallocation overhead.
+
+#### 2 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 34.60 µs | 42.54 µs | **34.60 µs** |
+| 512 B | **31.03 µs** | 114.82 µs | 77.09 µs |
+| 4096 B | **39.89 µs** | 181.95 µs | 143.09 µs |
+
+At 2 threads with 4096 B buffers, the arena is **4.6x faster** than `std::sync::Mutex` and **3.6x faster** than `parking_lot::Mutex`.
+
+#### 4 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 11.05 ms | 277.01 µs | **112.23 µs** |
+| 512 B | 10.02 ms | 366.63 µs | **212.57 µs** |
+| 4096 B | 7.54 ms | 1.35 ms | **282.89 µs** |
+
+#### 8 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 7.61 ms | 285.57 µs | **190.30 µs** |
+| 512 B | 6.45 ms | 535.97 µs | **225.30 µs** |
+| 4096 B | 5.74 ms | 2.85 ms | **561.77 µs** |
+
+#### 50 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 28.38 ms | 2.42 ms | **1.03 ms** |
+| 512 B | 32.85 ms | 2.58 ms | **1.30 ms** |
+| 4096 B | 28.90 ms | 8.00 ms | **2.32 ms** |
+
+#### 100 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 57.80 ms | **1.98 ms** | 1.73 ms |
+| 512 B | 50.06 ms | 8.68 ms | **2.81 ms** |
+| 4096 B | 45.92 ms | 15.51 ms | **6.77 ms** |
+
+> **Note on high contention**: Under extreme contention (4+ threads), the lock-free CAS retry loop wastes more work than mutex-based serialization. Each failed CAS attempt is a wasted cycle, and with N threads the expected retries per success is O(N). The arena's strength at high thread counts is not raw allocation throughput, but that **callers can work on their buffers without blocking others** -- a benefit not captured by this micro-benchmark.
 
 ## Safety
 
@@ -205,7 +278,7 @@ Apache License (Version 2.0).
 
 See [LICENSE-APACHE](../LICENSE-APACHE), [LICENSE-MIT](../LICENSE-MIT) for details.
 
-Copyright (c) 2024 Al Liu.
+Copyright (c) 2026 Al Liu.
 
 [Github-url]: https://github.com/al8n/rarena/
 [CI-url]: https://github.com/al8n/rarena/actions/workflows/ci.yml

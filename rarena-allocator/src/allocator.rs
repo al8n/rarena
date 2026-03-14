@@ -1293,6 +1293,26 @@ pub trait Allocator: sealed::Sealed {
     self.as_ref().read_only()
   }
 
+  /// Returns whether the allocator zero-initializes allocated memory.
+  ///
+  /// When `true`, every allocation will be zero-initialized before being returned.
+  /// When `false`, allocated memory may contain stale data from previous allocations.
+  ///
+  /// The default value is `false`.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).with_zeroed(true).alloc::<Arena>().unwrap();
+  /// assert!(arena.zeroed());
+  /// ```
+  #[inline]
+  fn zeroed(&self) -> bool {
+    self.as_ref().zeroed()
+  }
+
   /// Returns the number of references to the allocator.
   ///
   /// ## Example

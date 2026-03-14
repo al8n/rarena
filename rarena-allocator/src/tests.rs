@@ -4254,7 +4254,8 @@ pub(crate) fn freelist_try_from() {
   assert_eq!(Freelist::try_from(0u8).unwrap(), Freelist::None);
   assert_eq!(Freelist::try_from(1u8).unwrap(), Freelist::Optimistic);
   assert_eq!(Freelist::try_from(2u8).unwrap(), Freelist::Pessimistic);
-  assert!(Freelist::try_from(3u8).is_err());
+  assert_eq!(Freelist::try_from(3u8).unwrap(), Freelist::Discard);
+  assert!(Freelist::try_from(4u8).is_err());
   assert!(Freelist::try_from(255u8).is_err());
 
   // Test UnknownFreelist Display

@@ -151,6 +151,7 @@ pub struct Arena {
   ro: bool,
   freelist: Freelist,
   page_size: u32,
+  zeroed: bool,
 }
 
 impl fmt::Debug for Arena {
@@ -203,6 +204,7 @@ impl Clone for Arena {
         cap: self.cap,
         freelist: self.freelist,
         page_size: self.page_size,
+        zeroed: self.zeroed,
       }
     }
   }
@@ -223,6 +225,7 @@ impl From<Memory> for Arena {
       ptr,
       ro: memory.read_only(),
       max_retries: memory.maximum_retries(),
+      zeroed: memory.zeroed(),
       data_offset: memory.data_offset() as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
       page_size: *PAGE_SIZE,
@@ -311,7 +314,9 @@ impl Allocator for Arena {
   fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
     self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
       None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      Some(allocated) => unsafe {
+        BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard)
+      },
     })
   }
 
@@ -323,7 +328,7 @@ impl Allocator for Arena {
   //     .alloc_aligned_bytes_within_page_in::<T>(size)
   //     .map(|a| match a {
   //       None => BytesRefMut::null(self),
-  //       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //       Some(allocated) => unsafe { BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard) },
   //     })
   // }
 
@@ -331,7 +336,9 @@ impl Allocator for Arena {
   fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
     self.alloc_bytes_in(size).map(|a| match a {
       None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      Some(allocated) => unsafe {
+        BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard)
+      },
     })
   }
 
@@ -341,7 +348,7 @@ impl Allocator for Arena {
   // fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
   //   self.alloc_bytes_within_page_in(size).map(|a| match a {
   //     None => BytesRefMut::null(self),
-  //     Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //     Some(allocated) => unsafe { BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard) },
   //   })
   // }
 
@@ -413,7 +420,7 @@ impl Allocator for Arena {
     }
 
     match self.freelist {
-      Freelist::None => {
+      Freelist::None | Freelist::Discard => {
         self.increase_discarded(size);
         true
       }
@@ -429,7 +436,7 @@ impl Allocator for Arena {
     }
 
     Ok(match self.freelist {
-      Freelist::None => 0,
+      Freelist::None | Freelist::Discard => 0,
       _ => self.discard_freelist_in(),
     })
   }
@@ -759,13 +766,15 @@ impl Arena {
       tracing::debug!("allocate {} bytes at offset {} from memory", size, offset);
 
       let allocated = Meta::new(self.ptr as _, offset, size);
-      unsafe { allocated.clear(self) };
+      if self.zeroed {
+        unsafe { allocated.clear(self) };
+      }
       return Ok(Some(allocated));
     }
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: size,
         available: self.remaining() as u32,
       }),
@@ -879,7 +888,7 @@ impl Arena {
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: size + extra,
         available: self.remaining() as u32,
       }),
@@ -992,13 +1001,15 @@ impl Arena {
         offset
       );
 
-      unsafe { allocated.clear(self) };
+      if self.zeroed {
+        unsafe { allocated.clear(self) };
+      }
       return Ok(Some(allocated));
     }
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: want,
         available: self.remaining() as u32,
       }),
@@ -1132,8 +1143,10 @@ impl Arena {
     let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
     allocated.ptr_offset = segment_node.data_offset;
     allocated.ptr_size = size;
-    unsafe {
-      allocated.clear(self);
+    if self.zeroed {
+      unsafe {
+        allocated.clear(self);
+      }
     }
     Ok(allocated)
   }
@@ -1203,8 +1216,10 @@ impl Arena {
     let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
     allocated.ptr_offset = segment_node.data_offset;
     allocated.ptr_size = size;
-    unsafe {
-      allocated.clear(self);
+    if self.zeroed {
+      unsafe {
+        allocated.clear(self);
+      }
     }
     Ok(allocated)
   }

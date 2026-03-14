@@ -52,6 +52,7 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   freelist: Freelist,
   read_only: bool,
   max_retries: u8,
+  zeroed: bool,
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   header_offset: usize,
@@ -120,6 +121,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[inline]
   pub(crate) const fn maximum_retries(&self) -> u8 {
     self.max_retries
+  }
+
+  #[inline]
+  pub(crate) const fn zeroed(&self) -> bool {
+    self.zeroed
   }
 
   #[inline]
@@ -306,6 +312,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         freelist: opts.freelist(),
         read_only: false,
         max_retries: opts.maximum_retries(),
+        zeroed: opts.zeroed(),
       })
     }
   }
@@ -443,6 +450,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: false,
           header_offset: header_ptr_offset,
         };
@@ -582,6 +590,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: true,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: opts.lock_meta(),
           header_offset: header_ptr_offset,
         };
@@ -656,6 +665,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: opts.lock_meta(),
         };
 

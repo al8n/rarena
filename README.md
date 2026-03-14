@@ -91,7 +91,7 @@ Apache License (Version 2.0).
 
 See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.
 
-Copyright (c) 2024 Al Liu.
+Copyright (c) 2026 Al Liu.
 
 [Github-url]: https://github.com/al8n/rarena/
 [CI-url]: https://github.com/al8n/rarena/actions/workflows/ci.yml
