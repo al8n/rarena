@@ -19,4 +19,4 @@ allocator_api = ["rarena-allocator/allocator_api"]
 allocator_api2 = ["rarena-allocator/allocator_api2", "alloc"]
 
 [dependencies]
-rarena-allocator.workspace = true
+rarena-allocator = { workspace = true, default-features = false }
