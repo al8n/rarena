@@ -293,8 +293,13 @@ impl<'a, T, A: Allocator> RefMut<'a, T, A> {
     }
   }
 
-  /// Returns the pointer to the `T`, the pointer may not be initialized.
-  /// If the pointer is not initialized, then [`NonNull::dangling()`] is returned.
+  /// Returns a non-null pointer to the underlying `T`.
+  ///
+  /// The returned pointer may refer to uninitialized memory when this value
+  /// was constructed from a `Kind::Slot(MaybeUninit<T>)`; in that case it
+  /// still points to the slot's storage rather than [`NonNull::dangling()`].
+  /// For zero-sized types created via [`Self::new_zst`], [`NonNull::dangling()`]
+  /// is returned.
   pub fn as_mut_ptr(&mut self) -> NonNull<T> {
     match &mut self.kind {
       // SAFETY: MaybeUninit always has a valid, non-null pointer to its storage.
