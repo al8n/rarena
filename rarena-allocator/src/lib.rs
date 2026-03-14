@@ -623,7 +623,7 @@ macro_rules! get_byte_order {
 
         let cur = self.len - SIZE.get();
         let buf = self.buffer();
-        let value = <$ty>::from_be_bytes(buf[cur..cur + SIZE.get()].try_into().unwrap());
+        let value = <$ty>::$converter(buf[cur..cur + SIZE.get()].try_into().unwrap());
         self.len -= SIZE.get();
         value
       }

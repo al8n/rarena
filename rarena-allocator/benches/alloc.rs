@@ -124,8 +124,11 @@ fn bench_sync_alloc_dealloc_optimistic(c: &mut Criterion) {
           // Pre-allocate and deallocate to populate freelist
           let mut offsets = Vec::new();
           for _ in 0..500 {
-            let bytes = arena.alloc_bytes(size).unwrap();
-            offsets.push((bytes.offset() as u32, size));
+            let mut bytes = arena.alloc_bytes(size).unwrap();
+            offsets.push((bytes.buffer_offset() as u32, bytes.buffer_capacity() as u32));
+            unsafe {
+              bytes.detach();
+            }
           }
           for (offset, sz) in offsets {
             unsafe {
@@ -156,8 +159,11 @@ fn bench_sync_alloc_dealloc_pessimistic(c: &mut Criterion) {
           let arena = make_sync_arena(64 << 20, Freelist::Pessimistic);
           let mut offsets = Vec::new();
           for _ in 0..500 {
-            let bytes = arena.alloc_bytes(size).unwrap();
-            offsets.push((bytes.offset() as u32, size));
+            let mut bytes = arena.alloc_bytes(size).unwrap();
+            offsets.push((bytes.buffer_offset() as u32, bytes.buffer_capacity() as u32));
+            unsafe {
+              bytes.detach();
+            }
           }
           for (offset, sz) in offsets {
             unsafe {
@@ -196,8 +202,11 @@ fn bench_sync_alloc_dealloc_contended(c: &mut Criterion) {
           // Pre-populate freelist
           let mut offsets = Vec::new();
           for _ in 0..2000 {
-            let bytes = arena.alloc_bytes(size).unwrap();
-            offsets.push((bytes.offset() as u32, size));
+            let mut bytes = arena.alloc_bytes(size).unwrap();
+            offsets.push((bytes.buffer_offset() as u32, bytes.buffer_capacity() as u32));
+            unsafe {
+              bytes.detach();
+            }
           }
           for (offset, sz) in offsets {
             unsafe {
@@ -266,8 +275,11 @@ fn bench_unsync_alloc_dealloc(c: &mut Criterion) {
               let arena = make_unsync_arena(64 << 20, fl);
               let mut offsets = Vec::new();
               for _ in 0..500 {
-                let bytes = arena.alloc_bytes(size).unwrap();
-                offsets.push((bytes.offset() as u32, size));
+                let mut bytes = arena.alloc_bytes(size).unwrap();
+                offsets.push((bytes.buffer_offset() as u32, bytes.buffer_capacity() as u32));
+                unsafe {
+                  bytes.detach();
+                }
               }
               for (offset, sz) in offsets {
                 unsafe {
