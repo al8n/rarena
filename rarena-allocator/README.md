@@ -151,11 +151,13 @@ rarena-allocator = "0.7"
 
 ### Feature Flags
 
-| Feature  | Default | Description                                       |
-|----------|---------|---------------------------------------------------|
-| `std`    | Yes     | Standard library support                          |
-| `alloc`  | No      | `no_std` with `alloc` crate (heap allocation)     |
-| `memmap` | No      | File-backed and anonymous memory-mapped arenas    |
+| Feature          | Default | Description                                                                      |
+|------------------|---------|----------------------------------------------------------------------------------|
+| `std`            | Yes     | Standard library support                                                         |
+| `alloc`          | No      | `no_std` with `alloc` crate (heap allocation)                                    |
+| `memmap`         | No      | File-backed and anonymous memory-mapped arenas                                   |
+| `allocator_api`  | No      | Integration with unstable `allocator_api` (requires nightly Rust)               |
+| `allocator_api2` | No      | Integration with stable allocator API (`core::alloc::Allocator` / `allocator_api2`) |
 
 - `no_std` setup:
 
@@ -170,6 +172,21 @@ rarena-allocator = "0.7"
   [dependencies]
   rarena-allocator = { version = "0.7", features = ["memmap"] }
   ```
+
+- With `allocator_api2` integration (stable):
+
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.7", features = ["allocator_api2"] }
+  ```
+
+- With nightly `allocator_api` integration (unstable):
+
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.7", features = ["allocator_api"] }
+  ```
+  # Requires a nightly toolchain and the unstable `allocator_api` feature.
 
 ## Safety
 
