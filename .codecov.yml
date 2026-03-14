@@ -5,7 +5,8 @@ ignore:
   - rarena-allocator/examples/
   - rarena-allocator/benches/
   - rarena-allocator/tests/
-  - **test.rs
+  - "**/*tests.rs"
+  - "**/tests/*"
 
 coverage:
   status:

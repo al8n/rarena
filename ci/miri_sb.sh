@@ -8,6 +8,7 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
+TARGET=$1
 
 # Install cross-compilation toolchain on Linux
 if [ "$(uname)" = "Linux" ]; then
@@ -29,8 +30,6 @@ if [ "$(uname)" = "Linux" ]; then
       ;;
   esac
 fi
-
-TARGET=$1
 
 rustup toolchain install nightly --component miri
 rustup override set nightly

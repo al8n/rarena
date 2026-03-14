@@ -304,6 +304,7 @@ fn test_unsync_segment_node_debug() {
 
 #[test]
 #[cfg(feature = "allocator_api")]
+#[allow(unused_imports)]
 fn test_core_allocator_basic() {
   use core::alloc::Allocator as CoreAllocator;
 
@@ -369,6 +370,7 @@ fn test_non_zero_offset() {
 
 #[test]
 #[cfg(feature = "allocator_api2")]
+#[allow(unused_imports)]
 fn test_allocator_api2_basic() {
   use allocator_api2::alloc::Allocator as Api2Allocator;
 

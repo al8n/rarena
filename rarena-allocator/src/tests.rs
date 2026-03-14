@@ -441,6 +441,7 @@ macro_rules! common_unit_tests {
 
     #[test]
     #[cfg(not(feature = "loom"))]
+    #[cfg_attr(miri, ignore)]
     fn checksum() {
       $crate::tests::run(|| {
         use dbutils::checksum::{BuildChecksumer, Crc32};
@@ -467,6 +468,7 @@ macro_rules! common_unit_tests {
 
     #[test]
     #[cfg(not(feature = "loom"))]
+    #[cfg_attr(miri, ignore)]
     fn checksum_with_reserved() {
       $crate::tests::run(|| {
         use dbutils::checksum::{BuildChecksumer, Crc32};
