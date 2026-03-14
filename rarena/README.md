@@ -47,11 +47,13 @@ rarena = "0.7"
 
 ### Feature Flags
 
-| Feature  | Default | Description                                    |
-|----------|---------|------------------------------------------------|
-| `std`    | Yes     | Standard library support                       |
-| `alloc`  | No      | `no_std` with heap allocation                  |
-| `memmap` | No      | File-backed and anonymous memory-mapped arenas |
+| Feature          | Default | Description                                                     |
+|------------------|---------|-----------------------------------------------------------------|
+| `std`            | Yes     | Standard library support                                        |
+| `alloc`          | No      | `no_std` with heap allocation                                   |
+| `allocator_api`  | No      | Nightly-only `Allocator` trait integration (requires nightly)   |
+| `allocator_api2` | No      | Stable `Allocator` trait integration via the allocator crates   |
+| `memmap`         | No      | File-backed and anonymous memory-mapped arenas                  |
 
 See the [`rarena-allocator` README](../rarena-allocator/README.md) for detailed documentation.
 
