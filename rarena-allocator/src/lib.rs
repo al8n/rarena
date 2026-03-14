@@ -934,14 +934,21 @@ macro_rules! impl_core_allocator {
 
       let memory_offset = Buffer::buffer_offset(&buf) as u32;
       let memory_size = Buffer::buffer_capacity(&buf) as u32;
-      let buf_ptr = buf.as_mut_ptr();
+
+      // Detach so the arena doesn't dealloc when BytesRefMut drops
+      unsafe { Buffer::detach(&mut buf) };
+
+      // Use the arena's raw pointer for provenance that outlives the BytesRefMut
+      let base_ptr = Allocator::raw_mut_ptr(self);
 
       // Find the aligned pointer after the header
+      let buf_ptr = unsafe { base_ptr.add(memory_offset as usize) };
       let header_end = unsafe { buf_ptr.add(header_size) };
       let aligned_ptr = {
         let addr = header_end as usize;
         let aligned_addr = (addr + align - 1) & !(align - 1);
-        aligned_addr as *mut u8
+        let offset = aligned_addr - addr;
+        unsafe { header_end.add(offset) }
       };
 
       // Write the memory_offset and memory_size just before the aligned pointer
@@ -954,9 +961,6 @@ macro_rules! impl_core_allocator {
         );
       }
 
-      // Detach so the arena doesn't dealloc when BytesRefMut drops
-      unsafe { Buffer::detach(&mut buf) };
-
       let ptr = unsafe { core::ptr::NonNull::new_unchecked(aligned_ptr) };
       Ok(core::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
     }
@@ -968,7 +972,12 @@ macro_rules! impl_core_allocator {
 
       unsafe {
         let header_size = core::mem::size_of::<u32>() * 2;
-        let meta_ptr = ptr.as_ptr().sub(header_size);
+        // Compute the offset of the metadata within the arena from the returned pointer.
+        // We use the arena's raw pointer for provenance to avoid Stacked Borrows issues,
+        // since the returned pointer's tag may not cover the metadata region.
+        let base_ptr = Allocator::raw_mut_ptr(self);
+        let ptr_offset = ptr.as_ptr().offset_from(base_ptr) as usize;
+        let meta_ptr = base_ptr.add(ptr_offset - header_size);
         let memory_offset = core::ptr::read_unaligned(meta_ptr as *const u32);
         let memory_size =
           core::ptr::read_unaligned(meta_ptr.add(core::mem::size_of::<u32>()) as *const u32);
