@@ -2,6 +2,7 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![deny(missing_docs)]
 
 #[cfg(not(any(feature = "std", feature = "alloc")))]
@@ -24,8 +25,7 @@ mod sealed;
 #[macro_use]
 mod tests;
 
-use core::mem;
-use dbutils::checksum::{BuildChecksumer, Checksumer};
+use core::{mem, num::NonZeroUsize};
 
 pub use allocator::Allocator;
 pub use dbutils::checksum;
@@ -129,11 +129,11 @@ pub trait Buffer {
 #[inline]
 fn write_sanity(freelist: u8, magic_version: u16, data: &mut [u8]) {
   data[FREELIST_OFFSET] = freelist;
-  data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE].copy_from_slice(MAGIC_TEXT.as_ref());
+  data[MAGIC_TEXT_OFFSET..MAGIC_TEXT_OFFSET + MAGIC_TEXT_SIZE].copy_from_slice(&MAGIC_TEXT);
   data[MAGIC_VERISON_OFFSET..MAGIC_VERISON_OFFSET + MAGIC_VERISON_SIZE]
-    .copy_from_slice(magic_version.to_le_bytes().as_ref());
+    .copy_from_slice(&magic_version.to_le_bytes());
   data[VERSION_OFFSET..VERSION_OFFSET + VERSION_SIZE]
-    .copy_from_slice(CURRENT_VERSION.to_le_bytes().as_ref());
+    .copy_from_slice(&CURRENT_VERSION.to_le_bytes());
 }
 
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
@@ -303,11 +303,11 @@ macro_rules! put_byte_order {
     paste::paste! {
       #[doc = "Put a `" $ty "` value into the buffer in " $endian " byte order, return an error if the buffer does not have enough space."]
       #[inline]
-      pub fn $name(&mut self, value: $ty) -> Result<(), InsufficientBuffer> {
-        const SIZE: usize = core::mem::size_of::<$ty>();
+      pub fn $name(&mut self, value: $ty) -> Result<(), InsufficientSpace> {
+        const SIZE: NonZeroUsize = NonZeroUsize::new(core::mem::size_of::<$ty>()).unwrap();
 
-        if self.len + SIZE > self.capacity() {
-          return Err(InsufficientBuffer::with_information(SIZE as u64, (self.capacity() - self.len) as u64));
+        if self.len + SIZE.get() > self.capacity() {
+          return Err(InsufficientSpace::new(SIZE, self.capacity() - self.len));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -344,7 +344,7 @@ macro_rules! write_varint {
       #[doc = "Write a `" $ty "` value into the buffer in LEB128 format, return number of bytes written on success, or an error if the buffer does not have enough space."]
       #[inline]
       #[cfg(feature = "std")]
-      pub fn $write_name(&mut self, value: $ty) -> std::io::Result<usize> {
+      pub fn $write_name(&mut self, value: $ty) -> std::io::Result<NonZeroUsize> {
         self.$put_name(value).map_err(|e| std::io::Error::new(std::io::ErrorKind::WriteZero, e))
       }
     }
@@ -358,12 +358,12 @@ macro_rules! put_varint {
       ///
       /// Returns the number of bytes written.
       #[inline]
-      pub fn $name(&mut self, value: $ty) -> Result<usize, dbutils::error::InsufficientBuffer> {
+      pub fn $name(&mut self, value: $ty) -> Result<NonZeroUsize, varing::ConstEncodeError> {
         let buf = unsafe {
           core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
         };
-        dbutils::leb128::[< encode_ $ty _varint_to >](value, buf)
-          .inspect(|len| self.len += *len)
+        varing::[< encode_ $ty _varint_to >](value, buf)
+          .inspect(|len| self.len += len.get())
           .map_err(Into::into)
       }
 
@@ -375,11 +375,11 @@ macro_rules! put_varint {
       ///
       #[doc = "- If the buffer does not have enough space to hold the `" $ty "`."]
       #[inline]
-      pub fn [< $name _unchecked >] (&mut self, value: $ty) -> usize {
+      pub fn [< $name _unchecked >] (&mut self, value: $ty) -> NonZeroUsize {
         let buf = unsafe {
           core::slice::from_raw_parts_mut(self.as_mut_ptr().add(self.len), self.capacity() - self.len)
         };
-        dbutils::leb128::[< encode_ $ty _varint_to >] (value, buf).inspect(|len| self.len += *len).unwrap()
+        varing::[< encode_ $ty _varint_to >] (value, buf).inspect(|len| self.len += len.get()).unwrap()
       }
     }
   }
@@ -391,7 +391,7 @@ macro_rules! impl_bytes_mut_utils {
     ///
     /// Returns a well-aligned pointer for `T`
     #[inline]
-    pub fn align_to<T>(&mut self) -> Result<core::ptr::NonNull<T>, InsufficientBuffer> {
+    pub fn align_to<T>(&mut self) -> Result<core::ptr::NonNull<T>, InsufficientSpace> {
       if mem::size_of::<T>() == 0 {
         return Ok(core::ptr::NonNull::dangling());
       }
@@ -399,7 +399,7 @@ macro_rules! impl_bytes_mut_utils {
       let align_offset = crate::align_offset::<T>(self.allocated.memory_offset + self.len as u32);
 
       if align_offset > self.allocated.memory_offset + self.allocated.memory_size {
-        return Err(InsufficientBuffer::with_information((align_offset as u64 - self.len as u64 - self.allocated.memory_offset as u64), (self.allocated.memory_size as u64 - self.len as u64)));
+        return Err(InsufficientSpace::new(NonZeroUsize::new(align_offset as usize - self.len - self.allocated.memory_offset as usize).unwrap(), self.allocated.memory_size as usize - self.len));
       }
 
       self.len = (align_offset - self.allocated.memory_offset) as usize;
@@ -447,11 +447,11 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> { unsafe {
+    pub unsafe fn put<T>(&mut self, val: T) -> Result<&mut T, InsufficientSpace> { unsafe {
       let size = core::mem::size_of::<T>();
 
       if self.len + size > self.capacity() {
-        return Err(InsufficientBuffer::with_information(size as u64, (self.capacity() - self.len) as u64));
+        return Err(InsufficientSpace::new(NonZeroUsize::new(size).unwrap(), self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -473,7 +473,7 @@ macro_rules! impl_bytes_mut_utils {
     ///   1. Types require allocation are not recoverable.
     ///   2. Pointers are not recoverable, like `*const T`, `*mut T`, `NonNull` and any structs contains pointers,
     ///      although those types are on stack, but they cannot be recovered, when reopens the file.
-    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, InsufficientBuffer> { unsafe {
+    pub unsafe fn put_aligned<T>(&mut self, val: T) -> Result<&mut T, InsufficientSpace> { unsafe {
       let mut ptr = self.align_to::<T>()?;
 
       ptr.as_ptr().write(val);
@@ -484,11 +484,11 @@ macro_rules! impl_bytes_mut_utils {
   (slice) => {
     /// Put a bytes slice into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_slice(&mut self, slice: &[u8]) -> Result<(), InsufficientBuffer> {
+    pub fn put_slice(&mut self, slice: &[u8]) -> Result<(), InsufficientSpace> {
       let size = slice.len();
 
       if self.len + size > self.capacity() {
-        return Err(InsufficientBuffer::with_information(size as u64, (self.capacity() - self.len) as u64));
+        return Err(InsufficientSpace::new(NonZeroUsize::new(size).unwrap(), self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -541,11 +541,11 @@ macro_rules! impl_bytes_mut_utils {
   (8) => {
     /// Put a `u8` value into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_u8(&mut self, value: u8) -> Result<(), InsufficientBuffer> {
-      const SIZE: usize = core::mem::size_of::<u8>();
+    pub fn put_u8(&mut self, value: u8) -> Result<(), InsufficientSpace> {
+      const SIZE: NonZeroUsize = NonZeroUsize::new(core::mem::size_of::<u8>()).unwrap();
 
-      if self.len + SIZE > self.capacity() {
-        return Err(InsufficientBuffer::with_information(SIZE as u64, (self.capacity() - self.len) as u64));
+      if self.len + SIZE.get() > self.capacity() {
+        return Err(InsufficientSpace::new(SIZE, self.capacity() - self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -564,17 +564,15 @@ macro_rules! impl_bytes_mut_utils {
     /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
     #[inline]
     pub unsafe fn put_u8_unchecked(&mut self, value: u8) {
-      const SIZE: usize = core::mem::size_of::<u8>();
-
       let cur = self.len;
       let buf = self.buffer_mut();
-      buf[cur..cur + SIZE].copy_from_slice(&[value]);
-      self.len += SIZE;
+      buf[cur] = value;
+      self.len += 1;
     }
 
     /// Put a `i8` value into the buffer, return an error if the buffer does not have enough space.
     #[inline]
-    pub fn put_i8(&mut self, value: i8) -> Result<(), InsufficientBuffer> {
+    pub fn put_i8(&mut self, value: i8) -> Result<(), InsufficientSpace> {
       self.put_u8(value as u8)
     }
 
@@ -599,11 +597,11 @@ macro_rules! get_byte_order {
     paste::paste! {
       #[doc = "Get a `" $ty "` value from the buffer in " $endian " byte order, return an error if the buffer does not have enough bytes."]
       #[inline]
-      pub fn $name(&mut self) -> Result<$ty, IncompleteBuffer> {
-        const SIZE: usize = core::mem::size_of::<$ty>();
+      pub fn $name(&mut self) -> Result<$ty, InsufficientData> {
+        const SIZE: NonZeroUsize = NonZeroUsize::new(core::mem::size_of::<$ty>()).unwrap();
 
-        if self.len < SIZE {
-          return Err(IncompleteBuffer::with_information(SIZE as u64, self.len as u64));
+        if self.len < SIZE.get() {
+          return Err(InsufficientData::with_required(SIZE, self.len));
         }
 
         // SAFETY: We have checked the buffer size.
@@ -621,12 +619,12 @@ macro_rules! get_byte_order {
       /// [undefined behavior]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
       #[inline]
       pub unsafe fn [< $name _unchecked >](&mut self) -> $ty {
-        const SIZE: usize = core::mem::size_of::<$ty>();
+        const SIZE: NonZeroUsize = NonZeroUsize::new(core::mem::size_of::<$ty>()).unwrap();
 
-        let cur = self.len - SIZE;
+        let cur = self.len - SIZE.get();
         let buf = self.buffer();
-        let value = <$ty>::from_be_bytes(buf[cur..cur + SIZE].try_into().unwrap());
-        self.len -= SIZE;
+        let value = <$ty>::$converter(buf[cur..cur + SIZE.get()].try_into().unwrap());
+        self.len -= SIZE.get();
         value
       }
     }
@@ -644,8 +642,8 @@ macro_rules! get_varint {
       /// - The second element of the tuple is the decoded value.
       #[doc = "- The second element of the tuple is the decoded `" $ty "`."]
       #[inline]
-      pub fn $name(&self) -> Result<(usize, $ty), dbutils::leb128::DecodeVarintError> {
-        dbutils::leb128::[< decode_ $ty _varint >](self)
+      pub fn $name(&self) -> Result<(NonZeroUsize, $ty), varing::ConstDecodeError> {
+        varing::[< decode_ $ty _varint >](self)
           .map(|(bytes, value)| (bytes, value as $ty))
       }
 
@@ -657,8 +655,8 @@ macro_rules! get_varint {
       ///
       #[doc = "- If the buffer does not have a valid LEB128 format `" $ty "`."]
       #[inline]
-      pub fn [< $name _unchecked >](&mut self) -> (usize, $ty) {
-        dbutils::leb128::[< decode_ $ty _varint >](self)
+      pub fn [< $name _unchecked >](&mut self) -> (NonZeroUsize, $ty) {
+        varing::[< decode_ $ty _varint >](self)
           .map(|(bytes, value)| (bytes, value as $ty))
           .unwrap()
       }
@@ -670,9 +668,9 @@ macro_rules! impl_bytes_utils {
   (slice) => {
     /// Get a byte slice from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_slice(&self, size: usize) -> Result<&[u8], IncompleteBuffer> {
+    pub fn get_slice(&self, size: usize) -> Result<&[u8], InsufficientData> {
       if self.len < size {
-        return Err(IncompleteBuffer::with_information(size as u64, self.len as u64));
+        return Err(InsufficientData::with_required(NonZeroUsize::new(size).unwrap(), self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -696,9 +694,9 @@ macro_rules! impl_bytes_utils {
 
     /// Get a mutable byte slice from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_slice_mut(&mut self, size: usize) -> Result<&mut [u8], IncompleteBuffer> {
+    pub fn get_slice_mut(&mut self, size: usize) -> Result<&mut [u8], InsufficientData> {
       if self.len < size {
-        return Err(IncompleteBuffer::with_information(size as u64, self.len as u64));
+        return Err(InsufficientData::with_required(NonZeroUsize::new(size).unwrap(), self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -739,9 +737,9 @@ macro_rules! impl_bytes_utils {
   (8) => {
     /// Get a `u8` value from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_u8(&mut self) -> Result<u8, IncompleteBuffer> {
+    pub fn get_u8(&mut self) -> Result<u8, InsufficientData> {
       if self.len < 1 {
-        return Err(IncompleteBuffer::with_information(1, self.len as u64));
+        return Err(InsufficientData::with_required(NonZeroUsize::new(1).unwrap(), self.len));
       }
 
       // SAFETY: We have checked the buffer size.
@@ -768,7 +766,7 @@ macro_rules! impl_bytes_utils {
 
     /// Get a `i8` value from the buffer, return an error if the buffer does not have enough bytes.
     #[inline]
-    pub fn get_i8(&mut self) -> Result<i8, IncompleteBuffer> {
+    pub fn get_i8(&mut self) -> Result<i8, InsufficientData> {
       self.get_u8().map(|v| v as i8)
     }
 
@@ -905,6 +903,92 @@ pub use bytes::*;
 
 mod object;
 pub use object::*;
+
+#[cfg(any(feature = "allocator_api", feature = "allocator_api2"))]
+macro_rules! impl_core_allocator {
+  ($arena:ty, $($mod:ident)::+) => {
+    fn allocate(
+      &self,
+      layout: core::alloc::Layout,
+    ) -> Result<core::ptr::NonNull<[u8]>, $($mod)::+::AllocError> {
+      if layout.size() == 0 {
+        return Ok(core::ptr::NonNull::slice_from_raw_parts(
+          core::ptr::NonNull::dangling(),
+          0,
+        ));
+      }
+
+      // We store an 8-byte header (memory_offset: u32, memory_size: u32) before the
+      // user-visible pointer. Over-allocate to guarantee alignment after this header.
+      let header_size = core::mem::size_of::<u32>() * 2; // 8 bytes
+      let align = layout.align();
+      // Total extra: header + worst-case alignment padding
+      let extra = header_size
+        .checked_add(align)
+        .and_then(|v| v.checked_sub(1))
+        .ok_or($($mod)::+::AllocError)?;
+      let total = layout
+        .size()
+        .checked_add(extra)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or($($mod)::+::AllocError)?;
+
+      let mut buf = Allocator::alloc_bytes(self, total).map_err(|_| $($mod)::+::AllocError)?;
+
+      let memory_offset = Buffer::buffer_offset(&buf) as u32;
+      let memory_size = Buffer::buffer_capacity(&buf) as u32;
+
+      // Detach so the arena doesn't dealloc when BytesRefMut drops
+      unsafe { Buffer::detach(&mut buf) };
+
+      // Use the arena's raw pointer for provenance that outlives the BytesRefMut
+      let base_ptr = Allocator::raw_mut_ptr(self);
+
+      // Find the aligned pointer after the header
+      let buf_ptr = unsafe { base_ptr.add(memory_offset as usize) };
+      let header_end = unsafe { buf_ptr.add(header_size) };
+      let aligned_ptr = {
+        let addr = header_end as usize;
+        let aligned_addr = (addr + align - 1) & !(align - 1);
+        let offset = aligned_addr - addr;
+        unsafe { header_end.add(offset) }
+      };
+
+      // Write the memory_offset and memory_size just before the aligned pointer
+      unsafe {
+        let meta_ptr = aligned_ptr.sub(header_size);
+        core::ptr::write_unaligned(meta_ptr as *mut u32, memory_offset);
+        core::ptr::write_unaligned(
+          meta_ptr.add(core::mem::size_of::<u32>()) as *mut u32,
+          memory_size,
+        );
+      }
+
+      let ptr = unsafe { core::ptr::NonNull::new_unchecked(aligned_ptr) };
+      Ok(core::ptr::NonNull::slice_from_raw_parts(ptr, layout.size()))
+    }
+
+    unsafe fn deallocate(&self, ptr: core::ptr::NonNull<u8>, layout: core::alloc::Layout) {
+      if layout.size() == 0 {
+        return;
+      }
+
+      unsafe {
+        let header_size = core::mem::size_of::<u32>() * 2;
+        // Compute the offset of the metadata within the arena from the returned pointer.
+        // We use the arena's raw pointer for provenance to avoid Stacked Borrows issues,
+        // since the returned pointer's tag may not cover the metadata region.
+        let base_ptr = Allocator::raw_mut_ptr(self);
+        let ptr_offset = ptr.as_ptr().offset_from(base_ptr) as usize;
+        let meta_ptr = base_ptr.add(ptr_offset - header_size);
+        let memory_offset = core::ptr::read_unaligned(meta_ptr as *const u32);
+        let memory_size =
+          core::ptr::read_unaligned(meta_ptr.add(core::mem::size_of::<u32>()) as *const u32);
+        Allocator::dealloc(self, memory_offset, memory_size);
+      }
+    }
+  };
+}
 
 /// Lock-free allocator allocator can be used in concurrent environments.
 pub mod sync;

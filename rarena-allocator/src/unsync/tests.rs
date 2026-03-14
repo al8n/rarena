@@ -101,6 +101,96 @@ fn test_truncate_map_anon_unify() {
 }
 
 #[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_type_in_slow_path() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Create segments (non-detached allocs become segments when main is full)
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    // Now allocate typed objects from segments (slow path)
+    for _ in 0..3 {
+      let _ = unsafe { arena.alloc::<u32>() };
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_type_in_slow_path_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = unsafe { arena.alloc::<u32>() };
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_aligned_in_slow_path() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = arena.alloc_aligned_bytes::<u64>(8);
+    }
+  });
+}
+
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_alloc_aligned_in_slow_path_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(2048)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    for i in 1..=5 {
+      let _ = arena.alloc_bytes(i * 100).unwrap();
+    }
+    let remaining = arena.remaining();
+    let _ = arena.alloc_bytes(remaining as u32).unwrap();
+
+    for _ in 0..3 {
+      let _ = arena.alloc_aligned_bytes::<u64>(8);
+    }
+  });
+}
+
+#[test]
 #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
 #[cfg_attr(miri, ignore)]
 fn test_truncate_map() {
@@ -118,4 +208,202 @@ fn test_truncate_map() {
     };
     truncate(arena);
   })
+}
+
+#[test]
+#[cfg(all(feature = "std", not(feature = "loom")))]
+fn test_print_segment_list_optimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Create segments by allocating, detaching, then deallocating
+    let mut blocks = Vec::new();
+    for i in 1..=3 {
+      let mut b = arena.alloc_bytes(i * 100).unwrap();
+      unsafe { b.detach() };
+      blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+    }
+
+    // Fill remaining
+    let remaining = arena.remaining();
+    if remaining > 0 {
+      let mut b = arena.alloc_bytes(remaining as u32).unwrap();
+      unsafe { b.detach() };
+    }
+
+    // Dealloc to create freelist entries
+    for (offset, size) in blocks {
+      unsafe { arena.dealloc(offset, size) };
+    }
+
+    // print_segment_list traverses the freelist and prints nodes
+    arena.print_segment_list();
+  });
+}
+
+#[test]
+#[cfg(all(feature = "std", not(feature = "loom")))]
+fn test_print_segment_list_pessimistic() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Pessimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    let mut blocks = Vec::new();
+    for i in 1..=3 {
+      let mut b = arena.alloc_bytes(i * 100).unwrap();
+      unsafe { b.detach() };
+      blocks.push((b.buffer_offset() as u32, b.buffer_capacity() as u32));
+    }
+
+    let remaining = arena.remaining();
+    if remaining > 0 {
+      let mut b = arena.alloc_bytes(remaining as u32).unwrap();
+      unsafe { b.detach() };
+    }
+
+    for (offset, size) in blocks {
+      unsafe { arena.dealloc(offset, size) };
+    }
+
+    arena.print_segment_list();
+  });
+}
+
+#[test]
+#[cfg(all(feature = "std", not(feature = "loom")))]
+fn test_print_segment_list_empty() {
+  crate::tests::run(|| {
+    let arena = Options::new()
+      .with_capacity(4096)
+      .with_freelist(crate::Freelist::Optimistic)
+      .alloc::<Arena>()
+      .unwrap();
+
+    // Print empty freelist - exercises the sentinel-only path
+    arena.print_segment_list();
+  });
+}
+
+/// Test SegmentNode Debug impl for unsync Arena
+#[test]
+#[cfg(not(feature = "loom"))]
+fn test_unsync_segment_node_debug() {
+  let node = SegmentNode(UnsafeCell::new(encode_segment_node(100, 200)));
+  let debug_str = format!("{:?}", node);
+  assert!(debug_str.contains("SegmentNode"));
+  assert!(debug_str.contains("offset"));
+  assert!(debug_str.contains("next"));
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+#[allow(unused_imports)]
+fn test_core_allocator_basic() {
+  use core::alloc::Allocator as CoreAllocator;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let b = Box::new_in(42u64, &arena);
+    assert_eq!(*b, 42);
+    drop(b);
+
+    let mut v = Vec::new_in(&arena);
+    v.push(1u32);
+    v.push(2);
+    v.push(3);
+    assert_eq!(&v[..], &[1, 2, 3]);
+    drop(v);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_core_allocator_zero_sized() {
+  use core::alloc::{Allocator as CoreAllocator, Layout};
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let ptr = arena.allocate(Layout::new::<()>()).unwrap();
+    assert_eq!(ptr.len(), 0);
+    unsafe { arena.deallocate(ptr.cast(), Layout::new::<()>()) };
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_core_allocator_aligned() {
+  use core::alloc::{Allocator as CoreAllocator, Layout};
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(8192).alloc::<Arena>().unwrap();
+
+    for align in [1, 2, 4, 8, 16, 32, 64] {
+      let layout = Layout::from_size_align(64, align).unwrap();
+      let ptr = arena.allocate(layout).unwrap();
+      assert!(ptr.as_ptr().cast::<u8>() as usize % align == 0);
+      unsafe { arena.deallocate(ptr.cast(), layout) };
+    }
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api")]
+fn test_non_zero_offset() {
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+    let buf = arena.alloc_bytes(16).unwrap();
+    let ptr = buf.as_ptr();
+    let offset = unsafe { arena.non_zero_offset(ptr) };
+    assert!(offset.is_some());
+    assert!(offset.unwrap().get() > 0);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api2")]
+#[allow(unused_imports)]
+fn test_allocator_api2_basic() {
+  use allocator_api2::alloc::Allocator as Api2Allocator;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(4096).alloc::<Arena>().unwrap();
+
+    let b = allocator_api2::boxed::Box::new_in(42u64, &arena);
+    assert_eq!(*b, 42);
+    drop(b);
+
+    let mut v = allocator_api2::vec::Vec::new_in(&arena);
+    v.push(1u32);
+    v.push(2);
+    v.push(3);
+    assert_eq!(&v[..], &[1, 2, 3]);
+    drop(v);
+  });
+}
+
+#[test]
+#[cfg(feature = "allocator_api2")]
+fn test_allocator_api2_aligned() {
+  use allocator_api2::alloc::Allocator as Api2Allocator;
+  use core::alloc::Layout;
+
+  crate::tests::run(|| {
+    let arena = Options::new().with_capacity(8192).alloc::<Arena>().unwrap();
+
+    for align in [1, 2, 4, 8, 16, 32, 64] {
+      let layout = Layout::from_size_align(64, align).unwrap();
+      let ptr = arena.allocate(layout).unwrap();
+      assert!(ptr.as_ptr().cast::<u8>() as usize % align == 0);
+      unsafe { arena.deallocate(ptr.cast(), layout) };
+    }
+  });
 }

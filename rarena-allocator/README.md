@@ -19,92 +19,257 @@ Lock-free ARENA allocator which can be used in both memory and on-disk.
 
 ## Introduction
 
-`rarena-allocator` is a lock-free concurrent-safe ARENA implementation, the underlying memory can from either an allocation or memory map, which means that the allocator can be restored.
+`rarena-allocator` is a lock-free, concurrent-safe ARENA allocator for Rust. The underlying memory can be backed by either a heap allocation or a memory-mapped file, enabling persistence and recovery across process restarts.
 
-There are 3 kinds of main memory:
+### Key Features
 
-1. `AlignedVec`
-2. file backed memory map
-3. anon memory map
+- **Lock-free concurrency**: Thread-safe allocation using atomic CAS operations, no mutexes
+- **Multiple memory backends**: `AlignedVec`, file-backed mmap, or anonymous mmap
+- **Freelist-based reuse**: Reclaim and reuse deallocated segments via a lock-free sorted linked list
+- **Persistence**: File-backed arenas can be reopened and recovered
+- **`no_std` support**: Works without the standard library (with the `alloc` feature)
+- **Thoroughly tested**: Validated with [miri](https://github.com/rust-lang/miri), [loom](https://github.com/tokio-rs/loom), and sanitizers
 
-There are 3 kinds of freelist:
+### Arena Types
 
-1. None
+- **`sync::Arena`** -- Thread-safe, can be shared across threads (`Send + Sync`). Uses atomic operations for lock-free allocation.
+- **`unsync::Arena`** -- Single-threaded, lower overhead. Not `Send` or `Sync`.
 
-   Disable freelist, once main memory is consumed out, then this ARENA cannot allocate anymore.
+Both implement the `Allocator` trait, which provides methods for allocating bytes, typed values, and aligned memory, as well as reading/writing integers in various byte orders and LEB128 varint encoding.
 
-2. Optimistic
+## Quick Start
 
-   A lock-free linked list which ordered by segment size (descending), when allocating, pop the head segment.
+```rust
+use rarena_allocator::{Allocator, Options};
 
-   e.g.
+// Create a thread-safe arena with 1MB capacity
+let arena = Options::new()
+    .with_capacity(1024 * 1024)
+    .alloc::<rarena_allocator::sync::Arena>()
+    .unwrap();
 
-   freelist: `100 -> 96 -> 50`.
+// Allocate bytes from the arena
+let mut bytes = arena.alloc_bytes(256).unwrap();
+bytes.fill(42);
 
-   The head segment size is `100`, we want `20`, then the head will be removed from the linked list, give out `20`, the remaining
-   `80` will be inserted back to the freelist if it is larger than `Options::minimum_segment_size()`.
+// Clone is cheap -- arenas are reference-counted
+let arena2 = arena.clone();
+std::thread::spawn(move || {
+    let _ = arena2.alloc_bytes(128).unwrap();
+});
+```
 
-   After this allocation, the freelist will be `96 -> 80 -> 50`.
+### File-backed Arena (Persistence)
 
-3. Pessimistic
+```rust,ignore
+use rarena_allocator::{Allocator, Options};
 
-   A lock-free linked list which ordered by segment size (ascending), when allocating, find the most suitable segment.
+// Create a file-backed arena
+let arena = unsafe {
+    Options::new()
+        .with_capacity(1024 * 1024)
+        .with_create_new(true)
+        .with_read(true)
+        .with_write(true)
+        .map_mut::<rarena_allocator::sync::Arena, _>("my_arena.db")
+        .unwrap()
+};
 
-   e.g.
+let mut bytes = arena.alloc_bytes(100).unwrap();
+bytes.fill(1);
 
-   freelist: `42 -> 84 -> 100`.
+// Reopen later to recover the data
+let arena = unsafe {
+    Options::new()
+        .with_read(true)
+        .with_write(true)
+        .map_mut::<rarena_allocator::sync::Arena, _>("my_arena.db")
+        .unwrap()
+};
+```
 
-   If we want `50`, then the second segment will be removed from the linked list, give out `50`, the remaining
-   `34` will be inserted back to the freelist if it is larger than `Options::minimum_segment_size()`.
+## Freelist Strategies
 
-   After this allocation, the freelist will be `34 -> 42 -> 100`.
+The allocation policy first tries the main (bump) allocator, which is increase-only and very fast. When the main memory is exhausted, the arena falls back to a freelist of previously deallocated segments.
 
-The allocation policy used in the implementation is that, first try to allocate from main memory, main memory is increase-only, so it is blazing fast if main memory has enough space, at the same time, ARENA will collect dropped segments to construct a freelist (lock-free linked list). When the main memory does not have space, the ARENA will try to allocate from the freelist.
+1. **None**
 
-This crate contains many unsafe code, although the main functionalities of this crate are well tested by `miri`, `loom` and `sanitizer`, please use it at your own risk.
+   Freelist disabled. Once main memory is consumed, no further allocation is possible.
 
-### Memory Layout
+2. **Optimistic**
 
-- Pure memory layout, only `Vec` and anon memory map backed main memory support this layout, this layout cannot be recovered.
+   A lock-free linked list ordered by segment size (descending). Allocation always pops the head (largest) segment.
+
+   ```text
+   freelist: 100 -> 96 -> 50
+
+   alloc(20): pop head (100), return 20, reinsert remaining 80
+   result:   96 -> 80 -> 50
+   ```
+
+3. **Pessimistic**
+
+   A lock-free linked list ordered by segment size (ascending). Allocation finds the smallest segment that fits (best-fit).
+
+   ```text
+   freelist: 42 -> 84 -> 100
+
+   alloc(50): find first fit (84), return 50, reinsert remaining 34
+   result:   34 -> 42 -> 100
+   ```
+
+Remaining segments are reinserted only if they are larger than `Options::minimum_segment_size()`.
+
+## Memory Layout
+
+- **Pure layout** -- Used by `AlignedVec` and anonymous mmap. Cannot be recovered across restarts.
 
   ```text
-  --------------------------------------
-  |           1 byte          | ...... |
-  --------------------------------------
-  | reserved as null pointer  |  data  |
-  --------------------------------------
+  +---------------------------+--------+
+  |          1 byte           | ...... |
+  +---------------------------+--------+
+  | reserved (null pointer)   |  data  |
+  +---------------------------+--------+
   ```
 
-- Unify memory layout, all 3 backed memroy will use the same memory layout. Controlled by `Options::with_unify(true)`
+- **Unify layout** -- Used for file-backed persistence. Enabled via `Options::with_unify(true)`.
 
   ```text
-  --------------------------------------------------------------------------------------------------------------
-  |           1 byte          |    1 byte     |   2 bytes    |      2 bytes     | 2 bytes |  32 bytes | ...... |
-  --------------------------------------------------------------------------------------------------------------
-  | reserved as null pointer  | freelist kind |  magic text  | external version | version |   header  |  data  |
-  --------------------------------------------------------------------------------------------------------------
+  +---------------------------+-----------+----------+-----------+---------+----------+--------+
+  |          1 byte           |  1 byte   | 2 bytes  |  2 bytes  | 2 bytes | 32 bytes | ...... |
+  +---------------------------+-----------+----------+-----------+---------+----------+--------+
+  | reserved (null pointer)   | freelist  |  magic   | ext. ver. | version |  header  |  data  |
+  +---------------------------+-----------+----------+-----------+---------+----------+--------+
   ```
 
 ## Installation
 
 ```toml
 [dependencies]
-rarena-allocator = "0.6"
+rarena-allocator = "0.7"
 ```
 
-- `no_std`
+### Feature Flags
+
+| Feature          | Default | Description                                                                      |
+|------------------|---------|----------------------------------------------------------------------------------|
+| `std`            | Yes     | Standard library support                                                         |
+| `alloc`          | No      | `no_std` with `alloc` crate (heap allocation)                                    |
+| `memmap`         | No      | File-backed and anonymous memory-mapped arenas                                   |
+| `allocator_api`  | No      | Integration with unstable `allocator_api` (requires nightly Rust)               |
+| `allocator_api2` | No      | Integration with stable allocator API (`core::alloc::Allocator` / `allocator_api2`) |
+
+- `no_std` setup:
 
   ```toml
   [dependencies]
-  rarena-allocator = { version = "0.6", default-features = false, features = ["alloc"] }
+  rarena-allocator = { version = "0.7", default-features = false, features = ["alloc"] }
   ```
 
-- Enable memory map backed main memory
-  
+- With memory-mapped file support:
+
   ```toml
   [dependencies]
-  rarena-allocator = { version = "0.6", features = ["memmap"] }
+  rarena-allocator = { version = "0.7", features = ["memmap"] }
   ```
+
+- With `allocator_api2` integration (stable):
+
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.7", features = ["allocator_api2"] }
+  ```
+
+- With nightly `allocator_api` integration (unstable):
+
+  ```toml
+  [dependencies]
+  rarena-allocator = { version = "0.7", features = ["allocator_api"] }
+  ```
+  > Requires a nightly toolchain and the unstable `allocator_api` feature.
+
+## Benchmarks
+
+Each benchmark allocates 1000 chunks per iteration. Mutex-based allocators use a simple bump allocator behind a lock for a fair comparison. Results collected on Apple M-series, `cargo bench`.
+
+### Why the Comparison Matters
+
+With a `Mutex<Vec<u8>>`, the lock must be held during both allocation **and** use of the buffer -- other threads are blocked the entire time. With the arena, allocation is a brief lock-free CAS; the returned buffer is then owned by the caller and can be read/written without blocking anyone.
+
+```text
+Mutex<Vec<u8>>:   [--- lock: bump offset + fill buffer ---]  ← other threads blocked
+sync::Arena:      [CAS] [--- fill buffer (no lock) ---]      ← other threads proceed
+```
+
+### Alloc + Fill Buffer (1000 iterations)
+
+Each iteration allocates a buffer, then fills it with data.
+- **Arena**: fills the buffer after the CAS completes -- no lock held, other threads allocate concurrently.
+- **Mutex**: fills the buffer while holding the lock -- other threads are blocked.
+
+#### Single-Thread (1t)
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | **6.38 µs** | 10.41 µs | 7.75 µs |
+| 512 B | **7.25 µs** | 16.47 µs | 11.95 µs |
+| 4096 B | **7.85 µs** | 78.04 µs | 76.30 µs |
+
+The arena wins across the board single-threaded. Its allocation time is constant regardless of buffer size (the CAS only touches a pointer), while mutexes pay for the fill under lock. With `Freelist::None`, dropped buffers are a no-op (pure bump allocator), eliminating deallocation overhead.
+
+#### 2 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 34.60 µs | 42.54 µs | **34.60 µs** |
+| 512 B | **31.03 µs** | 114.82 µs | 77.09 µs |
+| 4096 B | **39.89 µs** | 181.95 µs | 143.09 µs |
+
+At 2 threads with 4096 B buffers, the arena is **4.6x faster** than `std::sync::Mutex` and **3.6x faster** than `parking_lot::Mutex`.
+
+#### 4 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 11.05 ms | 277.01 µs | **112.23 µs** |
+| 512 B | 10.02 ms | 366.63 µs | **212.57 µs** |
+| 4096 B | 7.54 ms | 1.35 ms | **282.89 µs** |
+
+#### 8 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 7.61 ms | 285.57 µs | **190.30 µs** |
+| 512 B | 6.45 ms | 535.97 µs | **225.30 µs** |
+| 4096 B | 5.74 ms | 2.85 ms | **561.77 µs** |
+
+#### 50 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 28.38 ms | 2.42 ms | **1.03 ms** |
+| 512 B | 32.85 ms | 2.58 ms | **1.30 ms** |
+| 4096 B | 28.90 ms | 8.00 ms | **2.32 ms** |
+
+#### 100 Threads
+
+| Alloc Size | `sync::Arena` | `std::sync::Mutex` | `parking_lot::Mutex` |
+|----------:|-------------:|------------------:|--------------------:|
+| 32 B | 57.80 ms | **1.98 ms** | 1.73 ms |
+| 512 B | 50.06 ms | 8.68 ms | **2.81 ms** |
+| 4096 B | 45.92 ms | 15.51 ms | **6.77 ms** |
+
+> **Note on high contention**: Under extreme contention (4+ threads), the lock-free CAS retry loop wastes more work than mutex-based serialization. Each failed CAS attempt is a wasted cycle, and with N threads the expected retries per success is O(N). The arena's strength at high thread counts is not raw allocation throughput, but that **callers can work on their buffers without blocking others** -- a benefit not captured by this micro-benchmark.
+
+## Safety
+
+This crate contains `unsafe` code. The core allocation and concurrency logic is tested with:
+
+- **[miri](https://github.com/rust-lang/miri)** -- Detects undefined behavior
+- **[loom](https://github.com/tokio-rs/loom)** -- Model-checks concurrent operations
+- **Sanitizers** (ThreadSanitizer, AddressSanitizer) -- Detects data races and memory errors
+
+Please use it at your own risk.
 
 #### License
 
@@ -113,11 +278,10 @@ Apache License (Version 2.0).
 
 See [LICENSE-APACHE](../LICENSE-APACHE), [LICENSE-MIT](../LICENSE-MIT) for details.
 
-Copyright (c) 2024 Al Liu.
+Copyright (c) 2026 Al Liu.
 
 [Github-url]: https://github.com/al8n/rarena/
 [CI-url]: https://github.com/al8n/rarena/actions/workflows/ci.yml
 [doc-url]: https://docs.rs/rarena-allocator
 [crates-url]: https://crates.io/crates/rarena-allocator
 [codecov-url]: https://app.codecov.io/gh/al8n/rarena/
-[zh-cn-url]: https://github.com/al8n/rarena/tree/main/README-zh_CN.md

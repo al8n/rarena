@@ -1,6 +1,5 @@
 use core::{ops, ptr::NonNull};
 
-pub use dbutils::{error::InsufficientBuffer, leb128::DecodeVarintError};
 use either::Either;
 
 use super::*;
@@ -341,12 +340,12 @@ impl<'a, A: Allocator> BytesRefMut<'a, A> {
 
   /// SAFETY: `len` and `offset` must be valid.
   #[inline]
-  pub(super) unsafe fn new(arena: &'a A, allocated: Meta) -> Self {
+  pub(super) unsafe fn new(arena: &'a A, allocated: Meta, detach: bool) -> Self {
     Self {
       arena,
       len: 0,
       allocated,
-      detach: false,
+      detach,
     }
   }
 

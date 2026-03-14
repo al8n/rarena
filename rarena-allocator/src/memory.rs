@@ -52,6 +52,7 @@ pub(crate) struct Memory<R, P: PathRefCounter, H> {
   freelist: Freelist,
   read_only: bool,
   max_retries: u8,
+  zeroed: bool,
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   header_offset: usize,
@@ -120,6 +121,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   #[inline]
   pub(crate) const fn maximum_retries(&self) -> u8 {
     self.max_retries
+  }
+
+  #[inline]
+  pub(crate) const fn zeroed(&self) -> bool {
+    self.zeroed
   }
 
   #[inline]
@@ -306,6 +312,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
         freelist: opts.freelist(),
         read_only: false,
         max_retries: opts.maximum_retries(),
+        zeroed: opts.zeroed(),
       })
     }
   }
@@ -388,11 +395,6 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
 
         let ptr = mmap.as_mut_ptr();
 
-        // if the file is newly created, we need to initialize the memory
-        if create_new {
-          ptr::write_bytes(ptr, 0, cap);
-        }
-
         let reserved = opts.reserved() as usize;
 
         let data_offset = header_ptr_offset + mem::size_of::<H>();
@@ -448,6 +450,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: false,
           header_offset: header_ptr_offset,
         };
@@ -587,6 +590,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: true,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: opts.lock_meta(),
           header_offset: header_ptr_offset,
         };
@@ -661,6 +665,7 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
           freelist,
           read_only: false,
           max_retries: opts.maximum_retries(),
+          zeroed: opts.zeroed(),
           lock_meta: opts.lock_meta(),
         };
 
@@ -1025,7 +1030,11 @@ impl<R: RefCounter, PR: PathRefCounter, H: Header> Memory<R, PR, H> {
   ///
   /// ## Safety:
   /// - This method must be invoked in the drop impl of `Arena`.
+  #[allow(unused_unsafe)]
   pub(crate) unsafe fn unmount(&mut self) {
+    // SAFETY: All unsafe operations below are valid because this method's
+    // safety contract requires it to be called only from the Arena drop impl,
+    // ensuring exclusive access to the memory backend.
     unsafe {
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       if self.lock_meta {

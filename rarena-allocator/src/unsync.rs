@@ -151,6 +151,7 @@ pub struct Arena {
   ro: bool,
   freelist: Freelist,
   page_size: u32,
+  zeroed: bool,
 }
 
 impl fmt::Debug for Arena {
@@ -203,6 +204,7 @@ impl Clone for Arena {
         cap: self.cap,
         freelist: self.freelist,
         page_size: self.page_size,
+        zeroed: self.zeroed,
       }
     }
   }
@@ -223,6 +225,7 @@ impl From<Memory> for Arena {
       ptr,
       ro: memory.read_only(),
       max_retries: memory.maximum_retries(),
+      zeroed: memory.zeroed(),
       data_offset: memory.data_offset() as u32,
       inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memory)) as _) },
       page_size: *PAGE_SIZE,
@@ -311,7 +314,9 @@ impl Allocator for Arena {
   fn alloc_aligned_bytes<T>(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
     self.alloc_aligned_bytes_in::<T>(size).map(|a| match a {
       None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      Some(allocated) => unsafe {
+        BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard)
+      },
     })
   }
 
@@ -323,7 +328,7 @@ impl Allocator for Arena {
   //     .alloc_aligned_bytes_within_page_in::<T>(size)
   //     .map(|a| match a {
   //       None => BytesRefMut::null(self),
-  //       Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //       Some(allocated) => unsafe { BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard) },
   //     })
   // }
 
@@ -331,7 +336,9 @@ impl Allocator for Arena {
   fn alloc_bytes(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
     self.alloc_bytes_in(size).map(|a| match a {
       None => BytesRefMut::null(self),
-      Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+      Some(allocated) => unsafe {
+        BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard)
+      },
     })
   }
 
@@ -341,7 +348,7 @@ impl Allocator for Arena {
   // fn alloc_bytes_within_page(&self, size: u32) -> Result<BytesRefMut<'_, Self>, Error> {
   //   self.alloc_bytes_within_page_in(size).map(|a| match a {
   //     None => BytesRefMut::null(self),
-  //     Some(allocated) => unsafe { BytesRefMut::new(self, allocated) },
+  //     Some(allocated) => unsafe { BytesRefMut::new(self, allocated, self.freelist == Freelist::Discard) },
   //   })
   // }
 
@@ -413,7 +420,7 @@ impl Allocator for Arena {
     }
 
     match self.freelist {
-      Freelist::None => {
+      Freelist::None | Freelist::Discard => {
         self.increase_discarded(size);
         true
       }
@@ -429,7 +436,7 @@ impl Allocator for Arena {
     }
 
     Ok(match self.freelist {
-      Freelist::None => 0,
+      Freelist::None | Freelist::Discard => 0,
       _ => self.discard_freelist_in(),
     })
   }
@@ -602,6 +609,7 @@ impl Arena {
   /// Returns the free list position to insert the value.
   /// - `None` means that we should insert to the head.
   /// - `Some(offset)` means that we should insert after the offset. offset -> new -> next
+  #[inline]
   fn find_position(&self, val: u32, check: impl Fn(u32, u32) -> bool) -> (u64, &UnsafeCell<u64>) {
     let header = self.header_mut();
     let mut current: &UnsafeCell<u64> = &header.sentinel;
@@ -613,11 +621,6 @@ impl Arena {
       if current_node_size == SENTINEL_SEGMENT_NODE_SIZE
         && next_offset == SENTINEL_SEGMENT_NODE_OFFSET
       {
-        return (*current_node, current);
-      }
-
-      // the current is marked as remove and the next is the tail.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return (*current_node, current);
       }
 
@@ -641,6 +644,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   #[allow(clippy::type_complexity)]
   fn find_prev_and_next(
     &self,
@@ -660,12 +664,7 @@ impl Arena {
         return None;
       }
 
-      // the current is marked as remove and the next is the tail.
-      if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
-        return None;
-      }
-
-      // the next is the tail
+      // the next is the tail, then there's no node to allocate from.
       if next_offset == SENTINEL_SEGMENT_NODE_OFFSET {
         return None;
       }
@@ -685,6 +684,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn optimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(mut segment_node) = self.try_new_segment(offset, size) else {
@@ -719,6 +719,7 @@ impl Arena {
     }
   }
 
+  #[inline]
   fn pessimistic_dealloc(&self, offset: u32, size: u32) -> bool {
     // check if we have enough space to allocate a new segment in this segment.
     let Some(mut segment_node) = self.try_new_segment(offset, size) else {
@@ -765,13 +766,15 @@ impl Arena {
       tracing::debug!("allocate {} bytes at offset {} from memory", size, offset);
 
       let allocated = Meta::new(self.ptr as _, offset, size);
-      unsafe { allocated.clear(self) };
+      if self.zeroed {
+        unsafe { allocated.clear(self) };
+      }
       return Ok(Some(allocated));
     }
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: size,
         available: self.remaining() as u32,
       }),
@@ -885,7 +888,7 @@ impl Arena {
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: size + extra,
         available: self.remaining() as u32,
       }),
@@ -998,13 +1001,15 @@ impl Arena {
         offset
       );
 
-      unsafe { allocated.clear(self) };
+      if self.zeroed {
+        unsafe { allocated.clear(self) };
+      }
       return Ok(Some(allocated));
     }
 
     // allocate through slow path
     match self.freelist {
-      Freelist::None => Err(Error::InsufficientSpace {
+      Freelist::None | Freelist::Discard => Err(Error::InsufficientSpace {
         requested: want,
         available: self.remaining() as u32,
       }),
@@ -1088,6 +1093,7 @@ impl Arena {
   //   })
   // }
 
+  #[inline]
   fn alloc_slow_path_pessimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -1137,13 +1143,16 @@ impl Arena {
     let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
     allocated.ptr_offset = segment_node.data_offset;
     allocated.ptr_size = size;
-    unsafe {
-      allocated.clear(self);
+    if self.zeroed {
+      unsafe {
+        allocated.clear(self);
+      }
     }
     Ok(allocated)
   }
 
   /// It is like a pop operation, we will always allocate from the largest segment.
+  #[inline]
   fn alloc_slow_path_optimistic(&self, size: u32) -> Result<Meta, Error> {
     if self.ro {
       return Err(Error::ReadOnly);
@@ -1207,12 +1216,15 @@ impl Arena {
     let mut allocated = Meta::new(self.ptr as _, segment_node.ptr_offset, memory_size);
     allocated.ptr_offset = segment_node.data_offset;
     allocated.ptr_size = size;
-    unsafe {
-      allocated.clear(self);
+    if self.zeroed {
+      unsafe {
+        allocated.clear(self);
+      }
     }
     Ok(allocated)
   }
 
+  #[inline]
   fn discard_freelist_in(&self) -> u32 {
     let header = self.header();
     let mut discarded = 0;
@@ -1360,6 +1372,18 @@ impl Arena {
       current = self.get_segment_node(next_node_offset);
     }
   }
+}
+
+#[cfg(feature = "allocator_api")]
+#[cfg_attr(docsrs, doc(cfg(feature = "allocator_api")))]
+unsafe impl core::alloc::Allocator for Arena {
+  impl_core_allocator!(Arena, core::alloc);
+}
+
+#[cfg(feature = "allocator_api2")]
+#[cfg_attr(docsrs, doc(cfg(feature = "allocator_api2")))]
+unsafe impl allocator_api2::alloc::Allocator for Arena {
+  impl_core_allocator!(Arena, allocator_api2::alloc);
 }
 
 impl Drop for Arena {

@@ -32,6 +32,11 @@ pub enum Freelist {
 
   /// A lock-free linked list which ordered by segment size (ascending), when the main memory is consumed out, the following allocation will find the most suitable segment from freelist.
   Pessimistic = 2,
+
+  /// Disable freelist and skip deallocation entirely. Allocated buffers become no-ops on drop
+  /// (pure bump allocator with zero drop overhead). Once main memory is consumed, no further
+  /// allocation is possible.
+  Discard = 3,
 }
 
 impl TryFrom<u8> for Freelist {
@@ -42,6 +47,7 @@ impl TryFrom<u8> for Freelist {
       0 => Self::None,
       1 => Self::Optimistic,
       2 => Self::Pessimistic,
+      3 => Self::Discard,
       _ => return Err(UnknownFreelist(())),
     })
   }
@@ -58,6 +64,7 @@ pub struct Options {
   unify: bool,
   freelist: Freelist,
   reserved: u32,
+  zeroed: bool,
 
   #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
   lock_meta: bool,
@@ -103,6 +110,7 @@ impl Options {
       magic_version: 0,
       freelist: Freelist::Optimistic,
       reserved: 0,
+      zeroed: false,
 
       #[cfg(all(feature = "memmap", not(target_family = "wasm")))]
       lock_meta: false,
@@ -396,6 +404,48 @@ impl Options {
   pub const fn with_freelist(mut self, freelist: Freelist) -> Self {
     self.freelist = freelist;
     self
+  }
+
+  /// Set whether the ARENA should zero-initialize allocated memory.
+  ///
+  /// When `true`, every allocation will be zero-initialized before being returned.
+  /// When `false`, allocated memory may contain stale data from previous allocations
+  /// (the initial arena memory is still zeroed by the OS/allocator, but reused freelist
+  /// memory is not).
+  ///
+  /// The default value is `false`.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_zeroed(true);
+  ///
+  /// assert_eq!(opts.zeroed(), true);
+  /// ```
+  #[inline]
+  pub const fn with_zeroed(mut self, zeroed: bool) -> Self {
+    self.zeroed = zeroed;
+    self
+  }
+
+  /// Get whether the ARENA zero-initializes allocated memory.
+  ///
+  /// The default value is `false`.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::Options;
+  ///
+  /// let opts = Options::new().with_zeroed(true);
+  ///
+  /// assert_eq!(opts.zeroed(), true);
+  /// ```
+  #[inline]
+  pub const fn zeroed(&self) -> bool {
+    self.zeroed
   }
 
   /// Get the reserved of the ARENA.

@@ -2,13 +2,11 @@ codecov:
   require_ci_to_pass: false
 
 ignore:
-  - "**/integration/"
-  - "**/examples/"
-  - "**/benches/"
-  - "rarena-allocator/tests.rs"
-  - "rarena-allocator/unsync/tests.rs"
-  - "rarena-allocator/sync/tests.rs"
-  - "rarena-allocator/sync/tests/"
+  - rarena-allocator/examples/
+  - rarena-allocator/benches/
+  - rarena-allocator/tests/
+  - "**/*tests.rs"
+  - "**/tests/*"
 
 coverage:
   status:

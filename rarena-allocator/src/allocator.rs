@@ -1,5 +1,7 @@
 use core::ptr::NonNull;
 
+use dbutils::checksum::{BuildChecksumer, Checksumer};
+
 use super::*;
 
 macro_rules! impl_bytes_utils_for_allocator {
@@ -65,7 +67,7 @@ macro_rules! impl_leb128_utils_for_allocator {
     };
 
     paste::paste! {
-      dbutils::leb128::[< decode_ $ty _varint >](buf).map_err(Into::into)
+      varing::[< decode_ $ty _varint >](buf).map_err(Into::into)
     }
   }};
 }
@@ -78,7 +80,7 @@ macro_rules! define_leb128_utils {
         ///
         /// ## Safety
         /// - `offset` must be within the allocated memory of the allocator.
-        fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(usize, $ty), Error> {
+        fn [< get_ $ty _varint >](&self, offset: usize) -> Result<(NonZeroUsize, $ty), Error> {
           impl_leb128_utils_for_allocator!(self($ty, offset, $size))
         }
       }
@@ -825,12 +827,7 @@ pub trait Allocator: sealed::Sealed {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    Ok(buf[0])
+    Ok(unsafe { *self.raw_ptr().add(offset) })
   }
 
   /// Returns a `i8` from the allocator.
@@ -840,12 +837,7 @@ pub trait Allocator: sealed::Sealed {
       return Err(Error::OutOfBounds { offset, allocated });
     }
 
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    Ok(buf[0] as i8)
+    Ok(unsafe { *self.raw_ptr().add(offset) as i8 })
   }
 
   /// Returns a `u8` from the allocator without bounds checking.
@@ -853,12 +845,7 @@ pub trait Allocator: sealed::Sealed {
   /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_u8_unchecked(&self, offset: usize) -> u8 {
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    buf[0]
+    unsafe { *self.raw_ptr().add(offset) }
   }
 
   /// Returns a `i8` from the allocator without bounds checking.
@@ -866,12 +853,7 @@ pub trait Allocator: sealed::Sealed {
   /// ## Safety
   /// - `offset + size` must be within the allocated memory of the allocator.
   unsafe fn get_i8_unchecked(&self, offset: usize) -> i8 {
-    let buf = unsafe {
-      let ptr = self.raw_ptr().add(offset);
-      core::slice::from_raw_parts(ptr, 1)
-    };
-
-    buf[0] as i8
+    unsafe { *self.raw_ptr().add(offset) as i8 }
   }
 
   define_bytes_utils!(
@@ -1270,6 +1252,17 @@ pub trait Allocator: sealed::Sealed {
   /// - `ptr` must be allocated by this allocator.
   unsafe fn offset(&self, ptr: *const u8) -> usize;
 
+  /// Returns the offset to the start of the allocator as a [`NonZeroUsize`](core::num::NonZeroUsize).
+  ///
+  /// Returns `None` if the offset is zero.
+  ///
+  /// ## Safety
+  /// - `ptr` must be allocated by this allocator.
+  #[inline]
+  unsafe fn non_zero_offset(&self, ptr: *const u8) -> Option<core::num::NonZeroUsize> {
+    unsafe { core::num::NonZeroUsize::new(self.offset(ptr)) }
+  }
+
   /// Returns the page size.
   ///
   /// If in no-std environment, then this method will return `4096`.
@@ -1298,6 +1291,26 @@ pub trait Allocator: sealed::Sealed {
   #[inline]
   fn read_only(&self) -> bool {
     self.as_ref().read_only()
+  }
+
+  /// Returns whether the allocator zero-initializes allocated memory.
+  ///
+  /// When `true`, every allocation will be zero-initialized before being returned.
+  /// When `false`, allocated memory may contain stale data from previous allocations.
+  ///
+  /// The default value is `false`.
+  ///
+  /// ## Example
+  ///
+  /// ```rust
+  /// use rarena_allocator::{sync::Arena, Options, Allocator};
+  ///
+  /// let arena = Options::new().with_capacity(100).with_zeroed(true).alloc::<Arena>().unwrap();
+  /// assert!(arena.zeroed());
+  /// ```
+  #[inline]
+  fn zeroed(&self) -> bool {
+    self.as_ref().zeroed()
   }
 
   /// Returns the number of references to the allocator.

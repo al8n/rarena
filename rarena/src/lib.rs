@@ -4,7 +4,5 @@
 #![cfg_attr(docsrs, allow(unused_attributes))]
 #![deny(missing_docs)]
 
-#[cfg(not(any(feature = "std", feature = "alloc")))]
-compile_error!("`rarena` requires either the 'std' or 'alloc' feature to be enabled");
-
+#[cfg(any(feature = "std", feature = "alloc"))]
 pub use rarena_allocator as allocator;

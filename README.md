@@ -3,7 +3,7 @@
 </div>
 <div align="center">
 
-This crate provides a lock-free ARENA allocator and a set of lock-free data structures based on the ARENA allocator.
+Lock-free ARENA allocator and data structures for Rust.
 
 [<img alt="github" src="https://img.shields.io/badge/github-al8n/rarena-8da0cb?style=for-the-badge&logo=Github" height="22">][Github-url]
 <img alt="LoC" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fal8n%2F327b2a8aef9003246e45c6e47fe63937%2Fraw%2Frarena" height="22">
@@ -19,12 +19,70 @@ English | [简体中文][zh-cn-url]
 
 </div>
 
+## Overview
+
+`rarena` is a Rust workspace providing a lock-free, concurrent-safe ARENA allocator and data structures built on top of it. The allocator supports multiple memory backends -- heap allocation, file-backed mmap, and anonymous mmap -- enabling both in-memory and persistent on-disk use cases.
+
+### Key Features
+
+- **Lock-free concurrency** -- Thread-safe allocation via atomic CAS, no mutexes
+- **Multiple memory backends** -- `AlignedVec`, file-backed mmap, anonymous mmap
+- **Freelist-based reuse** -- Reclaim deallocated segments via lock-free sorted linked lists (optimistic or pessimistic strategies)
+- **Persistence** -- File-backed arenas can be recovered across process restarts
+- **`no_std` support** -- Works without the standard library (with the `alloc` feature)
+- **Tested** -- Validated with [miri](https://github.com/rust-lang/miri), [loom](https://github.com/tokio-rs/loom), and sanitizers
+
+## Crates
+
+| Crate | Description |
+|-------|-------------|
+| [`rarena`](rarena/) | Umbrella crate -- re-exports `rarena-allocator` as `rarena::allocator` |
+| [`rarena-allocator`](rarena-allocator/) | Core lock-free ARENA allocator with sync and unsync variants |
+
+## Quick Start
+
+```rust
+use rarena::allocator::{Allocator, Options};
+
+// Create a thread-safe arena with 1MB capacity
+let arena = Options::new()
+    .with_capacity(1024 * 1024)
+    .alloc::<rarena::allocator::sync::Arena>()
+    .unwrap();
+
+// Allocate bytes from the arena (fast-path: bump allocation)
+let bytes = arena.alloc_bytes(256).unwrap();
+
+// Arenas are reference-counted -- cloning is cheap
+let arena2 = arena.clone();
+std::thread::spawn(move || {
+    let _ = arena2.alloc_bytes(128).unwrap();
+});
+```
+
 ## Installation
 
 ```toml
 [dependencies]
-rarena = "0.4"
+rarena = "0.7"
 ```
+
+Or use the allocator crate directly:
+
+```toml
+[dependencies]
+rarena-allocator = "0.7"
+```
+
+### Feature Flags
+
+| Feature  | Default | Description                                    |
+|----------|---------|------------------------------------------------|
+| `std`    | Yes     | Standard library support                       |
+| `alloc`  | No      | `no_std` with heap allocation                  |
+| `memmap` | No      | File-backed and anonymous memory-mapped arenas |
+
+See the [`rarena-allocator` README](rarena-allocator/README.md) for detailed documentation on memory layouts, freelist strategies, and usage examples.
 
 #### License
 
@@ -33,7 +91,7 @@ Apache License (Version 2.0).
 
 See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.
 
-Copyright (c) 2024 Al Liu.
+Copyright (c) 2026 Al Liu.
 
 [Github-url]: https://github.com/al8n/rarena/
 [CI-url]: https://github.com/al8n/rarena/actions/workflows/ci.yml
